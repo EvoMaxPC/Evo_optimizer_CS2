@@ -39,6 +39,14 @@ public static class Layer1Registration
         services.AddSingleton<IDiagnosticProbe, CpuPowerCountersProbe>();
         services.AddSingleton<IDiagnosticProbe, PresentMonToolProbe>();
 
+        // --- Sondas de energía de la Capa 3 (solo lectura; no son entradas de catálogo) ---
+        // Ejecutan powercfg.exe /qh y /getactivescheme: en otros SO no se registran, igual que las de PDH.
+        if (OperatingSystem.IsWindows())
+        {
+            foreach (var (_, create) in FragForge.Actions.Diagnostics.PowerProbeFactory.Registrations)
+                services.AddSingleton<IDiagnosticProbe>(sp => create(sp.GetRequiredService<IProcessRunner>()));
+        }
+
         // --- Experimentos puntuales ---
         // MouseRateExperiment está marcado [SupportedOSPlatform("windows")]: solo se registra allí.
         if (OperatingSystem.IsWindows()) services.AddSingleton<MouseRateExperiment>();
