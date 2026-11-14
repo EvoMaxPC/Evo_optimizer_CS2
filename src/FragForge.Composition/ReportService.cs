@@ -14,8 +14,31 @@ public sealed class ReportService(ITweakEngine engine, IPreflightService preflig
     {
         var scan = await engine.ScanAsync(cancellationToken);
         var preflightReport = await preflight.CheckAsync(new ApplyOptions { CreateRestorePoint = true, Profile = TweakProfile.Safe }, scan.Hardware, cancellationToken);
-        var entries = await journal.ReadAllAsync(cancellationToken);
-        var integrity = await journal.VerifyIntegrityAsync(cancellationToken);
+        // E2: un journal ILEGIBLE no puede tumbar el informe. La app tiene que poder decir "no puedo leer
+        // el journal, y este es el motivo" en vez de no arrancar el panel. Antes, ReadAllAsync (que no
+        // captura nada, FileJournal.cs:46-57) propagaba JsonException/InvalidDataException y CreateAsync
+        // se caia entero.
+        //
+        // Se reutiliza JournalIntegrity para llevarlo: ya forma parte de ReportDocument (que esta en
+        // Abstractions y NO se toca) y ya tiene un campo Error para el motivo. IsValid=false + el mensaje
+        // real de la excepcion. No se inventa "journal vacio": entries queda vacia, y ademas el informe
+        // lleva marcado que no se pudo leer, que es la diferencia que importa.
+        IReadOnlyList<JournalEntry> entries = [];
+        var journalUnreadable = false;
+        var unreadableReason = default(string);
+        try
+        {
+            entries = await journal.ReadAllAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }   // cancelar lo pidio quien llama: no es un dato
+        catch (Exception ex)
+        {
+            journalUnreadable = true;
+            unreadableReason = ex.Message;
+        }
+        var integrity = journalUnreadable
+            ? new JournalIntegrity(false, 0, $"El journal no se pudo leer: {unreadableReason}")
+            : await journal.VerifyIntegrityAsync(cancellationToken);
         var reverted = entries.Where(e => e.EventType == JournalEventType.SnapshotReverted && e.SnapshotId is not null).Select(e => e.SnapshotId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var snapshotItems = (await snapshots.ListAsync(cancellationToken)).Select(s => new SnapshotListItem(s.Id, s.Label, s.CreatedAt, s.Tweaks.Count, s.RestorePointSequence, reverted.Contains(s.Id))).ToArray();
         return new ReportDocument(1, DateTimeOffset.UtcNow, context.ApplicationVersion, scan.Hardware, scan.Tweaks, preflightReport, snapshotItems, integrity, entries.TakeLast(100).ToArray());
