@@ -175,6 +175,8 @@ public sealed class Cs2InspectorTests : IDisposable
             """);
         File.WriteAllText(Path.Combine(cfg, "autoexec.cfg"), "fps_max 64");
 
+        PlaceExecutable(root);
+
         var registry = new FakeRegistry();
         registry.Set(@"HKCU\Software\Valve\Steam\ActiveProcess", "ActiveUser", "DWord", unchecked((int)account));
 
@@ -215,6 +217,8 @@ public sealed class Cs2InspectorTests : IDisposable
         File.WriteAllText(videoPath, "\"video.cfg\" { \"settings\" { \"setting.mat_vsync\" \"0\" } }");
         File.WriteAllText(autoexecPath, "fps_max 300");
 
+        // El escenario se prepara ANTES de la foto: el cs2.exe es parte del "antes", no algo que cree el inspector.
+        PlaceExecutable(root);
         var beforeFiles = Directory.GetFiles(_temp, "*", SearchOption.AllDirectories).OrderBy(x => x, StringComparer.Ordinal).ToArray();
         var beforeVideo = File.ReadAllText(videoPath);
         var beforeAutoexec = File.ReadAllText(autoexecPath);
@@ -239,13 +243,28 @@ public sealed class Cs2InspectorTests : IDisposable
 
     // ---------------------------------------------------------------- dobles
 
+    /// <summary>
+    /// Crea el cs2.exe de mentira que el doble espera encontrar. Se llama desde el test, ANTES de tomar
+    /// cualquier medida, para que crear el escenario no cuente como un efecto de la inspeccion.
+    /// </summary>
+    private static void PlaceExecutable(string steamRoot)
+    {
+        var executable = Path.Combine(steamRoot, "steamapps", "common", "Counter-Strike Global Offensive", "game", "bin", "win64", "cs2.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
+        File.WriteAllText(executable, "stub");
+    }
+
     private sealed class FixedResolver(string executableRoot) : ICs2Resolver
     {
         public Task<Cs2Resolution> ResolveAsync(CancellationToken cancellationToken = default)
         {
             var executable = Path.Combine(executableRoot, "steamapps", "common", "Counter-Strike Global Offensive", "game", "bin", "win64", "cs2.exe");
-            Directory.CreateDirectory(Path.GetDirectoryName(executable)!);
-            if (!File.Exists(executable)) File.WriteAllText(executable, "stub");
+            // Este doble NO escribe: solo dice donde estaria el exe. Antes lo creaba aqui, y como ResolveAsync
+            // se invoca DENTRO de InspectAsync(), el fichero aparecia despues de tomar la foto del test
+            // Inspect_DoesNotModifyOrCreateAnything, que entonces veia 3 entradas donde hay 2 y acusaba al
+            // inspector de crear un archivo. La creacion (cuando hace falta) la hace el propio test con
+            // PlaceExecutable, antes de medir nada.
+            if (!File.Exists(executable)) throw new InvalidOperationException("El test no preparo cs2.exe: llamar a PlaceExecutable antes de inspeccionar.");
             return Task.FromResult(new Cs2Resolution
             {
                 ExecutablePath = executable,
