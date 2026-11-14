@@ -93,6 +93,18 @@ public interface IGameLocator
 {
     Task<GameInfo> LocateCs2Async(CancellationToken cancellationToken = default);
 }
+/// <summary>
+/// Resuelve cs2.exe por la vía declarada de Steam: registro → <c>libraryfolders.vdf</c> →
+/// <c>appmanifest_730.acf</c> (<c>installdir</c>) → <c>game\bin\win64\cs2.exe</c>.
+///
+/// Es una interfaz NUEVA y aditiva (R-A): no cambia ninguna firma existente, y <see cref="IGameLocator"/>
+/// sigue igual para el motor. La implementación Windows vive en Actions; la interfaz no depende de
+/// Windows, así que Core sigue siendo net10.0 puro.
+/// </summary>
+public interface ICs2Resolver
+{
+    Task<Cs2Resolution> ResolveAsync(CancellationToken cancellationToken = default);
+}
 public interface IDiagnosticProbe
 {
     string Key { get; }

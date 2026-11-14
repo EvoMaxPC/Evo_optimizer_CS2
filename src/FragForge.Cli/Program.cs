@@ -126,6 +126,8 @@ public static class Program
                     return parsed.Positionals.FirstOrDefault() == "verify" ? await MeasurementCommands.ToolsVerifyAsync(host.Services, parsed) : throw new ArgumentException("tools admite verify.");
                 case "maintenance":
                     return await MaintenanceCommands.RunAsync(host.Services, parsed);
+                case "cs2":
+                    return await Cs2Commands.RunAsync(host.Services, parsed, cancellation.Token);
                 case "probe":
                     return await MeasurementCommands.ProbeAsync(host.Services, parsed);
                 case "mouse-test":

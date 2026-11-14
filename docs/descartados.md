@@ -189,3 +189,31 @@ hace el usuario con `dotnet run`.
 El mismo problema de chrome claro afecta a `ComboBox`, `CheckBox` y `ScrollBar` (no tienen plantilla
 propia). Rediseñar el tema completo no forma parte de "cambio de estilo mínimo", así que queda
 anotado como deuda visible en vez de meterse de contrabando en este cambio.
+
+---
+
+## Capa 8 — CS2
+
+### Preferencia de GPU para cs2.exe (`UserGpuPreferences`) — 8.5
+
+**Descartado. No se implementa.** La preferencia de GPU por aplicación se guarda en
+`HKCU\Software\Microsoft\DirectX\UserGpuPreferences` y solo tiene efecto cuando hay **más de un**
+adaptador entre los que elegir.
+
+El hardware objetivo de este proyecto es fijo: **i3-1220P con Intel UHD como única iGPU**. No hay
+segunda GPU, así que la clave no puede cambiar qué procesador gráfico usa el juego: no hay nada que
+elegir. Añadirla al catálogo habría sido un tweak que no hace nada, con el coste de un valor más en el
+registro del usuario y una reversión más que mantener.
+
+Si en el futuro se apunta a equipos con GPU dedicada habría que reabrirlo, y entonces habría que medirlo
+antes de prometer nada (R-K).
+
+### Cuadrado de la resolución: usar `SteamGameLocator` en vez de un resolvedor nuevo
+
+**Se descartó reescribir el existente.** `SteamGameLocator`
+(`src/FragForge.Actions/Files/SteamGameLocator.cs:8`) compone la ruta con la carpeta **fija**
+`steamapps\common\Counter-Strike Global Offensive` y no lee `appmanifest_730.acf`. Se podría haber
+cambiado, pero lo consume el perfil de hardware (`HardwareProfiler.cs:165`) y por tanto el motor y la
+detección de condiciones `cs2`. Cambiarlo habría sido tocar algo que funciona para resolver un caso
+(instalación con carpeta renombrada) sin poder medirlo. Se añadió `SteamCs2Resolver` aparte y se dejó el
+locator intacto.

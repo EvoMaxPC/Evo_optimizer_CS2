@@ -64,6 +64,10 @@ public static class CompositionRoot
             builder.Services.AddSingleton<INetworkAdapterController, WindowsNetworkAdapterController>();
             builder.Services.AddSingleton<ISystemRestoreService, SystemRestoreService>();
             builder.Services.AddSingleton<IGameLocator, SteamGameLocator>();
+            // Capa 8.2: resolucion de cs2.exe por appmanifest_730.acf (installdir), aparte del locator.
+            builder.Services.AddSingleton<ICs2Resolver, SteamCs2Resolver>();
+            // Capa 8.6: inspector de SOLO LECTURA de la configuracion de CS2.
+            builder.Services.AddSingleton<Cs2Inspector>();
             builder.Services.AddSingleton<IHardwareProfiler, WindowsHardwareProfiler>();
         }
         else

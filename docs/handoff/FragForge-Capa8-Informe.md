@@ -1,0 +1,166 @@
+# FragForge — Capa 8: CS2 (resolución, IFEO, AppCompat e inspector de solo lectura)
+
+**Fecha:** 2026-11-13
+**Rama:** `arena/c1a5f702-evo-optimizer-cs2`
+**Estado:** código y tests **escritos y commiteados**; **NADA compilado ni ejecutado**.
+
+---
+
+## 0. Advertencia previa
+
+Este entorno **no tiene SDK de .NET**, ni Windows, ni PowerShell. No hay `dotnet`, no se puede compilar
+y no se puede ejecutar ni un test. Todo lo que sigue describe *lo que el código hace*, no *lo que se
+observó al correrlo*.
+
+Lo que **sí** se hizo y se puede comprobar:
+
+- Cada identificador externo usado está localizado con grep real y citado con **archivo:línea** (§5).
+- Todos los archivos C# pasan el parser de tree-sitter (**sintaxis**, no compilación).
+- Los JSON del catálogo se validaron contra el schema real, y los cambios se compararon contra `git show
+  HEAD:` para demostrar que **solo** se añadió lo declarado.
+- La lógica de parseo (VDF, cs2_video.txt, convars, autoexec) se **reprodujo en Python** sobre los
+  mismos fixtures antes de escribir el C#, y el resultado coincide con lo esperado.
+- El recuento del catálogo real (Safe 3 / Balanced 7 / Competitive 9 / Advanced 12 de 30) se calculó
+  aplicando `ProfileSelector.Allows` a los 30 JSON.
+
+---
+
+## 1. Auditoría primero (8.1): los dos tweaks YA existían
+
+Antes de escribir nada se auditó el catálogo. **`cs2.cpu-priority-high` y `cs2.fullscreen-optimizations-off`
+ya están implementados** y hacen exactamente lo que pide 8.3 y 8.4. No se duplicaron.
+
+| Tweak | JSON | Acción | Qué hace hoy |
+|---|---|---|---|
+| `cs2.cpu-priority-high` | `src/FragForge.Tweaks/Catalog/Cs2/cs2.cpu-priority-high.json:1` | `IfeoPerfOptions` con `{"imageName":"cs2.exe","priorityClass":3}` (líneas 29-34) | Escribe `CpuPriorityClass=3` (DWord) en `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\cs2.exe\PerfOptions` |
+| `cs2.fullscreen-optimizations-off` | `src/FragForge.Tweaks/Catalog/Cs2/cs2.fullscreen-optimizations-off.json:1` | `Registry` con `mode: AddToken` sobre `HKCU\...\AppCompatFlags\Layers`, nombre `{Cs2Executable}` (líneas 36-48) | Añade el token `DISABLEDXMAXIMIZEDWINDOWEDMODE` a la cadena existente |
+
+**Implementación de `cs2.cpu-priority-high`** (`src/FragForge.Actions/Registry/IfeoPerfOptionsAction.cs`):
+
+- `:14` — valida el nombre de imagen: rechaza `\`, `/`, `*`, `?`. Solo un nombre exacto.
+- `:15` — acepta solo las clases `1, 2, 3, 5, 6`. **Realtime (4) está prohibido explícitamente**, y
+  cualquier otra clase desconocida también.
+- `:16` — el único valor que escribe es `CpuPriorityClass`. **No toca `Debugger`** ni ningún otro valor,
+  así que no roza la denylist (`registryValueNames` incluye `Debugger`, `src/FragForge.Core/Policy/denylist.json`).
+- `:18-23` — Capture/Apply/Verify/Revert delegan en `RegistryAction`, que captura el valor previo
+  (incluido "no existía") y lo restaura o borra la clave creada.
+
+**Implementación de `cs2.fullscreen-optimizations-off`** (`src/FragForge.Actions/Registry/RegistryAction.cs`):
+
+- `:69-76` — modo `AddToken`: lee la cadena actual, comprueba si el token ya está (`HasToken`, **sin
+  duplicar**) y concatena con un espacio si falta. Conserva el prefijo `~` y los demás flags.
+- `:94-102` — Verify comprueba que el token está **y** que la cadena empieza por el original capturado.
+- `:103-110` — Revert restaura la cadena EXACTA capturada, o **borra el valor** si no existía.
+- R-H: el `HKCU` se resuelve con `TargetUserSid` → `RegistryPath.ResolveUserHive`
+  (`src/FragForge.Core/Persistence/RegistryPath.cs:30`).
+
+**Conclusión de 8.1:** los dos tweaks de 8.3 y 8.4 estaban hechos. Lo que **faltaba de verdad** en esta
+capa era 8.2 (resolución por `appmanifest`), 8.6 (inspector) y 8.7 (detección de proceso). No se tocó
+ninguno de los dos tweaks: cambiar lo que ya funciona sin medirlo habría sido peor.
+
+---
+
+## 2. Qué se construyó
+
+### 2.1 Resolución de cs2.exe (8.2)
+
+Se añadió, **sin tocar** el `IGameLocator` existente (R-A):
+
+| Archivo | Qué es |
+|---|---|
+| `src/FragForge.Core/Models/Cs2Resolution.cs:10` | Resultado con `ExecutablePath`, `Source` (motivo), `ProbedPaths`, `Candidates` |
+| `src/FragForge.Core/Abstractions/IContracts.cs:104` | `ICs2Resolver` — interfaz nueva y **aditiva** |
+| `src/FragForge.Actions/Files/SteamCs2Resolver.cs:24` | Implementación: registro → `libraryfolders.vdf` → `appmanifest_730.acf` → `installdir` → `game\bin\win64\cs2.exe` |
+
+Por qué una clase nueva y no arreglar `SteamGameLocator`: el locator existente busca la carpeta fija
+`steamapps\common\Counter-Strike Global Offensive` (`src/FragForge.Actions/Files/SteamGameLocator.cs:8`)
+y **no lee el `appmanifest`**. El resolvedor nuevo usa el `installdir` del manifiesto, así que funciona
+con la carpeta renombrada. Se deja el locator como está: lo consume el perfil de hardware y cambiarlo
+habría tocado el motor.
+
+Detalles que importan:
+
+- **Parser VDF**: reutiliza `ValveDataFormat` (`src/FragForge.Actions/Files/ValveDataFormat.cs:11`), que
+  ya estaba probado (`tests/FragForge.Tests/Steam/ValveDataFormatRealShapeTests.cs`).
+- **Barras dobles y con espacios**: `NormalizeDirectory` (`SteamCs2Resolver.cs:116`) convierte `/`→`\`,
+  colapsa `\\` (respetando el prefijo UNC) y quita la barra final.
+- **`installdir` validado**: `ParseInstallDir` (`SteamCs2Resolver.cs:156`) rechaza separadores y `..` para que un manifiesto
+  manipulado no pueda sacar el ejecutable de `steamapps\common`.
+- **Sin ruta adivinada**: si falta Steam, el manifiesto o el ejecutable, devuelve `null` con el motivo
+  escrito. Si hay **dos** instalaciones, devuelve `null` y las dos en `Candidates` (ambigüedad explícita).
+
+### 2.2 Inspector de solo lectura (8.6)
+
+| Archivo | Qué es |
+|---|---|
+| `src/FragForge.Core/Models/Cs2Inspection.cs:10` | Instantánea completa, todo de lectura |
+| `src/FragForge.Core/Models/Cs2ConfigParser.cs:20` | Parsers PUROS: `autoexec`, `.vcfg`, `cs2_video.txt`, refresh, conflictos |
+| `src/FragForge.Actions/Files/Cs2Inspector.cs:31` | Lee cuenta activa, `userdata`, cfg de la cuenta y LaunchOptions |
+| `src/FragForge.Cli/Cs2Commands.cs` | `fragforge cs2 inspect` |
+
+Lo que se lee y **cómo**:
+
+- **Cuenta activa**: `HKCU\Software\Valve\Steam\ActiveProcess\ActiveUser` (`Cs2Inspector.cs:162`). El valor
+  se normaliza desde `int`/`uint`/`long`/`string` (`Cs2Inspector.cs:158-175`), porque el registro devuelve un DWord y el
+  signo depende de cómo se lea.
+- **Carpeta de userdata**: `userdata\<cuenta>` comparando **por número** (`Cs2Inspector.cs:65`), no por texto: Steam
+  nombra las carpetas con el id de 32 bits, que es lo que hay en `ActiveUser`.
+- **Configuración**: `730\local\cfg\cs2_video.txt`, `cs2_convars.vcfg` y `autoexec.cfg` (`Cs2Inspector.cs:81-94`).
+- **Parseo por CLAVE** (R-C): `ParseVideoSettings` recorre el árbol y guarda la ruta de claves
+  (`bloque.clave`); `FindLeaf` busca por nombre en cualquier nivel. **Nunca por posición de línea.**
+- **Conflictos**: `FindConvarConflicts` (`Cs2ConfigParser.cs:128`) compara lo guardado con el `autoexec` y escribe los dos
+  valores en el mensaje. Es el caso medido: `fps_max` guardado en `0` y en autoexec en `64`.
+- **LaunchOptions**: se leen del `localconfig.vdf` **por clave** (`Cs2Inspector.cs:199-207`) y se muestran como texto. Se
+  muestra además un texto **recomendado** (`-novid -nojoy -console`, `Cs2Inspector.cs:36`) que **no se escribe**.
+
+**Lo que el inspector NO hace**, y hay un test que lo comprueba
+(`Cs2InspectorTests.Inspect_DoesNotModifyOrCreateAnything`): no abre ningún archivo en modo escritura, no
+crea archivos y no toca `localconfig.vdf`. El test compara la lista de archivos y el contenido byte a
+byte antes y después.
+
+### 2.3 Detección de CS2 en ejecución (8.7)
+
+`src/FragForge.Core/Engine/Cs2Process.cs:32`.
+
+- `IsRunning(IEnumerable<string>?)` es **pura**: compara nombres sin extensión, sin distinguir mayúsculas.
+- Devuelve `bool?`: **`null` = no se pudo comprobar**, que no es lo mismo que `false`. Un `false` inventado
+  haría que el modo sesión revirtiera con el juego abierto.
+- `IsRunningOnThisMachine()` (`Cs2Process.cs:49`) enumera con `Process.GetProcesses()` copiando el patrón de
+  `EnvironmentProbe.cs:24` (try/catch por proceso y `Dispose`). **No abre handles ni lee módulos.**
+- No usa ninguna API de Windows: la clase es `net10.0` pura, así que los tests la ejercitan en Linux.
+
+### 2.4 Descartado (8.5)
+
+`UserGpuPreferences` para cs2.exe: **no se implementa**. Con una sola GPU (Intel UHD) no hay elección que
+hacer y no hay efecto medible. Documentado en `docs/descartados.md`.
+
+---
+
+## 3. Tests añadidos
+
+| Archivo | Qué cubre |
+|---|---|
+| `tests/FragForge.Tests/Cs2/Cs2ResolutionTests.cs` | Rutas con espacios, varias bibliotecas, barras escapadas y dobles, `installdir` renombrado, `installdir` malicioso, sin Steam, dos instalaciones (ambiguo), manifiesto sin ejecutable |
+| `tests/FragForge.Tests/Cs2/Cs2InspectorTests.cs` | Parseo por clave, refresh (entero, fracción, basura), cultura invariante, autoexec con comentarios, conflictos, inspector completo, **no escribe nada** |
+| `tests/FragForge.Tests/Cs2/Cs2ProcessTests.cs` (en el mismo archivo de resolución) | `cs2`/`CS2`/`Cs2` sí, `csgo`/`steam`/`cs2.exe` no, lista vacía, **`null` = desconocido** |
+
+Los fixtures son los archivos reales de Steam con datos anonimizados. El sistema de archivos es una
+carpeta temporal, borrada en `Dispose`.
+
+---
+
+## 4. Qué NO se verificó
+
+- **Nada fue compilado ni ejecutado.** No hay `dotnet` en el entorno. Los tests están escritos, no pasados.
+- **IFEO y AppCompat no se probaron en Windows real.** No se comprobó que `CpuPriorityClass=3` cambie de
+  verdad la prioridad al crear el proceso, ni que `DISABLEDXMAXIMIZEDWINDOWEDMODE` altere la presentación.
+  Ambas cosas dependen del sistema y aquí no hay sistema.
+- **El `CpuPriorityClass=3` = High** se toma del valor ya presente en el catálogo; la fuente es la
+  documentación de IFEO PerfOptions. **No está verificado contra una máquina real en esta ronda.**
+- **No se ejecutó `fragforge cs2 inspect`** contra una instalación de Steam real. La lógica de lectura se
+  validó con fixtures, no con los archivos del usuario.
+- **No se comprobó el `localconfig.vdf` real**: es un archivo grande y con formato propio; el parser
+  tolerante (`VdfLike`) se escribió para él pero **no se probó con un archivo completo de verdad**.
+- **No se verificó el comportamiento del inspector si CS2 está abierto** mientras se leen los cfg: los
+  archivos podrían estar a medio escribir. No hay protección contra eso (es solo lectura, pero el valor
+  leído podría ser transitorio).
