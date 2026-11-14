@@ -26,6 +26,15 @@ public sealed class Cs2ResolutionTests : IDisposable
         Directory.CreateDirectory(_temp);
     }
 
+    /// <summary>
+    /// Raiz por omision que NO existe en ninguna maquina. Se pasa a <see cref="SteamCs2Resolver"/> en todos
+    /// los tests para que el sondeo de <c>ProgramFilesX86\\Steam</c> no se cuele: si la maquina que corre los
+    /// tests tiene Steam instalado de verdad, ese sondeo anade una instalacion REAL y cambia el resultado
+    /// (aparecen instalaciones de mas, o un Found que el test no esperaba). Pasaba en un equipo con Steam;
+    /// en CI, sin Steam, los tests salian verdes.
+    /// </summary>
+    private string NoSteamOnThisMachine => Path.Combine(_temp, "__no-existe__");
+
     public void Dispose()
     {
         try { Directory.Delete(_temp, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
@@ -109,7 +118,7 @@ public sealed class Cs2ResolutionTests : IDisposable
         var registry = new FakeRegistry();
         registry.Set(@"HKCU\Software\Valve\Steam", "SteamPath", "String", steam);
 
-        var resolution = await new SteamCs2Resolver(registry).ResolveAsync();
+        var resolution = await new SteamCs2Resolver(registry, NoSteamOnThisMachine).ResolveAsync();
 
         Assert.True(resolution.Found, resolution.Source);
         Assert.Equal(executable, resolution.ExecutablePath);
@@ -127,7 +136,7 @@ public sealed class Cs2ResolutionTests : IDisposable
         var registry = new FakeRegistry();
         registry.Set(@"HKCU\Software\Valve\Steam", "SteamPath", "String", steam);
 
-        var resolution = await new SteamCs2Resolver(registry).ResolveAsync();
+        var resolution = await new SteamCs2Resolver(registry, NoSteamOnThisMachine).ResolveAsync();
 
         Assert.True(resolution.Found, resolution.Source);
         Assert.Equal(executable, resolution.ExecutablePath);
@@ -137,7 +146,7 @@ public sealed class Cs2ResolutionTests : IDisposable
     public async Task Resolve_WithoutSteam_ReturnsNotFoundWithAReason_NotAGuess()
     {
         // Sin registro y sin carpeta por omision: no hay nada que probar.
-        var resolution = await new SteamCs2Resolver(new FakeRegistry()).ResolveAsync();
+        var resolution = await new SteamCs2Resolver(new FakeRegistry(), NoSteamOnThisMachine).ResolveAsync();
 
         Assert.True(!resolution.Found);
         Assert.Null(resolution.ExecutablePath);
@@ -157,7 +166,7 @@ public sealed class Cs2ResolutionTests : IDisposable
         var registry = new FakeRegistry();
         registry.Set(@"HKCU\Software\Valve\Steam", "SteamPath", "String", steam);
 
-        var resolution = await new SteamCs2Resolver(registry).ResolveAsync();
+        var resolution = await new SteamCs2Resolver(registry, NoSteamOnThisMachine).ResolveAsync();
 
         Assert.True(!resolution.Found, "con dos instalaciones no se elige una: se pide seleccion manual");
         Assert.True(resolution.Ambiguous);
@@ -175,7 +184,7 @@ public sealed class Cs2ResolutionTests : IDisposable
         var registry = new FakeRegistry();
         registry.Set(@"HKCU\Software\Valve\Steam", "SteamPath", "String", steam);
 
-        var resolution = await new SteamCs2Resolver(registry).ResolveAsync();
+        var resolution = await new SteamCs2Resolver(registry, NoSteamOnThisMachine).ResolveAsync();
 
         Assert.True(!resolution.Found);
         Assert.Empty(resolution.Candidates);

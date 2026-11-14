@@ -21,7 +21,7 @@ namespace FragForge.Actions.Files;
 /// aquí la carpeta sale del <c>installdir</c> del manifiesto, así que funciona con instalaciones
 /// renombradas o movidas.
 /// </summary>
-public sealed class SteamCs2Resolver(IRegistry registry) : ICs2Resolver
+public sealed class SteamCs2Resolver(IRegistry registry, string? defaultSteamRoot = null) : ICs2Resolver
 {
     /// <summary>App id de CS2 en Steam.</summary>
     public const string AppId = "730";
@@ -99,7 +99,11 @@ public sealed class SteamCs2Resolver(IRegistry registry) : ICs2Resolver
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* se prueba la siguiente fuente */ }
         }
 
-        var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam");
+        // Raiz por omision. Se puede FIJAR desde fuera (defaultSteamRoot) para que un test no dependa de si
+        // esta maquina tiene Steam instalado de verdad: sin poder fijarla, un equipo real con Steam rompe
+        // cualquier prueba que simule "sin Steam" o "una sola instalacion". En produccion va null y se usa
+        // ProgramFilesX86, que es el comportamiento de siempre.
+        var fallback = defaultSteamRoot ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam");
         probed.Add(fallback);
         if (Directory.Exists(fallback) && !roots.Contains(Path.GetFullPath(fallback), StringComparer.OrdinalIgnoreCase))
             roots.Add(Path.GetFullPath(fallback));
