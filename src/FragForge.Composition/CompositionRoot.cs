@@ -101,6 +101,8 @@ public static class CompositionRoot
         builder.Services.AddSingleton<IExecutionGate, FileExecutionGate>();
         // Capa 5.3 (R-J): preflight de BitLocker de SOLO LECTURA para cambios que reinician el enlace.
         builder.Services.AddSingleton<NetworkChangePreflight>();
+        // Capa 5.5: sonda ICMP. Se registra como singleton para que el CLI no dependa de un fallback.
+        builder.Services.AddSingleton<IPingProbe, SystemPingProbe>();
         builder.Services.AddSingleton<IPreflightService, PreflightService>();
         builder.Services.AddSingleton<ITweakEngine, TweakEngine>();
         builder.Services.AddSingleton<IReportService, ReportService>();

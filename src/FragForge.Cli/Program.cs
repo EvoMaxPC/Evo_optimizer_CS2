@@ -132,6 +132,8 @@ public static class Program
                     return await SessionCommands.RunAsync(host.Services, parsed, cancellation.Token);
                 case "probe":
                     return await MeasurementCommands.ProbeAsync(host.Services, parsed);
+                case "net":
+                    return await NetCommands.RunAsync(host.Services, parsed, cancellation.Token);
                 case "mouse-test":
                     return await MeasurementCommands.MouseTestAsync(host.Services, parsed);
                 case "mem-bench":
@@ -189,6 +191,8 @@ Uso:
   fragforge doctor [--json]
   fragforge tools verify [--json]
   fragforge probe [CLAVE] [--json]
+  fragforge net probe --host HOST [--count N] [--json]
+  fragforge net diagnose [--json]
   fragforge mouse-test [--duration 10] [--json]
   fragforge mem-bench [--json]
   fragforge baseline [--duration 120] [--runs 3] [--warmup 10] [--json]

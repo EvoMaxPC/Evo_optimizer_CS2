@@ -12,7 +12,7 @@ public sealed class ParsedArgs
 public static class CommandLineParser
 {
     private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply" };
-    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm" };
+    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count" };
     public static ParsedArgs Parse(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h" or "help") return new ParsedArgs { Command = "help" };
