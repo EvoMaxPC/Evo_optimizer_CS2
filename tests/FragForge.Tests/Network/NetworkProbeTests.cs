@@ -1,6 +1,7 @@
 using FragForge.Actions.Measurement;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Models;
+using FragForge.Tests.Fakes;
 using Xunit;
 
 namespace FragForge.Tests.Network;
@@ -167,6 +168,98 @@ public sealed class NetworkProbeTests
     /// Devuelve las respuestas indicadas y después las pérdidas. El plan se construye de una vez para que el
     /// número de éxitos y de fallos sea EXACTAMENTE el del test, sin depender del orden de llamada.
     /// </summary>
+    /// <summary>
+    /// 5.5: el estado EEE sale del adaptador elegido. Si la propiedad no existe, queda <c>null</c>, que en el
+    /// CLI se imprime como NA — nunca como "desactivado".
+    /// </summary>
+    [Fact]
+    public async Task Diagnose_ReadsTheCurrentEeeState_WhenThePropertyExists()
+    {
+        var reader = new ScriptedEeeReader("1");
+        var resolver = new OneAdapterResolver();
+
+        var diagnosis = await new NetworkProbe(resolver, new ScriptedPing([], 0), reader, StubRoute, StubIndex).DiagnoseAdapterAsync();
+
+        Assert.Equal("1", diagnosis.Adapter?.Eee);
+        Assert.Equal("*EEE", reader.LastKeyword);
+    }
+
+    /// <summary>Sin la propiedad, `Eee` es null (NA) y el diagnóstico NO falla por ello.</summary>
+    [Fact]
+    public async Task Diagnose_WithoutTheEeeProperty_ReportsNullNotDisabled()
+    {
+        var diagnosis = await new NetworkProbe(new OneAdapterResolver(), new ScriptedPing([], 0), new ScriptedEeeReader(null), StubRoute, StubIndex).DiagnoseAdapterAsync();
+
+        Assert.Null(diagnosis.Adapter?.Eee);
+    }
+
+    /// <summary>Si el lector lanza (PowerShell ausente, permisos), el diagnóstico sigue y EEE queda NA.</summary>
+    [Fact]
+    public async Task Diagnose_WhenReadingEeeFails_StillReturnsTheAdapter()
+    {
+        var diagnosis = await new NetworkProbe(new OneAdapterResolver(), new ScriptedPing([], 0), new ThrowingEeeReader(), StubRoute, StubIndex).DiagnoseAdapterAsync();
+
+        Assert.NotNull(diagnosis.Adapter);
+        Assert.Null(diagnosis.Adapter!.Eee);
+    }
+
+    /// <summary>Sin lector (parámetro opcional omitido) el diagnóstico funciona igual, con EEE en NA.</summary>
+    [Fact]
+    public async Task Diagnose_WithoutAPropertyReader_LeavesEeeUnknown()
+    {
+        var diagnosis = await new NetworkProbe(new OneAdapterResolver(), new ScriptedPing([], 0), null, StubRoute, StubIndex).DiagnoseAdapterAsync();
+
+        Assert.NotNull(diagnosis.Adapter);
+        Assert.Null(diagnosis.Adapter!.Eee);
+    }
+
+    /// <summary>Ruta por defecto falsa: el índice 7 es el de <see cref="OneAdapterResolver"/>.</summary>
+    private static int? StubRoute() => 7;
+
+    /// <summary>Todas las interfaces del doble resuelven al índice 7, sin tocar el stack real.</summary>
+    private static int StubIndex(string _) => 7;
+
+    private sealed class OneAdapterResolver : INetworkAdapterResolver
+    {
+        public Task<IReadOnlyList<NetworkAdapterIdentity>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<NetworkAdapterIdentity>>(
+            [
+                new NetworkAdapterIdentity
+                {
+                    Name = "Ethernet",
+                    Description = "Intel(R) Ethernet Controller I225-V",
+                    InterfaceGuid = "{d72a2249-535c-4478-9fdd-9b3a439f6395}",
+                    HardwareId = @"PCI\VEN_8086&DEV_15F3",
+                    Kind = NetworkKind.Ethernet,
+                    NdisPhysicalMedium = 14,
+                    IsPhysical = true,
+                    State = "2"
+                }
+            ]);
+
+        public Task<NetworkAdapterIdentity?> ResolveAsync(NetworkAdapterSelector selector, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NetworkAdapterIdentity?>(null);
+    }
+
+    private sealed class ScriptedEeeReader(string? value) : FragForge.Actions.Network.NetworkAdvancedPropertyReader(new FakeProcessRunner())
+    {
+        public string? LastKeyword { get; private set; }
+
+        public override Task<FragForge.Actions.Network.NetworkAdvancedProperty> ReadAsync(string interfaceGuid, string keyword, CancellationToken cancellationToken = default)
+        {
+            LastKeyword = keyword;
+            return Task.FromResult(value is null
+                ? FragForge.Actions.Network.NetworkAdvancedProperty.Missing(interfaceGuid, keyword)
+                : new FragForge.Actions.Network.NetworkAdvancedProperty { InterfaceGuid = interfaceGuid, Keyword = keyword, Exists = true, RegistryValue = value, ValidRegistryValues = ["0", "1"] });
+        }
+    }
+
+    private sealed class ThrowingEeeReader : FragForge.Actions.Network.NetworkAdvancedPropertyReader(new FakeProcessRunner())
+    {
+        public override Task<FragForge.Actions.Network.NetworkAdvancedProperty> ReadAsync(string interfaceGuid, string keyword, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("PowerShell no disponible (fake).");
+    }
+
     private sealed class ScriptedPing : IPingProbe
     {
         private readonly Queue<long?> _plan = new();

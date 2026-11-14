@@ -177,6 +177,12 @@ public sealed record NetworkAdapterIdentity
     public string State { get; init; } = "Unknown";
     /// <summary>¿Es el adaptador por el que sale la ruta por defecto? Lo resuelve el probe de diagnóstico (5.5).</summary>
     public bool? IsDefaultRoute { get; init; }
+
+    /// <summary>
+    /// Valor de registro de <c>*EEE</c> leído por el diagnóstico (solo lectura). <c>null</c> = no se sabe: la
+    /// propiedad no existe en este adaptador o no se pudo leer. <c>null</c> NO es "desactivado".
+    /// </summary>
+    public string? Eee { get; init; }
 }
 
 /// <summary>

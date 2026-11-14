@@ -357,3 +357,18 @@ texto**: para jugar, Ethernet; el Wi-Fi queda como respaldo.
 
 La velocidad y el estado **se leen, no se fuerzan**. Fijar una velocidad en un adaptador 2.5G puede dejar el
 enlace sin negociar y cortar la conexión de forma persistente.
+
+### "Adaptador por defecto = el único activo con puerta de enlace" — **descartado**
+
+Fue el primer criterio del diagnóstico de 5.5 y **está mal en esta PC**. Con el I225-V y la AX210 activos a la
+vez, ambos pueden tener gateway configurada, así que "el único con gateway" no encuentra ninguno y devuelve
+`null` para siempre. La puerta de enlace solo dice que el adaptador **puede** enrutar; no dice cuál eligió el
+stack para un destino concreto.
+
+Lo correcto es preguntárselo al stack: **`GetBestInterface`** (`iphlpapi.dll`) devuelve el índice de la interfaz
+que Windows usaría para alcanzar una dirección IPv4. Se consulta contra `192.0.2.1` (TEST-NET-1, reservado para
+documentación): **no se envía ni un paquete**, solo se pide la decisión de enrutado. Implementado en
+`src/FragForge.Actions/Measurement/DefaultRouteProbe.cs`.
+
+`NetworkInterface.GetAllNetworkInterfaces()` se sigue usando para el índice IPv4 de cada adaptador
+(`GetIPv4Properties().Index`), pero **no** para inferir la ruta.

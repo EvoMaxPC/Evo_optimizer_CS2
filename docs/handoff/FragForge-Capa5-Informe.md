@@ -19,7 +19,7 @@ su red.**
 | Tipo | Qué hace |
 |---|---|
 | `INetworkAdapterResolver` | `ListAsync()` y `ResolveAsync(selector)` por identidad de hardware. |
-| `NetworkAdapterIdentity` | `InterfaceGuid`, `NetCfgInstanceId`, `HardwareId` (`PnPDeviceID`), `NdisPhysicalMedium`, `LinkSpeedBitsPerSecond`, `Kind`, `State`, `IsDefaultRoute`. |
+| `NetworkAdapterIdentity` | `InterfaceGuid`, `NetCfgInstanceId`, `HardwareId` (`PnPDeviceID`), `NdisPhysicalMedium`, `LinkSpeedBitsPerSecond`, `Kind`, `State`, `IsDefaultRoute`, `Eee`. |
 | `NetworkAdapterSelector` | `InterfaceGuid`, `NetCfgInstanceId`, `HardwareIdContains`, y `HasHardwareIdentity`. |
 
 Implementación `src/FragForge.Actions/Network/WindowsNetworkAdapterResolver.cs`:
@@ -98,6 +98,11 @@ Implementación `src/FragForge.Actions/Network/WindowsNetworkAdapterResolver.cs`
 | DNS | No es latencia de flujo. | Descartado |
 | QoS DSCP | Depende del router. | Descartado |
 
+**"Ethernet para jugar" se muestra siempre**, no solo cuando la ruta por defecto resulta ser Wi-Fi. 5.4 pide
+mostrarla siempre y el CLI lo hace así: `net diagnose` imprime la recomendación en todas las ejecuciones en que
+haya adaptador resuelto, con independencia del tipo de medio detectado. Es texto, no un veredicto calculado: no
+depende del ping ni de la velocidad de enlace.
+
 ### Lo importante: dos candidatos chocaban con la denylist
 
 `denylist.json` protege en `networkPropertyKeywords`: `*DeviceSleepOnDisconnect`, `*WakeOnMagicPacket`,
@@ -114,12 +119,25 @@ un test que fija el rechazo keyword por keyword y otro que confirma que `*EEE` p
 
 `src/FragForge.Actions/Measurement/NetworkProbe.cs`.
 
-- Adaptador por la ruta por defecto: se cruzan las identidades del resolutor con `NetworkInterface` para ver cuál
-  tiene puerta de enlace. **Si hay más de un candidato, no se elige**: `Adapter = null` y nota explicando.
+- **Adaptador por la ruta por defecto: `GetBestInterface`**, no la puerta de enlace. Se pregunta a `iphlpapi`
+  por el índice de la mejor interfaz hacia `192.0.2.1` (TEST-NET-1, no se envía tráfico) y se cruza con el
+  índice IPv4 del adaptador (`NetworkInterface.GetIPv4Properties().Index`). Ver
+  `src/FragForge.Actions/Measurement/DefaultRouteProbe.cs`.
+  - **Por qué no la puerta de enlace:** se implementó primero "el único adaptador activo con gateway". En esta PC
+    el I225-V y la AX210 pueden tener **ambos** gateway, así que ese criterio devolvía `null` siempre. La puerta
+    de enlace dice que el adaptador **puede** enrutar; no dice que el stack lo esté haciendo. Eso solo lo
+    responde `GetBestInterface`.
+  - `BestInterfaceIndex` es nulo si `GetBestInterface` falla (sin ruta, sin red). 0 tampoco es un índice válido:
+    ambos casos dan `Adapter = null` con nota distinta, para no confundir "no hay ruta" con "no se miró".
+  - Los candidatos con gateway **siguen informándose** en `Candidates`, a título comparativo. Ya no deciden.
 - Tipo de medio por `NdisPhysicalMedium` con el mapeo existente **14 = Ethernet / 9 = Wi-Fi**, que se muestra
   junto al valor crudo y con la etiqueta **NO VERIFICADO en esta NIC**.
 - Velocidad de enlace real (`Speed`, cayendo a `MaxSpeed` solo si falta).
-- EEE actual: el `net diagnose` **no** lo escribe; se remite a `fragforge probe`.
+- **EEE actual: sí se lee** (5.5 lo pide explícitamente). `NetworkProbe` recibe un `NetworkAdvancedPropertyReader`
+  opcional y consulta `*EEE` en **solo lectura** sobre el adaptador elegido; el valor va a
+  `NetworkAdapterIdentity.Eee` y el CLI lo imprime como `EEE actual (*EEE): …`. Si la propiedad no existe en el
+  adaptador, si el adaptador no tiene `InterfaceGuid` o si la lectura falla, `Eee` queda `null` y el CLI imprime
+  **NA**: `null` **no** es "desactivado". Hay tres tests para esos tres caminos (existe / no existe / lanza).
 
 **Ping:** `NetworkProbe.MeasureAsync(host, count)` con `System.Net.NetworkInformation.Ping`.
 - **El host lo elige el usuario**; sin `--host` el comando devuelve error de uso. No hay hosts por defecto.
@@ -151,6 +169,16 @@ CLI: `fragforge net probe --host <h> --count <n>` y `fragforge net diagnose`, co
 | `INetworkAdapterController` | `src/FragForge.Core/Abstractions/IContracts.cs:87-91` | **no se cambió** (R-A) |
 | `INetworkAdapterResolver` (nueva) | `src/FragForge.Core/Abstractions/IContracts.cs:140` | 5.1 |
 | `NetworkAdapterIdentity` (nuevo) | `src/FragForge.Core/Abstractions/IContracts.cs:159` | identidad de hardware |
+| `NetworkAdapterIdentity.Eee` | `src/FragForge.Core/Abstractions/IContracts.cs:185` | EEE actual (solo lectura), `null` = NA |
+| `DefaultRouteProbe.GetBestInterfaceIndex` | `src/FragForge.Actions/Measurement/DefaultRouteProbe.cs:41` | ruta por defecto real |
+| `GetBestInterface` (P/Invoke) | `src/FragForge.Actions/Measurement/DefaultRouteProbe.cs:56-57` | `iphlpapi`, `System32` |
+| `NetworkProbe` ctor (5 parámetros, 3 opcionales) | `src/FragForge.Actions/Measurement/NetworkProbe.cs:30-35` | reader + inyección para tests |
+| `NetworkProbe.DiagnoseAdapterAsync` | `src/FragForge.Actions/Measurement/NetworkProbe.cs:71-72` | elige por índice, no por gateway |
+| `NetworkProbe.ReadEeeAsync` | `src/FragForge.Actions/Measurement/NetworkProbe.cs:120` | `*EEE`, `null` si falla |
+| `NetworkAdapterDiagnosis.Adapter` | `src/FragForge.Actions/Measurement/NetworkProbe.cs:279` | `Eee` incluido |
+| `NetCommands` → reader por DI | `src/FragForge.Cli/NetCommands.cs:44` | `GetService`, opcional |
+| CLI imprime EEE | `src/FragForge.Cli/NetCommands.cs:81` | `NA` ≠ desactivado |
+| CLI recomendación Ethernet | `src/FragForge.Cli/NetCommands.cs:83` | 5.4, siempre |
 | `NetworkAdapterSelector` (nuevo) | `src/FragForge.Core/Abstractions/IContracts.cs:186` | selector |
 | `IWmiQuery.QueryAsync` | `src/FragForge.Core/Abstractions/IContracts.cs:19-22` | firma del doble |
 | `IRegistry.*` | `src/FragForge.Core/Abstractions/IRegistry.cs:3-12` | NetCfgInstanceId |
@@ -222,3 +250,7 @@ CLI: `fragforge net probe --host <h> --count <n>` y `fragforge net diagnose`, co
 - **Ping**: no se lanzó ni un paquete. La estadística se validó con dobles y con cálculos en Python.
 - **Wi-Fi AX210**: no se enumeraron sus propiedades reales (ahorro de energía, roaming). Por eso queda como
   recomendación de texto y no como tweak.
+- **`GetBestInterface` en esta PC**: no se ejecutó. Se asume que devuelve el índice del I225-V mientras el cable
+  esté puesto, y el de la AX210 si se desconecta. La lógica está probada con dobles; el valor real no se leyó.
+- **`*EEE` real del I225-V**: el diagnóstico lo lee, pero nadie lo ha ejecutado contra la NIC. Si el driver no
+  expone `*EEE`, el CLI imprime NA y el diagnóstico sigue funcionando (hay test para ese camino).

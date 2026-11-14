@@ -36,7 +36,12 @@ public static class NetCommands
         }
 
         var ping = services.GetService<IPingProbe>() ?? new SystemPingProbe();
-        var probe = new NetworkProbe(services.GetRequiredService<Core.Abstractions.INetworkAdapterResolver>(), ping);
+        // El lector de propiedades se pasa para poder informar del estado EEE actual (5.5). Es opcional en el
+        // ctor del probe: si faltara, el diagnóstico sigue funcionando y EEE sale NA.
+        var probe = new NetworkProbe(
+            services.GetRequiredService<Core.Abstractions.INetworkAdapterResolver>(),
+            ping,
+            services.GetService<NetworkAdvancedPropertyReader>());
 
         return verb switch
         {
@@ -72,7 +77,10 @@ public static class NetCommands
         Console.WriteLine($"  Velocidad de enlace: {(adapter.LinkSpeedBitsPerSecond is null ? "Unknown" : (adapter.LinkSpeedBitsPerSecond.Value / 1_000_000.0).ToString("0.0", CultureInfo.InvariantCulture) + " Mbps")}");
         Console.WriteLine($"  Estado: {adapter.State}");
         Console.WriteLine("  " + diagnosis.Note);
-        Console.WriteLine("  EEE actual: se lee con `fragforge probe` (clave de la propiedad del adaptador); aquí no se escribe nada.");
+        // 5.5: estado EEE actual. Es de solo lectura; si no se pudo leer, se dice NA, no "desactivado".
+        Console.WriteLine($"  EEE actual (*EEE): {adapter.Eee ?? "NA (no expuesto o ilegible)"}");
+        // 5.4: la recomendación se muestra SIEMPRE, no solo cuando hay Wi-Fi.
+        Console.WriteLine("  Recomendación: para jugar, usa Ethernet. El Wi-Fi queda como respaldo.");
         return ExitCodes.Success;
     }
 
