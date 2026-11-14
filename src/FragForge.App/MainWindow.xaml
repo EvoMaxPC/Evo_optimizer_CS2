@@ -16,7 +16,7 @@
       <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
         <TextBlock Text="{Binding Localizer[profile.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
         <ComboBox Width="170" ItemsSource="{Binding Profiles}" DisplayMemberPath="Label"
-                  SelectedValue="{Binding SelectedProfile}" SelectedValuePath="Profile"
+                  SelectedValuePath="Profile" SelectedValue="{Binding SelectedProfile}"
                   ToolTip="{Binding TweakCountText}"/>
         <TextBlock Text="{Binding TweakCountText}" VerticalAlignment="Center" Margin="4,0,14,0"
                    Foreground="#9FB0C2" FontSize="12"/>
