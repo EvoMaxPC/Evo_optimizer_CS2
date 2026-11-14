@@ -76,11 +76,11 @@ public static class ExperimentReportRenderer
             builder.Append("</table>");
         }
 
-        builder.Append("<h2>Corridas</h2><table><tr><th>#</th><th>Brazo</th><th>Válida</th><th>avgFps</th><th>p1Low</th><th>P50 ms</th><th>P99 ms</th><th>Jitter ms</th><th>Stutter %</th><th>PresentMode</th></tr>");
+        builder.Append("<h2>Corridas</h2><table><tr><th>#</th><th>Brazo</th><th>Validez</th><th>avgFps</th><th>p1Low</th><th>P50 ms</th><th>P99 ms</th><th>Jitter ms</th><th>Stutter %</th><th>PresentMode</th></tr>");
         foreach (var run in allRuns.OrderBy(r => r.Index))
         {
             var m = run.Metrics;
-            builder.Append("<tr><td>").Append(run.Index + 1).Append("</td><td>").Append(E(run.Arm.ToString())).Append("</td><td>").Append(run.IsValid ? "sí" : "no — " + E(run.InvalidReason ?? "")).Append("</td>")
+            builder.Append("<tr><td>").Append(run.Index + 1).Append("</td><td>").Append(E(run.Arm.ToString())).Append("</td><td>").Append(ValidityCell(run)).Append("</td>")
                 .Append("<td>").Append(N(m?.AvgFps, "0.0")).Append("</td>")
                 .Append("<td>").Append(N(m?.P1Low, "0.0")).Append("</td>")
                 .Append("<td>").Append(N(m?.FrameTimeP50, "0.00")).Append("</td>")
@@ -116,6 +116,22 @@ public static class ExperimentReportRenderer
     private static string N(double? value, string format) => value is null ? "Unknown" : value.Value.ToString(format, CultureInfo.InvariantCulture);
 
     private static string E(string? value) => WebUtility.HtmlEncode(value ?? "");
+
+    /// <summary>
+    /// Celda de validez. Distingue las tres situaciones del contrato: válida, sospechosa (se informa,
+    /// no bloquea) e inválida (motivo por el que no entra en el veredicto).
+    /// </summary>
+    private static string ValidityCell(RunResult run)
+    {
+        if (!run.Validity.IsUsable)
+        {
+            var reasons = run.Validity.Reasons.Count > 0 ? string.Join("; ", run.Validity.Reasons) : run.InvalidReason ?? "sin detalle";
+            return "inválida — " + E(reasons);
+        }
+        if (!run.IsValid) return "no — " + E(run.InvalidReason ?? "");
+        if (run.Validity.IsSuspect) return "sospechosa — " + E(string.Join("; ", run.Validity.Reasons));
+        return "sí";
+    }
 
     /// <summary>ECDF de frametime por brazo, con la línea de presupuesto marcada.</summary>
     private static string DistributionSvg(ExperimentState state, RunResult[] runs)

@@ -229,14 +229,16 @@ public sealed class ExperimentRunner(
             if (series.FrameCount < 300) return new RunResult { RunId = runId, Arm = arm, Index = index, IsValid = false, InvalidReason = $"Solo {series.FrameCount} frames; mínimo 300.", StartedAt = started, FinishedAt = DateTimeOffset.UtcNow };
 
             var metrics = FrameMetricsCalculator.Compute(series, state.Plan.WarmupSeconds);
+            var validity = CaptureValidityGate.Evaluate(series, TimeSpan.FromSeconds(state.Plan.DurationSeconds), state.Environment?.RefreshRateHz);
             return new RunResult
             {
                 RunId = runId,
                 Arm = arm,
                 Index = index,
                 Metrics = metrics,
-                IsValid = metrics.AvgFps is not null,
-                InvalidReason = metrics.AvgFps is null ? "Sin frametimes utilizables." : null,
+                Validity = validity,
+                IsValid = metrics.AvgFps is not null && validity.IsUsable,
+                InvalidReason = metrics.AvgFps is null ? "Sin frametimes utilizables." : validity.IsUsable ? null : string.Join("; ", validity.Reasons),
                 DurationSeconds = state.Plan.DurationSeconds,
                 CsvPath = Path.Combine("runs", $"{runId}.csv"),
                 SensorCsvPath = sensorSeries.CsvPath is null ? null : Path.Combine("runs", Path.GetFileName(sensorSeries.CsvPath)),

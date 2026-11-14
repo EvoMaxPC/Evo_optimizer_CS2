@@ -14,6 +14,11 @@ public sealed record RunResult
     public RunMetrics? Metrics { get; init; }
     public bool IsValid { get; init; }
     public string? InvalidReason { get; init; }
+    /// <summary>
+    /// Validez de la captura (Valid/Suspect/Invalid). Campo ADITIVO: un JSON previo sin él se lee como
+    /// Valid sin motivos, que es exactamente el comportamiento anterior (R-B).
+    /// </summary>
+    public CaptureValidityReport Validity { get; init; } = CaptureValidityReport.Ok();
     public double DurationSeconds { get; init; }
     public string? CsvPath { get; init; }
     public string? SensorCsvPath { get; init; }
@@ -27,7 +32,16 @@ public sealed record ExperimentArm
 {
     public required ArmKind Kind { get; init; }
     public required IReadOnlyList<RunResult> Runs { get; init; }
-    public bool IsValid => Runs.Count > 0 && Runs.All(r => r.IsValid);
+    /// <summary>
+    /// Un brazo es válido si tiene corridas y ninguna es inválida. <c>Suspect</c> NO invalida el brazo:
+    /// se informa en el comparador, pero no bloquea el veredicto.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsValid => Runs.Count > 0 && Runs.All(r => r.IsValid && r.Validity.IsUsable);
+
+    /// <summary>Corridas sospechosas del brazo, para mostrarlas en el comparador A/B.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<RunResult> SuspectRuns => Runs.Where(r => r.Validity.IsSuspect).ToArray();
 
     /// <summary>Vector de una métrica sobre las corridas VÁLIDAS. Las inválidas no aportan ceros.</summary>
     public double[] Metric(Func<RunMetrics, double?> selector) => Runs.Where(r => r.IsValid && r.Metrics is not null)
