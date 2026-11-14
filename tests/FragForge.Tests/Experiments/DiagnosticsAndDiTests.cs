@@ -33,7 +33,7 @@ public sealed class Phase0Tests
     }
 
     [Fact]
-    public async Task DefaultDiagnosticProbes_AreEight_WithUniqueKeys()
+    public async Task DefaultDiagnosticProbes_IncludeTheEightBaseProbes_WithUniqueKeys()
     {
         using var directory = new TempDirectory();
         using var host = await CompositionRoot.BuildAsync(new ShellOptions(directory.Path, "es-MX", ConsoleLogging: false));
