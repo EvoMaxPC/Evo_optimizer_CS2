@@ -25,7 +25,7 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 
 ---
 
-## Contexto
+### Contexto
 
 Proyecto **FragForge**: optimizador profesional y **reversible** para Windows 11 orientado a Counter-Strike 2
 (FPS, estabilidad de frametime, latencia de entrada). Repo: `EvoMaxPC/Evo_optimizer_CS2`,
@@ -34,14 +34,14 @@ rama de trabajo `arena/c1a5f702-evo-optimizer-cs2` (base `main@41af03d`, entrega
 **La Capa 0 está terminada y verificada**: solución .NET 10 de 7 proyectos, compila con
 0 warnings / 0 errores y **103 tests xUnit pasan**. La Capa 1 (medición A/B) está diseñada pero **no implementada**.
 
-## Hardware objetivo (FIJO, no asumir otro)
+### Hardware objetivo (FIJO, no asumir otro)
 
 ASUS MiniPC PN64, BIOS AMI 3.12.00 UEFI · Intel i3-1220P (2P + 8E, 12 hilos, 28 W, híbrido con Thread Director) ·
 solo iGPU Intel UHD (sin NVIDIA/AMD) · 16 GB RAM (verificar dual-channel) · SSD Kingston SA400S37480G SATA ·
 Intel I225-V + Wi-Fi 6E AX210 · TPM 2.0 · SecureBoot/VBS/HVCI: **detectar, nunca asumir** ·
 Windows 11 Pro build 26200 (25H2), es-MX, UTC-3, usuario `ZuKA` · Atlas Playbook v0.5.0 ya aplicado.
 
-## Estructura
+### Estructura
 
 ```
 src/FragForge.Core/         motor puro, sin Windows: Models, Abstractions, Engine, Conditions,
@@ -56,7 +56,7 @@ src/FragForge.App/          WPF MVVM (CommunityToolkit.Mvvm 8.4.1), tema oscuro
 tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 ```
 
-## Invariantes que NO se pueden romper
+### Invariantes que NO se pueden romper
 
 1. **Reversibilidad exacta**: cada `ITweakAction` captura `ActionState` y restaura el estado previo,
    incluido *"el valor no existía"* ⇒ `DeleteValue` (+ limpieza de ancestros vacíos).
@@ -74,7 +74,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 9. `HKCU` se resuelve al SID interactivo (`HKU\<SID>`), nunca al hive del proceso elevado.
 10. **Cero placeholders**: todo archivo compila como está; `TreatWarningsAsErrors` activo en Core.
 
-## Decisiones ya tomadas (no re-litigar)
+### Decisiones ya tomadas (no re-litigar)
 
 * .NET 10 LTS (no 8: EOL nov-2026) · WPF + CommunityToolkit.Mvvm · M.E.Hosting/DI + Serilog ·
   System.Text.Json (`$actionState` como discriminador) · xUnit 2.9.3 · versiones centralizadas en
@@ -85,7 +85,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 * Publicación: `-r win-x64 --self-contained true -p:PublishSingleFile=true`; `RuntimeIdentifier` solo se
   aplica al pasar `-r` (así `dotnet build` de Core/Actions/Tweaks/Composition/Tests funciona en Linux).
 
-## Estado exacto de verificación
+### Estado exacto de verificación
 
 | Qué | Estado |
 |---|---|
@@ -96,7 +96,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 | `SystemRestoreService.GetProtectionStateAsync` | ⚠️ heurística no validada (`Win32_Volume` ↔ `Win32_ShadowStorage`); fallback `Unknown` |
 | Parseo de `bcdedit /enum {current} /v` en es-MX | ⚠️ por validar |
 
-## Pendiente inmediato (orden sugerido)
+### Pendiente inmediato (orden sugerido)
 
 1. **Validar en el PN64**: `fragforge doctor` → `scan` → `apply --profile Safe --dry-run` →
    aplicar 1 tweak → `status` → `revert --last` y comparar. Reportar cualquier desviación en WMI/parseo.
@@ -107,7 +107,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
    solo con A/B reproducible (≥ 3 × 120 s, medianas, misma demo/resolución/plan de energía).
 4. Firmar los binarios (SmartScreen) y adjuntar `docs/manual-revert.md` al instalador.
 
-## Comandos
+### Comandos rápidos
 
 ```powershell
 dotnet restore FragForge.sln
@@ -120,7 +120,7 @@ dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --se
 CLI: `fragforge scan|list|apply|revert|status|snapshot|export-report|doctor` — exit codes
 `0` éxito, `1` fallo, `2` uso, `3` preflight/catálogo, `4` cancelación, `5` rollback crítico.
 
-## Documentos de referencia
+### Documentos de referencia
 
 | Archivo | Contenido |
 |---|---|
@@ -267,234 +267,13 @@ tests/FragForge.Tests/Fakes/TestSupport.cs                              116 lín
 
 ---
 
-## 4. Comandos exactos de restore/build/test/publish
 
-### 4.1 En tu PC (Windows 11, red normal)
+---
 
-```powershell
-# Requisitos: .NET SDK 10.0.400 o superior; Visual Studio 2022 17.14+ (opcional, solo para la App)
-git clone https://github.com/EvoMaxPC/Evo_optimizer_CS2.git
-cd Evo_optimizer_CS2
-git checkout arena/c1a5f702-evo-optimizer-cs2
+## 3. Inventario de archivos (contenido completo)
 
-dotnet restore FragForge.sln
-dotnet build   FragForge.sln -c Release          # debe dar 0 warnings / 0 errores
-dotnet test    tests/FragForge.Tests/FragForge.Tests.csproj -c Release
-```
-
-### 4.2 Publicar los ejecutables (win-x64, self-contained, un solo archivo)
-
-```powershell
-dotnet publish src/FragForge.Cli/FragForge.Cli.csproj -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-  -p:PublishTrimmed=false -o publish\cli
-
-dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --self-contained true `
-  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
-  -p:PublishTrimmed=false -o publish\app
-```
-
-> **Nota importante:** `RuntimeIdentifier`, `SelfContained` y `PublishSingleFile` **solo** se aplican cuando se pasa `-r win-x64` (están condicionados en el `.csproj`). Así `dotnet build` funciona también en Linux/macOS para Core/Actions/Tweaks/Composition/Tests. La App WPF solo compila en Windows (o con `EnableWindowsTargeting` + *targeting pack* del SDK).
-
-Ambos binarios llevan `app.manifest` con `requestedExecutionLevel level="requireAdministrator"`, DPI awareness *per-monitor v2* y `supportedOS` Windows 10/11.
-
-### 4.3 Ejecución
-
-```powershell
-# CLI
-.\publish\cli\fragforge.exe doctor
-.\publish\cli\fragforge.exe scan
-.\publish\cli\fragforge.exe apply latency.mouse-acceleration-off --dry-run
-.\publish\cli\fragforge.exe apply --profile Balanced
-.\publish\cli\fragforge.exe status
-.\publish\cli\fragforge.exe revert --last
-.\publish\cli\fragforge.exe export-report --out "$env:USERPROFILE\Desktop\fragforge.html"
-
-# App
-.\publish\app\FragForge.exe
-```
-
-Códigos de salida: `0` éxito · `1` fallo · `2` uso · `3` preflight/catálogo · `4` cancelación · `5` rollback crítico.
-
-### 4.4 Comandos usados en el sandbox (solo referencia, Linux sin red a nuget.org)
-
-```bash
-export DOTNET_ROOT=/home/user/.fragforge-tools/dotnet
-D=$DOTNET_ROOT/dotnet
-$D restore FragForge.sln --configfile /home/user/.fragforge-tools/probe/nuget.config
-$D build   FragForge.sln -c Release --no-restore
-$D test    tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build
-$D src/FragForge.Cli/bin/Release/net10.0/fragforge.dll scan --data-root /tmp/ff
-```
-
-**Salida real del sandbox (verificado):**
-
-```text
-FragForge.Core        -> …/FragForge.Core.dll
-FragForge.Actions     -> …/FragForge.Actions.dll
-FragForge.Tweaks      -> …/FragForge.Tweaks.dll
-FragForge.Composition -> …/FragForge.Composition.dll
-FragForge.Tests       -> …/FragForge.Tests.dll
-FragForge.App         -> …/FragForge.dll
-FragForge.Cli         -> …/fragforge.dll
-Build succeeded.  0 Warning(s)  0 Error(s)
-
-Passed! - Failed: 0, Passed: 103, Skipped: 0, Total: 103
-```
-
-### 4.5 Primer uso recomendado en el PN64
-
-```powershell
-fragforge doctor                       # ¿preflight apto? ¿System Protection activa?
-fragforge scan                         # perfil de hardware + estado de los 10 tweaks
-fragforge apply --profile Safe --dry-run
-fragforge apply latency.mouse-acceleration-off      # 1 tweak, con punto de restauración
-fragforge status
-fragforge revert --last                 # verifica vuelta exacta al estado previo
-```
-
-## 5. Supuestos y limitaciones (honestas, verificables)
-
-### 5.1 Qué está verificado y qué no
-
-| Área | Estado | Detalle |
-|---|---|---|
-| Compilación de los 7 proyectos | **Verificado** (sandbox Linux, SDK 10.0.400) | 0 warnings / 0 errores, incluida la App WPF con `EnableWindowsTargeting`. |
-| 103 tests xUnit | **Verificado** | Motor, catálogo, acciones y composición sobre fakes. |
-| CLI (`scan`, `apply --dry-run`, `revert` lógico, `doctor`, códigos de salida) | **Verificado** en Linux | En Linux la plataforma se reporta no soportada y todo queda `NotApplicable` (por diseño). |
-| Adaptadores reales en Windows (registro, WMI, powercfg, bcdedit, servicios, tareas, NetAdapter, System Restore) | **NO ejecutado** aún | Requieren el PN64. Están aislados tras interfaces y cubiertos por fakes; quedan pendientes de la primera pasada real. |
-| `SystemRestoreService.GetProtectionStateAsync` | **Heurística no validada** | No existe API/WMI documentada para el estado de protección *por unidad*. Se usa `Win32_Volume` ↔ `Win32_ShadowStorage`, con *fallback* `Unknown`. Si `Unknown`, el preflight bloquea salvo `--no-restore-point` o `--enable-system-protection`. **Validar en el PN64 el primer día.** |
-| `bcdedit /enum {current} /v` para leer `disabledynamictick` | A validar | Si el elemento no aparece, se asume `existed=false` y el revert hará `bcdedit /deletevalue`. Verificar que el parseo funciona con la salida en es-MX. |
-| Detección de Atlas | Heurística de baja/media confianza | Organización en registro, carpeta `ProgramData\Atlas`, servicios SysMain/WSearch/Spooler/DiagTrack detenidos. **No** se afirma con certeza: solo se usa para *no pisar* cambios (`AppliedExternally`). |
-| Canal de RAM | **Unknown por defecto** | `Win32_PhysicalMemory` describe módulos, no el entrelazado. Dos DIMM no prueban dual-channel. El tweak de canales nunca se aplica sobre `Unknown`. |
-| PL1/PL2 | No disponible por WMI | En el PN64 los gobierna DTT/IPF (`WMIRegistrationService`). El profiler reporta `Unknown` con nota; **no se inventan valores**. |
-
-### 5.2 Limitaciones de diseño (deliberadas)
-
-1. **Sin medición.** La Capa 0 no mide FPS ni frametime. `cpu.power-throttling-off`, `latency.global-timer-resolution` y `power.fragforge-performance` están marcados Medium/opt-in precisamente porque su beneficio depende del equipo y puede empeorar temperatura/consumo. Se aplican solo en perfil Competitive/Advanced y con A/B en Capa 1.
-2. **`GlobalTimerResolutionRequests`** no es una API documentada como contrato público (sí el mecanismo `timeBeginPeriod`). Por eso evidencia Medium + advertencia de consumo.
-3. **IFEO `CpuPriorityClass`** puede no "pegarse" en algunas builds de Win11; el motor lo detecta porque hace `Verify` después de aplicar y, si no coincide, revierte y falla el tweak (no deja estado a medias).
-4. **El tweak de fullscreen optimizations** es Experimental: depende de flip model, ventana sin bordes y driver Intel. Requiere perfil Advanced + aceptación por ID + frase literal.
-5. **`mouse-acceleration-off` afecta a todo el escritorio** (no solo CS2) y requiere cerrar sesión. CS2 puede usar raw input y no verse afectado; el texto del tweak lo dice explícitamente.
-6. **La App WPF** no tiene visor de snapshots ni editor de catálogo (fuera del alcance de Capa 0): permite escanear, seleccionar, dry-run, aplicar, revertir, snapshot manual, doctor, exportar informe y ver logs.
-7. **Un solo usuario objetivo.** `HKCU` se resuelve al SID interactivo (`HKU\<SID>`), nunca al hive del proceso elevado. Si el SID no se resuelve, las acciones de usuario fallan en lugar de escribir en el lugar equivocado.
-8. **Sin compresión de snapshots.** `snapshot.json` incluye la definición completa + estados; para 10 tweaks es de pocos KB. `FileEdit` limita a 1 MiB por archivo para no inflar los snapshots.
-9. **Sin firma de código.** Los binarios no están firmados; SmartScreen puede advertir. No afecta a la lógica pero es requisito para distribución pública.
-10. **SHA-256 del journal no es defensa criptográfica fuerte** (no hay HMAC con secreto): detecta edición accidental o torpe, no un atacante con acceso administrativo. Con admin, todo es reconstruible de todos modos; el objetivo es la integridad operativa.
-
-### 5.3 Compatibilidad con Atlas Playbook v0.5.0
-
-* Atlas ya desactivó `SysMain`, `WSearch`, `Spooler`, `DiagTrack`: FragForge **lo detecta** (servicios no corriendo / valores ya presentes) y marca `AppliedExternally` **sin sobrescribir**, salvo `--force` explícito.
-* Ningún tweak de la Capa 0 toca los servicios que Atlas gestiona: el catálogo no contiene acciones `Service` en esta capa (la infraestructura existe y está probada, pero sin semillas que luchen contra Atlas).
-* Los tweaks con `opt-in` (plan de energía, EEE, fullscreen) quedan **fuera** de Balanced: no se aplican por accidente sobre una configuración ya ajustada.
-
-### 5.4 Riesgos residuales conocidos
-
-| Riesgo | Mitigación implementada |
-|---|---|
-| Rollback a medias por fallo de disco/permisos | Journal + snapshot en `%ProgramData%`; código de salida 5; guía manual en `docs/manual-revert.md`. |
-| Punto de restauración limitado a 24 h | Se pone `SystemRestorePointCreationFrequency=0` temporalmente y se restaura el valor original en `finally`. |
-| Protección del sistema desactivada | Preflight bloquea; `--enable-system-protection` la habilita y **verifica** que quedó activa antes de aplicar. |
-| Reinicio pendiente / TiWorker activo | Preflight bloquea; `--force` no lo omite. |
-| Cancelación a mitad de lote | El tweak en curso revierte; lo ya aplicado permanece y es reversible por snapshot (`--last`). |
-| Denylist insuficiente | Fusionable desde `%ProgramData%\FragForge\policy\denylist.json` sin recompilar. |
-
-## 6. Contrato para la Capa 1 (medición A/B y diagnóstico extendido)
-
-La Capa 1 **no necesita cambiar el motor**: los cuatro puntos de extensión ya existen y están tipados.
-
-### 6.1 Ganchos de experimento (`IExperimentHook`)
-
-```csharp
-public interface IExperimentHook
-{
-    int Order { get; }
-    Task<IReadOnlyList<ExperimentArtifact>> RunAsync(ExperimentContext context, CancellationToken cancellationToken = default);
-}
-public sealed record ExperimentContext(string OperationId, string? SnapshotId, ExperimentPhase Phase, TweakDefinition Tweak, HardwareProfile Hardware, DateTimeOffset Timestamp, string? ArtifactDirectory = null);
-public enum ExperimentPhase { BeforeApply, AfterApply, AfterRevert }
-```
-
-Semántica garantizada por `TweakEngine`:
-
-| Fase | Cuándo | Fallo |
-|---|---|---|
-| `BeforeApply` | Después del snapshot, **antes** de aplicar cualquier acción | **Fatal**: la aplicación se aborta y no se toca el sistema |
-| `AfterApply` | Tras `Verify` correcto de todas las acciones del tweak | **Advertencia** en `TweakApplyResult.Warnings`; no revierte |
-| `AfterRevert` | Tras `VerifyRevert` correcto | Advertencia |
-
-Cada hook recibe `ArtifactDirectory` (dentro del snapshot) y devuelve `ExperimentArtifact(Name, Path, ContentType)`; el motor escribe `HookCompleted` en el journal con la cuenta de artefactos.
-
-**Cómo enchufar PresentMon en Capa 1** (sin recompilar Core):
-
-```csharp
-public sealed class PresentMonBaselineHook(IProcessRunner runner) : IExperimentHook
-{
-    public int Order => 10;
-    public async Task<IReadOnlyList<ExperimentArtifact>> RunAsync(ExperimentContext ctx, CancellationToken ct)
-    {
-        var dir = ctx.ArtifactDirectory ?? throw new InvalidOperationException("sin directorio de artefactos");
-        var csv = Path.Combine(dir, $"presentmon-{ctx.Phase}-{ctx.Tweak.Id}.csv");
-        await runner.RunAsync(new ProcessRequest
-        {
-            FileName = "PresentMon.exe",
-            Arguments = ["--process_name", "cs2.exe", "--output_file", csv, "--terminate_on_proc_exit", "--stop_existing_session"],
-            Timeout = TimeSpan.FromMinutes(5)
-        }, ct);
-        return [new ExperimentArtifact("presentmon", csv, "text/csv")];
-    }
-}
-// registro:
-services.AddSingleton<IExperimentHook, PresentMonBaselineHook>();
-```
-
-> Regla de diseño para Capa 1: los hooks **no** pueden modificar el sistema. Si un hook necesita cambiar algo (p. ej. fijar afinidad para medir), debe ser un `ITweakAction` con captura/reversión, no un hook.
-
-### 6.2 Línea base de diagnóstico ya implementada (`InspectOnly`)
-
-El tweak `diagnostics.system-inspect` es **solo lectura** y alimenta el informe con `DiagnosticObservation(Key, Value, Source, Confidence, Note)`:
-
-| Clave | Fuente | Nota de honestidad |
-|---|---|---|
-| `hags` | `HwSchMode` | Ausente ⇒ "comportamiento predeterminado del driver", no "desactivado" |
-| `mpo` | `OverlayTestMode` | Solo `5` se interpreta como override conocido |
-| `vbs` / `hvci` | DeviceGuard WMI + registro | `Unknown` si no hay evidencia |
-| `secureBoot` | Registro + `Confirm-SecureBootUEFI` | `Unknown` si falla la consulta |
-| `dualChannel` | `Win32_PhysicalMemory` | **Nunca** infiere dual desde 2 módulos |
-| `powerLimits` | PL1/PL2 | `Unknown` si DTT/IPF gobierna (caso PN64) |
-| `ssdHealth` | `MSFT_PhysicalDisk` + SMART | Salud básica, no sustituye análisis completo |
-
-Para Capa 1 se añaden probes nuevos **sin tocar el motor**: implementan `IDiagnosticProbe` (`string Key`, `Task<DiagnosticObservation> ReadAsync(HardwareProfile, CancellationToken)`) y se registran en `DiagnosticProbeFactory`/DI. Candidatos: `dpcIsr` (ETW/xperf), `temperature` (LibreHardwareMonitor opcional, nunca driver propio), `frametime` (PresentMon), `powerDraw` (MSR solo si se decide explícitamente y con advertencia).
-
-### 6.3 Informe listo para Capa 1 (`export-report`)
-
-`ReportDocument` (JSON schema version 1) ya contiene todo lo que un motor de A/B necesita como contexto:
-
-```csharp
-public sealed record ReportDocument(
-    int SchemaVersion, DateTimeOffset CreatedAt, string ApplicationVersion,
-    HardwareProfile Hardware, IReadOnlyList<TweakStatus> Tweaks, PreflightReport Preflight,
-    IReadOnlyList<SnapshotListItem> Snapshots, JournalIntegrity JournalIntegrity,
-    IReadOnlyList<JournalEntry> RecentJournal);
-```
-
-`export-report --out x.html|json` produce ambos formatos. Los `TweakStatus` incluyen `Observations` (de `InspectOnly`), de modo que un experimento A/B puede correlacionar "antes/después" con el estado real de HAGS/VBS/plan de energía.
-
-### 6.4 Datos que la Capa 1 debe añadir (contrato concreto)
-
-1. **`BenchmarkSession`** ya está modelado (`Id`, `Label`, `Measurements`, `Artifacts`) y `BenchmarkMeasurement(Metric, Value, Unit, Metadata)`. Métricas previstas: `avgFps`, `p1Low`, `p01Low`, `frametimeP99`, `gpuBusyP95`, `cpuBusyP95`, `dpcTime`, `isrTime`, `cpuPackageTempC`, `packagePowerW`, `vramUsedMb`.
-2. **Persistencia propuesta:** `%ProgramData%\FragForge\experiments\<sessionId>\` con `session.json` + CSV de PresentMon + captura de diagnóstico, referenciando `SnapshotId` y `OperationId`.
-3. **Regla estadística mínima:** misma escena/demo, misma resolución y plan de energía, ≥ 3 repeticiones de 120 s, comparación por mediana y reporte de dispersión. **Sin esto, ningún tweak se promociona de Medium a High.**
-4. **Promoción de evidencia:** un tweak solo sube de `EvidenceLevel` si un experimento A/B reproducible en el PN64 muestra mejora fuera del ruido; en caso contrario se degrada o se retira (política anti-placebo).
-5. **Seguridad:** la Capa 1 no debe leer memoria de `cs2.exe` ni inyectar código. PresentMon usa ETW del sistema operativo (compatible con VAC/FACEIT); cualquier otra vía queda descartada por diseño.
-
-### 6.5 Puntos de extensión que **no** deben romperse
-
-* `ITweakAction` (7 métodos) y el discriminador `$actionState` de `ActionState`.
-* `ITweakActionFactory.Create` y el registro de 10 tipos (`Registry`, `IfeoPerfOptions`, `Service`, `ScheduledTask`, `PowerPlan`, `Bcdedit`, `NetAdapterProperty`, `FileEdit`, `PowerShell`, `InspectOnly`).
-* Formato de `SystemSnapshot` (`SchemaVersion = 1`) y de `JournalEntry` (cadena `PreviousHash`/`Hash`): cambiarlos exige migración.
-* Rutas bajo `%ProgramData%\FragForge\` (`snapshots`, `journal`, `logs`, `reports`, `policy`, `.fragforge.lock`).
-* Los códigos de salida del CLI (0/1/2/3/4/5) y la frase de riesgo literal `ACEPTO EL RIESGO`.
+Cada bloque indica la ruta relativa al repo y contiene el archivo **íntegro**, sin recortes ni elipsis.
+Los 122 archivos versionados están cubiertos en las secciones 3a–3i.
 
 ---
 
@@ -9398,6 +9177,243 @@ Los 10 seeds están en `src/FragForge.Tweaks/Catalog/<Categoría>/` y su conteni
 
 ---
 
+---
+
+## 4. Comandos exactos de restore/build/test/publish
+
+### 4.1 En tu PC (Windows 11, red normal)
+
+```powershell
+# Requisitos: .NET SDK 10.0.400 o superior; Visual Studio 2022 17.14+ (opcional, solo para la App)
+git clone https://github.com/EvoMaxPC/Evo_optimizer_CS2.git
+cd Evo_optimizer_CS2
+git checkout arena/c1a5f702-evo-optimizer-cs2
+
+dotnet restore FragForge.sln
+dotnet build   FragForge.sln -c Release          # debe dar 0 warnings / 0 errores
+dotnet test    tests/FragForge.Tests/FragForge.Tests.csproj -c Release
+```
+
+### 4.2 Publicar los ejecutables (win-x64, self-contained, un solo archivo)
+
+```powershell
+dotnet publish src/FragForge.Cli/FragForge.Cli.csproj -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+  -p:PublishTrimmed=false -o publish\cli
+
+dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --self-contained true `
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true `
+  -p:PublishTrimmed=false -o publish\app
+```
+
+> **Nota importante:** `RuntimeIdentifier`, `SelfContained` y `PublishSingleFile` **solo** se aplican cuando se pasa `-r win-x64` (están condicionados en el `.csproj`). Así `dotnet build` funciona también en Linux/macOS para Core/Actions/Tweaks/Composition/Tests. La App WPF solo compila en Windows (o con `EnableWindowsTargeting` + *targeting pack* del SDK).
+
+Ambos binarios llevan `app.manifest` con `requestedExecutionLevel level="requireAdministrator"`, DPI awareness *per-monitor v2* y `supportedOS` Windows 10/11.
+
+### 4.3 Ejecución
+
+```powershell
+# CLI
+.\publish\cli\fragforge.exe doctor
+.\publish\cli\fragforge.exe scan
+.\publish\cli\fragforge.exe apply latency.mouse-acceleration-off --dry-run
+.\publish\cli\fragforge.exe apply --profile Balanced
+.\publish\cli\fragforge.exe status
+.\publish\cli\fragforge.exe revert --last
+.\publish\cli\fragforge.exe export-report --out "$env:USERPROFILE\Desktop\fragforge.html"
+
+# App
+.\publish\app\FragForge.exe
+```
+
+Códigos de salida: `0` éxito · `1` fallo · `2` uso · `3` preflight/catálogo · `4` cancelación · `5` rollback crítico.
+
+### 4.4 Comandos usados en el sandbox (solo referencia, Linux sin red a nuget.org)
+
+```bash
+export DOTNET_ROOT=/home/user/.fragforge-tools/dotnet
+D=$DOTNET_ROOT/dotnet
+$D restore FragForge.sln --configfile /home/user/.fragforge-tools/probe/nuget.config
+$D build   FragForge.sln -c Release --no-restore
+$D test    tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build
+$D src/FragForge.Cli/bin/Release/net10.0/fragforge.dll scan --data-root /tmp/ff
+```
+
+**Salida real del sandbox (verificado):**
+
+```text
+FragForge.Core        -> …/FragForge.Core.dll
+FragForge.Actions     -> …/FragForge.Actions.dll
+FragForge.Tweaks      -> …/FragForge.Tweaks.dll
+FragForge.Composition -> …/FragForge.Composition.dll
+FragForge.Tests       -> …/FragForge.Tests.dll
+FragForge.App         -> …/FragForge.dll
+FragForge.Cli         -> …/fragforge.dll
+Build succeeded.  0 Warning(s)  0 Error(s)
+
+Passed! - Failed: 0, Passed: 103, Skipped: 0, Total: 103
+```
+
+### 4.5 Primer uso recomendado en el PN64
+
+```powershell
+fragforge doctor                       # ¿preflight apto? ¿System Protection activa?
+fragforge scan                         # perfil de hardware + estado de los 10 tweaks
+fragforge apply --profile Safe --dry-run
+fragforge apply latency.mouse-acceleration-off      # 1 tweak, con punto de restauración
+fragforge status
+fragforge revert --last                 # verifica vuelta exacta al estado previo
+```
+
+## 5. Supuestos y limitaciones (honestas, verificables)
+
+### 5.1 Qué está verificado y qué no
+
+| Área | Estado | Detalle |
+|---|---|---|
+| Compilación de los 7 proyectos | **Verificado** (sandbox Linux, SDK 10.0.400) | 0 warnings / 0 errores, incluida la App WPF con `EnableWindowsTargeting`. |
+| 103 tests xUnit | **Verificado** | Motor, catálogo, acciones y composición sobre fakes. |
+| CLI (`scan`, `apply --dry-run`, `revert` lógico, `doctor`, códigos de salida) | **Verificado** en Linux | En Linux la plataforma se reporta no soportada y todo queda `NotApplicable` (por diseño). |
+| Adaptadores reales en Windows (registro, WMI, powercfg, bcdedit, servicios, tareas, NetAdapter, System Restore) | **NO ejecutado** aún | Requieren el PN64. Están aislados tras interfaces y cubiertos por fakes; quedan pendientes de la primera pasada real. |
+| `SystemRestoreService.GetProtectionStateAsync` | **Heurística no validada** | No existe API/WMI documentada para el estado de protección *por unidad*. Se usa `Win32_Volume` ↔ `Win32_ShadowStorage`, con *fallback* `Unknown`. Si `Unknown`, el preflight bloquea salvo `--no-restore-point` o `--enable-system-protection`. **Validar en el PN64 el primer día.** |
+| `bcdedit /enum {current} /v` para leer `disabledynamictick` | A validar | Si el elemento no aparece, se asume `existed=false` y el revert hará `bcdedit /deletevalue`. Verificar que el parseo funciona con la salida en es-MX. |
+| Detección de Atlas | Heurística de baja/media confianza | Organización en registro, carpeta `ProgramData\Atlas`, servicios SysMain/WSearch/Spooler/DiagTrack detenidos. **No** se afirma con certeza: solo se usa para *no pisar* cambios (`AppliedExternally`). |
+| Canal de RAM | **Unknown por defecto** | `Win32_PhysicalMemory` describe módulos, no el entrelazado. Dos DIMM no prueban dual-channel. El tweak de canales nunca se aplica sobre `Unknown`. |
+| PL1/PL2 | No disponible por WMI | En el PN64 los gobierna DTT/IPF (`WMIRegistrationService`). El profiler reporta `Unknown` con nota; **no se inventan valores**. |
+
+### 5.2 Limitaciones de diseño (deliberadas)
+
+1. **Sin medición.** La Capa 0 no mide FPS ni frametime. `cpu.power-throttling-off`, `latency.global-timer-resolution` y `power.fragforge-performance` están marcados Medium/opt-in precisamente porque su beneficio depende del equipo y puede empeorar temperatura/consumo. Se aplican solo en perfil Competitive/Advanced y con A/B en Capa 1.
+2. **`GlobalTimerResolutionRequests`** no es una API documentada como contrato público (sí el mecanismo `timeBeginPeriod`). Por eso evidencia Medium + advertencia de consumo.
+3. **IFEO `CpuPriorityClass`** puede no "pegarse" en algunas builds de Win11; el motor lo detecta porque hace `Verify` después de aplicar y, si no coincide, revierte y falla el tweak (no deja estado a medias).
+4. **El tweak de fullscreen optimizations** es Experimental: depende de flip model, ventana sin bordes y driver Intel. Requiere perfil Advanced + aceptación por ID + frase literal.
+5. **`mouse-acceleration-off` afecta a todo el escritorio** (no solo CS2) y requiere cerrar sesión. CS2 puede usar raw input y no verse afectado; el texto del tweak lo dice explícitamente.
+6. **La App WPF** no tiene visor de snapshots ni editor de catálogo (fuera del alcance de Capa 0): permite escanear, seleccionar, dry-run, aplicar, revertir, snapshot manual, doctor, exportar informe y ver logs.
+7. **Un solo usuario objetivo.** `HKCU` se resuelve al SID interactivo (`HKU\<SID>`), nunca al hive del proceso elevado. Si el SID no se resuelve, las acciones de usuario fallan en lugar de escribir en el lugar equivocado.
+8. **Sin compresión de snapshots.** `snapshot.json` incluye la definición completa + estados; para 10 tweaks es de pocos KB. `FileEdit` limita a 1 MiB por archivo para no inflar los snapshots.
+9. **Sin firma de código.** Los binarios no están firmados; SmartScreen puede advertir. No afecta a la lógica pero es requisito para distribución pública.
+10. **SHA-256 del journal no es defensa criptográfica fuerte** (no hay HMAC con secreto): detecta edición accidental o torpe, no un atacante con acceso administrativo. Con admin, todo es reconstruible de todos modos; el objetivo es la integridad operativa.
+
+### 5.3 Compatibilidad con Atlas Playbook v0.5.0
+
+* Atlas ya desactivó `SysMain`, `WSearch`, `Spooler`, `DiagTrack`: FragForge **lo detecta** (servicios no corriendo / valores ya presentes) y marca `AppliedExternally` **sin sobrescribir**, salvo `--force` explícito.
+* Ningún tweak de la Capa 0 toca los servicios que Atlas gestiona: el catálogo no contiene acciones `Service` en esta capa (la infraestructura existe y está probada, pero sin semillas que luchen contra Atlas).
+* Los tweaks con `opt-in` (plan de energía, EEE, fullscreen) quedan **fuera** de Balanced: no se aplican por accidente sobre una configuración ya ajustada.
+
+### 5.4 Riesgos residuales conocidos
+
+| Riesgo | Mitigación implementada |
+|---|---|
+| Rollback a medias por fallo de disco/permisos | Journal + snapshot en `%ProgramData%`; código de salida 5; guía manual en `docs/manual-revert.md`. |
+| Punto de restauración limitado a 24 h | Se pone `SystemRestorePointCreationFrequency=0` temporalmente y se restaura el valor original en `finally`. |
+| Protección del sistema desactivada | Preflight bloquea; `--enable-system-protection` la habilita y **verifica** que quedó activa antes de aplicar. |
+| Reinicio pendiente / TiWorker activo | Preflight bloquea; `--force` no lo omite. |
+| Cancelación a mitad de lote | El tweak en curso revierte; lo ya aplicado permanece y es reversible por snapshot (`--last`). |
+| Denylist insuficiente | Fusionable desde `%ProgramData%\FragForge\policy\denylist.json` sin recompilar. |
+
+## 6. Contrato para la Capa 1 (medición A/B y diagnóstico extendido)
+
+La Capa 1 **no necesita cambiar el motor**: los cuatro puntos de extensión ya existen y están tipados.
+
+### 6.1 Ganchos de experimento (`IExperimentHook`)
+
+```csharp
+public interface IExperimentHook
+{
+    int Order { get; }
+    Task<IReadOnlyList<ExperimentArtifact>> RunAsync(ExperimentContext context, CancellationToken cancellationToken = default);
+}
+public sealed record ExperimentContext(string OperationId, string? SnapshotId, ExperimentPhase Phase, TweakDefinition Tweak, HardwareProfile Hardware, DateTimeOffset Timestamp, string? ArtifactDirectory = null);
+public enum ExperimentPhase { BeforeApply, AfterApply, AfterRevert }
+```
+
+Semántica garantizada por `TweakEngine`:
+
+| Fase | Cuándo | Fallo |
+|---|---|---|
+| `BeforeApply` | Después del snapshot, **antes** de aplicar cualquier acción | **Fatal**: la aplicación se aborta y no se toca el sistema |
+| `AfterApply` | Tras `Verify` correcto de todas las acciones del tweak | **Advertencia** en `TweakApplyResult.Warnings`; no revierte |
+| `AfterRevert` | Tras `VerifyRevert` correcto | Advertencia |
+
+Cada hook recibe `ArtifactDirectory` (dentro del snapshot) y devuelve `ExperimentArtifact(Name, Path, ContentType)`; el motor escribe `HookCompleted` en el journal con la cuenta de artefactos.
+
+**Cómo enchufar PresentMon en Capa 1** (sin recompilar Core):
+
+```csharp
+public sealed class PresentMonBaselineHook(IProcessRunner runner) : IExperimentHook
+{
+    public int Order => 10;
+    public async Task<IReadOnlyList<ExperimentArtifact>> RunAsync(ExperimentContext ctx, CancellationToken ct)
+    {
+        var dir = ctx.ArtifactDirectory ?? throw new InvalidOperationException("sin directorio de artefactos");
+        var csv = Path.Combine(dir, $"presentmon-{ctx.Phase}-{ctx.Tweak.Id}.csv");
+        await runner.RunAsync(new ProcessRequest
+        {
+            FileName = "PresentMon.exe",
+            Arguments = ["--process_name", "cs2.exe", "--output_file", csv, "--terminate_on_proc_exit", "--stop_existing_session"],
+            Timeout = TimeSpan.FromMinutes(5)
+        }, ct);
+        return [new ExperimentArtifact("presentmon", csv, "text/csv")];
+    }
+}
+// registro:
+services.AddSingleton<IExperimentHook, PresentMonBaselineHook>();
+```
+
+> Regla de diseño para Capa 1: los hooks **no** pueden modificar el sistema. Si un hook necesita cambiar algo (p. ej. fijar afinidad para medir), debe ser un `ITweakAction` con captura/reversión, no un hook.
+
+### 6.2 Línea base de diagnóstico ya implementada (`InspectOnly`)
+
+El tweak `diagnostics.system-inspect` es **solo lectura** y alimenta el informe con `DiagnosticObservation(Key, Value, Source, Confidence, Note)`:
+
+| Clave | Fuente | Nota de honestidad |
+|---|---|---|
+| `hags` | `HwSchMode` | Ausente ⇒ "comportamiento predeterminado del driver", no "desactivado" |
+| `mpo` | `OverlayTestMode` | Solo `5` se interpreta como override conocido |
+| `vbs` / `hvci` | DeviceGuard WMI + registro | `Unknown` si no hay evidencia |
+| `secureBoot` | Registro + `Confirm-SecureBootUEFI` | `Unknown` si falla la consulta |
+| `dualChannel` | `Win32_PhysicalMemory` | **Nunca** infiere dual desde 2 módulos |
+| `powerLimits` | PL1/PL2 | `Unknown` si DTT/IPF gobierna (caso PN64) |
+| `ssdHealth` | `MSFT_PhysicalDisk` + SMART | Salud básica, no sustituye análisis completo |
+
+Para Capa 1 se añaden probes nuevos **sin tocar el motor**: implementan `IDiagnosticProbe` (`string Key`, `Task<DiagnosticObservation> ReadAsync(HardwareProfile, CancellationToken)`) y se registran en `DiagnosticProbeFactory`/DI. Candidatos: `dpcIsr` (ETW/xperf), `temperature` (LibreHardwareMonitor opcional, nunca driver propio), `frametime` (PresentMon), `powerDraw` (MSR solo si se decide explícitamente y con advertencia).
+
+### 6.3 Informe listo para Capa 1 (`export-report`)
+
+`ReportDocument` (JSON schema version 1) ya contiene todo lo que un motor de A/B necesita como contexto:
+
+```csharp
+public sealed record ReportDocument(
+    int SchemaVersion, DateTimeOffset CreatedAt, string ApplicationVersion,
+    HardwareProfile Hardware, IReadOnlyList<TweakStatus> Tweaks, PreflightReport Preflight,
+    IReadOnlyList<SnapshotListItem> Snapshots, JournalIntegrity JournalIntegrity,
+    IReadOnlyList<JournalEntry> RecentJournal);
+```
+
+`export-report --out x.html|json` produce ambos formatos. Los `TweakStatus` incluyen `Observations` (de `InspectOnly`), de modo que un experimento A/B puede correlacionar "antes/después" con el estado real de HAGS/VBS/plan de energía.
+
+### 6.4 Datos que la Capa 1 debe añadir (contrato concreto)
+
+1. **`BenchmarkSession`** ya está modelado (`Id`, `Label`, `Measurements`, `Artifacts`) y `BenchmarkMeasurement(Metric, Value, Unit, Metadata)`. Métricas previstas: `avgFps`, `p1Low`, `p01Low`, `frametimeP99`, `gpuBusyP95`, `cpuBusyP95`, `dpcTime`, `isrTime`, `cpuPackageTempC`, `packagePowerW`, `vramUsedMb`.
+2. **Persistencia propuesta:** `%ProgramData%\FragForge\experiments\<sessionId>\` con `session.json` + CSV de PresentMon + captura de diagnóstico, referenciando `SnapshotId` y `OperationId`.
+3. **Regla estadística mínima:** misma escena/demo, misma resolución y plan de energía, ≥ 3 repeticiones de 120 s, comparación por mediana y reporte de dispersión. **Sin esto, ningún tweak se promociona de Medium a High.**
+4. **Promoción de evidencia:** un tweak solo sube de `EvidenceLevel` si un experimento A/B reproducible en el PN64 muestra mejora fuera del ruido; en caso contrario se degrada o se retira (política anti-placebo).
+5. **Seguridad:** la Capa 1 no debe leer memoria de `cs2.exe` ni inyectar código. PresentMon usa ETW del sistema operativo (compatible con VAC/FACEIT); cualquier otra vía queda descartada por diseño.
+
+### 6.5 Puntos de extensión que **no** deben romperse
+
+* `ITweakAction` (7 métodos) y el discriminador `$actionState` de `ActionState`.
+* `ITweakActionFactory.Create` y el registro de 10 tipos (`Registry`, `IfeoPerfOptions`, `Service`, `ScheduledTask`, `PowerPlan`, `Bcdedit`, `NetAdapterProperty`, `FileEdit`, `PowerShell`, `InspectOnly`).
+* Formato de `SystemSnapshot` (`SchemaVersion = 1`) y de `JournalEntry` (cadena `PreviousHash`/`Hash`): cambiarlos exige migración.
+* Rutas bajo `%ProgramData%\FragForge\` (`snapshots`, `journal`, `logs`, `reports`, `policy`, `.fragforge.lock`).
+* Los códigos de salida del CLI (0/1/2/3/4/5) y la frase de riesgo literal `ACEPTO EL RIESGO`.
+
+---
+
+---
+
 ## Fin del informe
 
 Generado desde el árbol de trabajo del commit `a2c5429` de la rama `arena/c1a5f702-evo-optimizer-cs2`.
+
+---

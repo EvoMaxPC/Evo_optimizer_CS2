@@ -5,7 +5,7 @@
 
 ---
 
-## Contexto
+### Contexto
 
 Proyecto **FragForge**: optimizador profesional y **reversible** para Windows 11 orientado a Counter-Strike 2
 (FPS, estabilidad de frametime, latencia de entrada). Repo: `EvoMaxPC/Evo_optimizer_CS2`,
@@ -14,14 +14,14 @@ rama de trabajo `arena/c1a5f702-evo-optimizer-cs2` (base `main@41af03d`, entrega
 **La Capa 0 está terminada y verificada**: solución .NET 10 de 7 proyectos, compila con
 0 warnings / 0 errores y **103 tests xUnit pasan**. La Capa 1 (medición A/B) está diseñada pero **no implementada**.
 
-## Hardware objetivo (FIJO, no asumir otro)
+### Hardware objetivo (FIJO, no asumir otro)
 
 ASUS MiniPC PN64, BIOS AMI 3.12.00 UEFI · Intel i3-1220P (2P + 8E, 12 hilos, 28 W, híbrido con Thread Director) ·
 solo iGPU Intel UHD (sin NVIDIA/AMD) · 16 GB RAM (verificar dual-channel) · SSD Kingston SA400S37480G SATA ·
 Intel I225-V + Wi-Fi 6E AX210 · TPM 2.0 · SecureBoot/VBS/HVCI: **detectar, nunca asumir** ·
 Windows 11 Pro build 26200 (25H2), es-MX, UTC-3, usuario `ZuKA` · Atlas Playbook v0.5.0 ya aplicado.
 
-## Estructura
+### Estructura
 
 ```
 src/FragForge.Core/         motor puro, sin Windows: Models, Abstractions, Engine, Conditions,
@@ -36,7 +36,7 @@ src/FragForge.App/          WPF MVVM (CommunityToolkit.Mvvm 8.4.1), tema oscuro
 tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 ```
 
-## Invariantes que NO se pueden romper
+### Invariantes que NO se pueden romper
 
 1. **Reversibilidad exacta**: cada `ITweakAction` captura `ActionState` y restaura el estado previo,
    incluido *"el valor no existía"* ⇒ `DeleteValue` (+ limpieza de ancestros vacíos).
@@ -54,7 +54,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 9. `HKCU` se resuelve al SID interactivo (`HKU\<SID>`), nunca al hive del proceso elevado.
 10. **Cero placeholders**: todo archivo compila como está; `TreatWarningsAsErrors` activo en Core.
 
-## Decisiones ya tomadas (no re-litigar)
+### Decisiones ya tomadas (no re-litigar)
 
 * .NET 10 LTS (no 8: EOL nov-2026) · WPF + CommunityToolkit.Mvvm · M.E.Hosting/DI + Serilog ·
   System.Text.Json (`$actionState` como discriminador) · xUnit 2.9.3 · versiones centralizadas en
@@ -65,7 +65,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 * Publicación: `-r win-x64 --self-contained true -p:PublishSingleFile=true`; `RuntimeIdentifier` solo se
   aplica al pasar `-r` (así `dotnet build` de Core/Actions/Tweaks/Composition/Tests funciona en Linux).
 
-## Estado exacto de verificación
+### Estado exacto de verificación
 
 | Qué | Estado |
 |---|---|
@@ -76,7 +76,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
 | `SystemRestoreService.GetProtectionStateAsync` | ⚠️ heurística no validada (`Win32_Volume` ↔ `Win32_ShadowStorage`); fallback `Unknown` |
 | Parseo de `bcdedit /enum {current} /v` en es-MX | ⚠️ por validar |
 
-## Pendiente inmediato (orden sugerido)
+### Pendiente inmediato (orden sugerido)
 
 1. **Validar en el PN64**: `fragforge doctor` → `scan` → `apply --profile Safe --dry-run` →
    aplicar 1 tweak → `status` → `revert --last` y comparar. Reportar cualquier desviación en WMI/parseo.
@@ -87,7 +87,7 @@ tests/FragForge.Tests/      103 tests sobre fakes (sin WMI/registro reales)
    solo con A/B reproducible (≥ 3 × 120 s, medianas, misma demo/resolución/plan de energía).
 4. Firmar los binarios (SmartScreen) y adjuntar `docs/manual-revert.md` al instalador.
 
-## Comandos
+### Comandos rápidos
 
 ```powershell
 dotnet restore FragForge.sln
@@ -100,7 +100,7 @@ dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --se
 CLI: `fragforge scan|list|apply|revert|status|snapshot|export-report|doctor` — exit codes
 `0` éxito, `1` fallo, `2` uso, `3` preflight/catálogo, `4` cancelación, `5` rollback crítico.
 
-## Documentos de referencia
+### Documentos de referencia
 
 | Archivo | Contenido |
 |---|---|
