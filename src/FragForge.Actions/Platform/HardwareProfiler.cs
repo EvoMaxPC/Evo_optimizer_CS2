@@ -20,6 +20,18 @@ internal static class WmiValues
 [SupportedOSPlatform("windows")]
 public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, IProcessRunner runner, IGameLocator games, ICpuTopologyProbe topology, ISystemRestoreService restore) : IHardwareProfiler
 {
+    /// <summary>Namespace real de <c>Win32_Tpm</c>. El anterior (<c>root\Microsoft\Windows\TPM</c>) no existe.</summary>
+    public const string TpmScope = @"root\CIMV2\Security\MicrosoftTpm";
+    /// <summary>Clase del proveedor de TPM.</summary>
+    public const string TpmClass = "Win32_Tpm";
+
+    /// <summary>
+    /// Namespace de <c>MSFT_NetAdapter</c>. Ya era el correcto; se deja como constante para que el
+    /// valor quede fijado y comprobado por un test en vez de vivir enterrado en una llamada.
+    /// </summary>
+    public const string NetAdapterScope = @"root\StandardCimv2";
+    public const string NetAdapterClass = "MSFT_NetAdapter";
+
     public async Task<HardwareProfile> ProfileAsync(CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null)
     {
         var warnings = new List<string>();
@@ -31,7 +43,26 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             try { return await wmi.QueryAsync(scope, className, properties, where, cancellationToken); }
             catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add($"{className}: {ex.Message}"); return []; }
         }
-        var osRows = await Query(@"root\cimv2", "Win32_OperatingSystem", ["Caption", "Version", "BuildNumber", "OSArchitecture"]);
+
+        // Igual que Query, pero informando si la consulta FALLÓ. Necesario para no convertir una
+        // excepción en "no hay instancias" (R-L). El aviso se registra igual que en Query.
+        async Task<(IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows, bool Failed)> QueryOrFail(string scope, string className, string[] properties, string? where = null)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            progress?.Report(new EngineProgress("hardware", null, 0, $"Consultando {className}."));
+            try { return (await wmi.QueryAsync(scope, className, properties, where, cancellationToken), false); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                warnings.Add($"{className}: {ex.Message}");
+                return ([], true);
+            }
+        }
+        // La arquitectura sale del VALOR NUMÉRICO de Win32_Processor.Architecture
+        // (0=x86, 5=ARM, 9=x64, 12=ARM64), nunca de un texto localizado (ver ResolveOsArchitecture).
+        var cpuRows = await Query(@"root\cimv2", "Win32_Processor", ["Name", "Manufacturer", "NumberOfCores", "NumberOfLogicalProcessors", "MaxClockSpeed", "VirtualizationFirmwareEnabled", "VMMonitorModeExtensions", "Architecture"]);
+        // OSArchitecture NO se pide a propósito: Win32_OperatingSystem lo devuelve traducido
+        // ("64 bits" en es-MX) y eso es exactamente lo que rompía la condición de arquitectura.
+        var osRows = await Query(@"root\cimv2", "Win32_OperatingSystem", ["Caption", "Version", "BuildNumber"]);
         var osRow = osRows.FirstOrDefault() ?? new Dictionary<string, object?>();
         var ubr = await registry.ReadValueAsync(@"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion", "UBR", cancellationToken);
         var os = new OsInfo
@@ -41,13 +72,12 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             Version = WmiValues.String(osRow, "Version") ?? "Unknown",
             Build = WmiValues.Int32(osRow, "BuildNumber") ?? 0,
             Ubr = ubr.ValueExists ? Convert.ToInt32(ubr.Data, CultureInfo.InvariantCulture) : 0,
-            Architecture = WmiValues.String(osRow, "OSArchitecture") ?? RuntimeInformation.OSArchitecture.ToString(),
+            Architecture = ArchitectureInterpreter.ToWireValue(ResolveOsArchitecture(cpuRows.FirstOrDefault(), warnings)),
             Culture = CultureInfo.CurrentCulture.Name,
             TimeZone = TimeZoneInfo.Local.Id
         };
         var csRows = await Query(@"root\cimv2", "Win32_ComputerSystem", ["UserName", "TotalPhysicalMemory", "Manufacturer", "Model", "PCSystemType"]);
         var cs = csRows.FirstOrDefault() ?? new Dictionary<string, object?>();
-        var cpuRows = await Query(@"root\cimv2", "Win32_Processor", ["Name", "Manufacturer", "NumberOfCores", "NumberOfLogicalProcessors", "MaxClockSpeed", "VirtualizationFirmwareEnabled", "VMMonitorModeExtensions"]);
         var cpuRow = cpuRows.FirstOrDefault() ?? new Dictionary<string, object?>();
         var topologyResult = await topology.ReadAsync(cancellationToken);
         var vendor = (WmiValues.String(cpuRow, "Manufacturer") ?? "").Contains("Intel", StringComparison.OrdinalIgnoreCase) ? "Intel" : WmiValues.String(cpuRow, "Manufacturer") ?? "Unknown";
@@ -88,7 +118,11 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             var health = physical is null ? WmiValues.String(r, "Status") ?? "Unknown" : WmiValues.Int32(physical, "HealthStatus") switch { 0 => "Healthy", 1 => "Warning", 2 => "Unhealthy", _ => "Unknown" };
             return new DiskInfo { Model = model, SerialNumber = serial, SizeBytes = WmiValues.UInt64(r, "Size") ?? 0, Kind = kind, Bus = bus, Health = health, SmartPredictFailure = smart is null ? null : WmiValues.Bool(smart, "PredictFailure"), SmartSource = smart is null ? "MSStorageDriver_FailurePredictStatus unavailable" : "MSStorageDriver_FailurePredictStatus" };
         }).ToArray();
-        var adapterRows = await Query(@"root\StandardCimv2", "MSFT_NetAdapter", ["Name", "InterfaceDescription", "DriverVersion", "DriverProvider", "MediaType", "LinkSpeed", "State", "HardwareInterface", "Virtual"]);
+        // MSFT_NetAdapter: el namespace YA era root\StandardCimv2 (correcto). "Consulta no válida"
+        // no es un problema de scope, así que se consulta en DOS pasos: primero el núcleo de
+        // propiedades que trae cualquier build, y solo después las opcionales. Si el núcleo falla,
+        // se degrada con aviso y el perfil sigue siendo válido (lista vacía + Unknown), sin romperlo.
+        var adapterRows = await ReadNetAdapterRowsAsync(QueryOrFail);
         var adapters = adapterRows.Select(r => new NetworkAdapterInfo { Name = WmiValues.String(r, "Name") ?? "Unknown", Description = WmiValues.String(r, "InterfaceDescription") ?? "Unknown", Kind = WmiValues.Int32(r, "MediaType") switch { 1 => NetworkKind.Ethernet, 2 => NetworkKind.WiFi, _ => (WmiValues.String(r, "InterfaceDescription") ?? "").Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase) ? NetworkKind.WiFi : NetworkKind.Ethernet }, DriverVersion = WmiValues.String(r, "DriverVersion"), DriverProvider = WmiValues.String(r, "DriverProvider"), LinkSpeedBitsPerSecond = WmiValues.UInt64(r, "LinkSpeed"), IsPhysical = WmiValues.Bool(r, "HardwareInterface") == true && WmiValues.Bool(r, "Virtual") != true, State = WmiValues.String(r, "State") ?? "Unknown" }).ToArray();
         if (adapters.Length == 0)
         {
@@ -96,7 +130,7 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             adapters = fallback.Select(r => new NetworkAdapterInfo { Name = WmiValues.String(r, "NetConnectionID") ?? WmiValues.String(r, "Name") ?? "Unknown", Description = WmiValues.String(r, "Name") ?? "Unknown", Kind = WmiValues.Int32(r, "AdapterTypeId") == 9 ? NetworkKind.WiFi : NetworkKind.Ethernet, LinkSpeedBitsPerSecond = WmiValues.UInt64(r, "Speed"), IsPhysical = WmiValues.Bool(r, "PhysicalAdapter") == true, State = WmiValues.String(r, "NetConnectionStatus") ?? "Unknown" }).ToArray();
         }
         var monitors = gpuRows.Where(r => (WmiValues.Int32(r, "CurrentHorizontalResolution") ?? 0) > 0).Select(r => new MonitorInfo { Name = WmiValues.String(r, "Name") ?? "Display", Width = WmiValues.Int32(r, "CurrentHorizontalResolution"), Height = WmiValues.Int32(r, "CurrentVerticalResolution"), RefreshRateHz = WmiValues.Int32(r, "CurrentRefreshRate"), Source = "Win32_VideoController (controlador, no enumeración exhaustiva por monitor)" }).ToArray();
-        var security = await ReadSecurityAsync(Query, cancellationToken);
+        var security = await ReadSecurityAsync(Query, QueryOrFail, cancellationToken);
         var power = await ReadPowerAsync(cancellationToken);
         var enclosure = await Query(@"root\cimv2", "Win32_SystemEnclosure", ["ChassisTypes"]);
         var chassis = enclosure.SelectMany(r => WmiValues.Array(r, "ChassisTypes")).Select(x => Convert.ToInt32(x, CultureInfo.InvariantCulture)).Distinct().ToArray();
@@ -115,7 +149,93 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         var interactiveSid = ResolveSid(interactiveName, processSid, warnings);
         return new HardwareProfile { MachineName = Environment.MachineName, InteractiveUserName = interactiveName, InteractiveUserSid = interactiveSid, ProcessUserSid = processSid, Os = os, Cpu = cpu, Memory = memory, Gpus = gpus, Disks = disks, NetworkAdapters = adapters, Monitors = monitors, Security = security, Power = power, FormFactor = form, Playbooks = playbooks, DeviceErrors = errors, Games = gameInfo, Maintenance = maintenance, Observations = observations, ProbeWarnings = warnings };
     }
-    private async Task<SecurityInfo> ReadSecurityAsync(Func<string, string, string[], string?, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> query, CancellationToken cancellationToken)
+    /// <summary>
+    /// Arquitectura del SO a partir del valor NUMÉRICO de <c>Win32_Processor.Architecture</c>.
+    ///
+    /// Orden (R-C: nunca texto localizado; R-L: Unknown antes que adivinar):
+    /// <list type="number">
+    /// <item>Valor numérico de <c>Win32_Processor.Architecture</c> (0=x86, 5=ARM, 9=x64, 12=ARM64).</item>
+    /// <item>Si WMI no lo dio, <see cref="RuntimeInformation.OSArchitecture"/> del propio proceso.</item>
+    /// <item>Si tampoco, <see cref="OsArchitectureKind.Unknown"/>: nunca "X64" por defecto.</item>
+    /// </list>
+    /// Nota: <c>Win32_OperatingSystem.OSArchitecture</c> NUNCA se usa como fuente; es texto traducido
+    /// y fue la causa de que todo el catálogo saliera "No aplicable" en un equipo x64 con es-MX.
+    /// </summary>
+    public static OsArchitectureKind ResolveOsArchitecture(IReadOnlyDictionary<string, object?>? cpuRow, IList<string> warnings)
+    {
+        var numeric = cpuRow is null ? null : WmiValues.Int32(cpuRow, "Architecture");
+        if (numeric is not null)
+        {
+            var fromWmi = ArchitectureInterpreter.FromProcessorArchitectureNumber(numeric.Value);
+            if (fromWmi != OsArchitectureKind.Unknown) return fromWmi;
+            warnings.Add($"Win32_Processor.Architecture={numeric.Value}: valor sin equivalente conocido; se usa la arquitectura del proceso.");
+        }
+        else
+        {
+            warnings.Add("Win32_Processor.Architecture no disponible; se usa la arquitectura del proceso.");
+        }
+        return ArchitectureInterpreter.FromCurrentRuntime();
+    }
+
+    /// <summary>
+    /// Estado del TPM a partir de las filas devueltas por la consulta y de si esa consulta FALLÓ.
+    ///
+    /// Regla dura (R-L): un fallo de consulta NUNCA es "no presente".
+    /// <list type="bullet">
+    /// <item><paramref name="queryFailed"/> = true ⇒ <see cref="FeatureState.Unknown"/> y queda el aviso.</item>
+    /// <item>Consulta correcta y 0 instancias ⇒ <see cref="FeatureState.NotPresent"/>.</item>
+    /// <item>Consulta correcta con instancia y habilitado+activado ⇒ <see cref="FeatureState.Enabled"/>.</item>
+    /// <item>Consulta correcta con instancia pero no habilitado/activado ⇒ <see cref="FeatureState.Disabled"/>.</item>
+    /// </list>
+    /// </summary>
+    public static FeatureState ResolveTpmState(IReadOnlyList<IReadOnlyDictionary<string, object?>> rows, bool queryFailed)
+    {
+        if (queryFailed) return FeatureState.Unknown;
+        var tpm = rows.FirstOrDefault();
+        if (tpm is null) return FeatureState.NotPresent;
+        return WmiValues.Bool(tpm, "IsEnabled_InitialValue") == true && WmiValues.Bool(tpm, "IsActivated_InitialValue") == true
+            ? FeatureState.Enabled
+            : FeatureState.Disabled;
+    }
+
+    /// <summary>Propiedades de <c>MSFT_NetAdapter</c> que existen en cualquier build soportada.</summary>
+    private static readonly string[] NetAdapterCoreProperties = ["Name", "InterfaceDescription"];
+
+    /// <summary>Propiedades opcionales: si no están, el adaptador queda con valores Unknown.</summary>
+    private static readonly string[] NetAdapterOptionalProperties = ["DriverVersion", "DriverProvider", "MediaType", "LinkSpeed", "State", "HardwareInterface", "Virtual"];
+
+    /// <summary>
+    /// Lee <c>MSFT_NetAdapter</c> en dos pasos para que una propiedad inexistente no tumbe la consulta
+    /// entera (síntoma observado: "MSFT_NetAdapter: Consulta no válida" y cero adaptadores).
+    ///
+    /// <list type="number">
+    /// <item>Núcleo (Name, InterfaceDescription). Si falla, se devuelve lista vacía y queda el aviso.</item>
+    /// <item>Opcionales, una a una y solo las que la consulta acepte. Las que fallen se omiten.</item>
+    /// </list>
+    /// Si el paso de opcionales falla por completo, se devuelven las filas del núcleo: se pierde detalle,
+    /// nunca la lista entera.
+    /// </summary>
+    private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadNetAdapterRowsAsync(
+        Func<string, string, string[], string?, Task<(IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows, bool Failed)>> queryOrFail)
+    {
+        var (coreRows, coreFailed) = await queryOrFail(NetAdapterScope, NetAdapterClass, NetAdapterCoreProperties, null);
+        if (coreFailed) return [];
+        if (coreRows.Count == 0) return coreRows;
+
+        var extraProps = new List<string>(NetAdapterCoreProperties);
+        foreach (var property in NetAdapterOptionalProperties)
+        {
+            var (_, failed) = await queryOrFail(NetAdapterScope, NetAdapterClass, new[] { property }, null);
+            if (!failed) extraProps.Add(property);
+        }
+        if (extraProps.Count == NetAdapterCoreProperties.Length) return coreRows;
+
+        // Segunda pasada con todas las propiedades aceptadas. Si vuelve a fallar, se quedan las del núcleo.
+        var (rich, richFailed) = await queryOrFail(NetAdapterScope, NetAdapterClass, [.. extraProps], null);
+        return richFailed ? coreRows : rich;
+    }
+
+    private async Task<SecurityInfo> ReadSecurityAsync(Func<string, string, string[], string?, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> query, Func<string, string, string[], string?, Task<(IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows, bool Failed)>> queryOrFail, CancellationToken cancellationToken)
     {
         var guard = (await query(@"root\Microsoft\Windows\DeviceGuard", "Win32_DeviceGuard", ["VirtualizationBasedSecurityStatus", "SecurityServicesConfigured", "SecurityServicesRunning"], null)).FirstOrDefault();
         var vbs = guard is null ? FeatureState.Unknown : WmiValues.Int32(guard, "VirtualizationBasedSecurityStatus") switch { 0 => FeatureState.Disabled, 2 => FeatureState.Enabled, _ => FeatureState.Unknown };
@@ -133,9 +253,12 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             }
             catch (Exception ex) when (ex is not OperationCanceledException) { secureState = FeatureState.Unknown; }
         }
-        var tpmRows = await query(@"root\Microsoft\Windows\TPM", "Win32_Tpm", ["IsEnabled_InitialValue", "IsActivated_InitialValue", "SpecVersion"], null);
+        // TPM: clase Win32_Tpm del namespace Security\MicrosoftTpm (el de root\Microsoft\Windows\TPM NO
+        // existe y hacía fallar la consulta). Además se distingue FALLO de LISTA VACÍA: un fallo es
+        // Unknown, nunca NotPresent (R-L). Antes, la excepción se tragaba y el valor salía NotPresent.
+        var (tpmRows, tpmQueryFailed) = await queryOrFail(TpmScope, TpmClass, ["IsEnabled_InitialValue", "IsActivated_InitialValue", "SpecVersion"], null);
         var tpm = tpmRows.FirstOrDefault();
-        var tpmState = tpm is null ? FeatureState.NotPresent : WmiValues.Bool(tpm, "IsEnabled_InitialValue") == true && WmiValues.Bool(tpm, "IsActivated_InitialValue") == true ? FeatureState.Enabled : FeatureState.Disabled;
+        var tpmState = ResolveTpmState(tpmRows, tpmQueryFailed);
         var hags = await registry.ReadValueAsync(@"HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers", "HwSchMode", cancellationToken);
         var mpo = await registry.ReadValueAsync(@"HKLM\SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode", cancellationToken);
         return new SecurityInfo { Vbs = vbs, Hvci = hvci, SecureBoot = secureState, Tpm = tpmState, TpmVersion = tpm is null ? null : WmiValues.String(tpm, "SpecVersion"), Hags = hags.ValueExists ? Convert.ToInt32(hags.Data) == 2 ? FeatureState.Enabled : Convert.ToInt32(hags.Data) == 1 ? FeatureState.Disabled : FeatureState.Unknown : FeatureState.Unknown, Mpo = mpo.ValueExists && Convert.ToInt32(mpo.Data) == 5 ? FeatureState.Disabled : FeatureState.Unknown, Evidence = "WMI DeviceGuard/TPM, registro SecureBoot/HAGS/MPO; Unknown no se interpreta como Disabled." };
