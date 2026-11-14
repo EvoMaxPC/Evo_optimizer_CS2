@@ -122,6 +122,17 @@ public sealed class TweakEngine(
                     var current = await VerifyPlanAsync(plan, cancellationToken);
                     results.Add(new TweakApplyResult { Id = plan.Definition.Id, State = current.State, Message = "Simulación sin cambios. " + current.Reason, PlannedChanges = changes });
                 }
+                // F2: la vista previa NO lanza, pero TAMPOCO puede ocultar que el apply va a fallar. Se
+                // consulta el preflight en modo informativo y los Blocking se vuelcan como advertencias:
+                // el usuario ve el motivo ANTES de intentar aplicar. No se lanza PreflightFailedException
+                // aquí a propósito: un dry-run no cambia nada, así que no hay nada que impedir.
+                var previewPreflight = await preflight.CheckAsync(
+                    options with { SelectedIds = plans.Select(p => p.Definition.Id).ToHashSet(StringComparer.OrdinalIgnoreCase) },
+                    hardware,
+                    cancellationToken);
+                warnings.AddRange(previewPreflight.Checks
+                    .Where(c => c.Severity == PreflightSeverity.Blocking)
+                    .Select(c => "NO SE PODRÁ APLICAR — " + c.Message));
                 return await FinishAsync(new BatchReport { OperationId = operationId, DryRun = true, Success = true, Results = results, Warnings = warnings }, true, cancellationToken);
             }
             if (plans.Count == 0)
