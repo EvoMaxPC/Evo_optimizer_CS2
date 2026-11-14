@@ -1,6 +1,15 @@
 namespace FragForge.Core.Experiments;
 
 /// <summary>
+/// Resumen de una swapchain vista en el CSV. Se guarda también la descartada: el informe debe poder
+/// explicar qué se dejó fuera y por qué, con números, no con una impresión.
+/// </summary>
+public sealed record SwapChainSummary(string Address, int FrameCount, double? MedianFrameTimeMs, bool HasDisplayTracking, bool Chosen)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public bool Discarded => !Chosen;
+}
+
+/// <summary>
 /// Serie de frames de una corrida. Los frametimes están en milisegundos y en orden de presentación.
 /// <see cref="IsPartial"/> marca una captura cancelada: la corrida es inválida y nunca entra en el veredicto.
 /// </summary>
@@ -36,6 +45,19 @@ public sealed record FrameSeries
     public IReadOnlyList<int?> SyncIntervals { get; init; } = [];
     /// <summary>Si se permite tearing en ese frame (<c>AllowsTearing</c>).</summary>
     public IReadOnlyList<bool?> AllowsTearing { get; init; } = [];
+    /// <summary>Latencia de toda la entrada a fotón (<c>MsAllInputToPhotonLatency</c>). NA en la mayoría de filas.</summary>
+    public IReadOnlyList<double?> InputToPhotonMs { get; init; } = [];
+    /// <summary>Latencia de clic a fotón (<c>MsClickToPhotonLatency</c>). NA en toda la captura de referencia.</summary>
+    public IReadOnlyList<double?> ClickToPhotonMs { get; init; } = [];
+    /// <summary>Motivo textual de la elección de swapchain cuando había más de una.</summary>
+    public string? SwapChainReason { get; init; }
+    /// <summary>Resumen de TODAS las swapchains vistas, incluida la descartada, con filas y mediana.</summary>
+    public IReadOnlyList<SwapChainSummary> SwapChains { get; init; } = [];
+    /// <summary>
+    /// True si el CSV no trae <c>MsBetweenPresents</c> y el frametime se tomó de un layout no estándar
+    /// (<c>--v1_metrics</c>/<c>--v2_metrics</c>). La corrida debe marcarse Suspect.
+    /// </summary>
+    public bool IsNonStandardLayout { get; init; }
     /// <summary>Advertencias detectadas al parsear (swapchains múltiples, GPU no disponible...).</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
     /// <summary>
