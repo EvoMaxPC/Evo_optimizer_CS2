@@ -372,3 +372,54 @@ documentación): **no se envía ni un paquete**, solo se pide la decisión de en
 
 `NetworkInterface.GetAllNetworkInterfaces()` se sigue usando para el índice IPv4 de cada adaptador
 (`GetIPv4Properties().Index`), pero **no** para inferir la ruta.
+
+---
+
+# Descartados de la Capa 10 (seguridad y anticheat)
+
+## 10.3 — Tweak opt-in "Integridad de memoria off" (HVCI)
+
+**Descartado.** El enunciado lo condicionaba a "solo si lo justificas" y a que el revert fuera verificable.
+
+**El bloqueo, en una línea:** `HKLM\SYSTEM\CurrentControlSet\Control\DeviceGuard` está en
+`denylist.json:registryKeyPrefixes`, y el destino del tweak
+(`...\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity`) cuelga de ese prefijo. Las reglas de la casa
+dicen que la denylist **nunca se debilita**. Implementarlo obligaría a quitar el prefijo, y eso no abriría
+solo HVCI: abriría todo DeviceGuard, incluidos VBS y todos sus escenarios. Es exactamente el tipo de
+"pequeña excepción" que convierte una política en un adorno.
+
+**Segundo motivo, independiente:** R-J pide revert **verificable**. El estado real de HVCI solo cambia tras
+reiniciar, así que `VerifyRevertAsync` no puede confirmarlo en el momento: en el mejor caso verifica el valor
+de registro, no la protección efectiva. Un tweak de seguridad que no se puede verificar después de aplicarlo
+no cumple R-J.
+
+**Tercer motivo:** exige reinicio, rompe la atestación de dispositivos y debilita la base de seguridad del
+sistema. Que sea opt-in no lo hace buena idea.
+
+**Lo que sí se entrega:** `fragforge security status` informa del estado de HVCI por WMI
+(`SecurityServicesRunning`, valor 2) y por el escenario de registro, ambos de SOLO LECTURA. El usuario que
+quiera desactivarlo lo hace a mano, sabiendo lo que hace, fuera de FragForge.
+
+**Para reabrirlo** haría falta: (a) una decisión explícita de sacar DeviceGuard de la denylist —que este
+proyecto no contempla—, y (b) un mecanismo de verificación post-reinicio que hoy no existe.
+
+## 10.3-bis — Tweak de "debilitar Secure Boot / TPM"
+
+**Descartado de entrada.** No se evalúa siquiera: `HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot` está en
+la denylist y no existe acción de firmware. Tocar Secure Boot o el TPM no es un tweak de rendimiento, es
+bajar la postura de seguridad del equipo.
+
+## Journal "firmado" con clave
+
+**Descartado en esta ronda.** El journal es **tamper-evident** (cadena SHA-256 encadenada por
+`PreviousHash`), no **autenticado**: no hay clave, así que quien pueda escribir el archivo puede recalcular
+la cadena. Firmarlo de verdad exigiría gestión de claves (dónde vive, quién la rota, qué pasa si se pierde,
+qué pasa en un equipo sin TPM disponible) y ese diseño no está hecho. Prometer "journal firmado" sin clave
+sería mentir sobre la garantía. Se documenta el límite en `docs/seguridad.md` §3-D y §8, con un test que
+demuestra la forja (`IntegrityTests.TheJournal_IsTamperEvident_ButNotAuthenticated`).
+
+## Afirmar compatibilidad con VAC/FACEIT en los avisos
+
+**Descartado.** No hay fuente que lo respalde y los requisitos cambian sin aviso. Los textos dicen lo que la
+app hace y remiten al proveedor. Hay un test sobre el catálogo real que prohíbe "seguro con",
+"compatible con", "safe with" y "allowed by" en `anticheatNote`.

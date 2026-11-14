@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Logging;
@@ -288,6 +290,10 @@ public sealed class TweakEngine(
             foreach (var selection in selections)
             {
                 var snapshot = await snapshots.GetAsync(selection.SnapshotId, cancellationToken);
+                // Capa 10.5: el snapshot guarda DefinitionSha256 de cada tweak al capturarlo. Antes se
+                // ESCRIBÍA y no se comprobaba nunca, así que editar snapshot.json a mano permitía revertir a lo
+                // que dijera el archivo en vez de a lo que se aplicó. Ahora se verifica antes de tocar nada.
+                VerifySnapshotDefinitions(snapshot);
                 var snapshotEntries = entries.Where(e => e.SnapshotId == snapshot.Id && e.EventType == JournalEventType.TweakApplied).ToArray();
                 var previouslyReverted = RevertedIds(entries, snapshot.Id);
                 if (snapshotEntries.Length > 0 && snapshotEntries.All(e => previouslyReverted.Contains(e.TweakId!)) && !request.Options.Force) throw new FragForgeException("snapshot_already_reverted", $"El snapshot {snapshot.Id} ya fue revertido. Force permite restaurarlo de nuevo, con riesgo de pisar cambios posteriores.");
@@ -626,6 +632,35 @@ public sealed class TweakEngine(
         await AppendSafeAsync(report.OperationId, success ? JournalEventType.OperationCompleted : JournalEventType.OperationFailed, null, report.SnapshotId, success ? "Operación completada." : string.Join(" ", report.Errors));
         return report;
     }
+    /// <summary>
+    /// Verifica que la definición guardada en cada tweak del snapshot siga coincidiendo con el hash que se
+    /// calculó al capturarlo (Capa 10.5).
+    ///
+    /// <para>
+    /// El snapshot guarda la definición COMPLETA para poder revertir aunque el catálogo haya cambiado después.
+    /// Esa comodidad es también un riesgo: quien pueda editar <c>snapshot.json</c> puede cambiar los parámetros
+    /// de la acción que se va a revertir. El hash no autentica (cualquiera que edite el archivo puede recalcular
+    /// el SHA-256 a juego), pero sí convierte una edición accidental o a ciegas en un fallo ruidoso en vez de en
+    /// una reversión silenciosa a un estado que nunca se aplicó.
+    /// </para>
+    ///
+    /// <para>
+    /// Un snapshot sin hash (versiones antiguas) NO se rechaza: se acepta y se avisa. Rechazarlo rompería la
+    /// recuperación de datos históricos, que es justo cuando más falta hace.
+    /// </para>
+    /// </summary>
+    private static void VerifySnapshotDefinitions(SystemSnapshot snapshot)
+    {
+        foreach (var tweak in snapshot.Tweaks)
+        {
+            if (string.IsNullOrWhiteSpace(tweak.DefinitionSha256)) continue;
+            var actual = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(tweak.Definition, JsonDefaults.Create(false))))).ToLowerInvariant();
+            if (!string.Equals(actual, tweak.DefinitionSha256, StringComparison.OrdinalIgnoreCase))
+                throw new FragForgeException("snapshot_definition_tampered",
+                    $"El snapshot {snapshot.Id} no es íntegro: la definición de '{tweak.TweakId}' no coincide con su DefinitionSha256 (esperado {tweak.DefinitionSha256}, obtenido {actual}). No se revierte con una definición manipulada.");
+        }
+    }
+
     private Task AppendAsync(string operationId, JournalEventType type, string? tweakId, string? snapshotId, string? message, CancellationToken cancellationToken) => journal.AppendAsync(new JournalEntry { EntryId = NewId(), OperationId = operationId, EventType = type, TweakId = tweakId, SnapshotId = snapshotId, Message = message }, cancellationToken);
     private async Task AppendSafeAsync(string operationId, JournalEventType type, string? tweakId, string? snapshotId, string? message)
     {
