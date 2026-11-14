@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "tools": [
+    {
+      "key": "presentmon",
+      "fileName": "PresentMon.exe",
+      "sha256": null,
+      "sourceUrl": "https://github.com/GameTechDev/PresentMon/releases",
+      "license": "MIT",
+      "note": "Intel PresentMon. El hash se deja deliberadamente vacío: debe añadirse tras descargar el binario oficial. FragForge nunca descarga binarios y no acepta un hash inventado."
+    }
+  ]
+}
