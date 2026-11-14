@@ -8,12 +8,16 @@ namespace FragForge.Actions.Measurement;
 /// comparando con <see cref="StringComparison.OrdinalIgnoreCase"/>; el orden puede cambiar entre
 /// versiones y entre capturas.
 ///
-/// Contrato verificado contra PresentMon 2.6.0 (capturado en la PC objetivo, 10 s sobre cs2.exe,
-/// flags por defecto, sin <c>--v1_metrics</c>/<c>--v2_metrics</c>): 28 columnas, faltantes escritas
-/// <c>NA</c>, decimales con punto y hasta 14 dígitos. Se parsea con <see cref="CultureInfo.InvariantCulture"/>.
+/// Contrato verificado contra PresentMon 2.6.0 (capturado en la PC objetivo, flags por defecto,
+/// sin <c>--v1_metrics</c>/<c>--v2_metrics</c>): 28 columnas, faltantes escritas <c>NA</c>, decimales
+/// con punto y hasta 14 dígitos. Se parsea con <see cref="CultureInfo.InvariantCulture"/>.
 ///
-/// Regla dura (R-L): una columna ausente o una celda <c>NA</c> produce <c>null</c> (Unknown), JAMÁS 0.
-/// Un frametime de 0 o negativo se descarta como dato corrupto.
+/// Reglas duras:
+/// <list type="bullet">
+/// <item>Una columna ausente o una celda <c>NA</c> produce <c>null</c> (Unknown), JAMÁS 0.</item>
+/// <item>Un 0 SÍ es un dato real (verificado: <c>MsInPresentAPI</c>=0 en 323 de 449 filas).</item>
+/// <item>Las filas de swapchains distintas NUNCA se mezclan en las estadísticas.</item>
+/// </list>
 /// </summary>
 public static class PresentMonCsvParser
 {
@@ -27,8 +31,9 @@ public static class PresentMonCsvParser
     private static readonly string[] FrameTimeCandidates =
     [
         FrameTimeColumn,       // verificado 2.6.0
-        "FrameTime",           // 1.x / 2.x con --v2_metrics (NO verificado contra salida real)
+        "FrameTime",           // 2.x con --v2_metrics (formato NO estándar)
         "frameTime",           // variante de mayúsculas (NO verificada)
+        "msBetweenPresents",   // 1.x con --v1_metrics (formato NO estándar)
     ];
 
     // NOTA deliberada: MsBetweenDisplayChange NO es candidato de frametime. En 2.6.0 viene NA sin
@@ -38,23 +43,24 @@ public static class PresentMonCsvParser
     private static readonly string[] CpuBusyCandidates =
     [
         "MsCPUBusy",           // verificado 2.6.0
-        "CPUBusy",             // 1.x / 2.x --v2_metrics (NO verificado contra salida real)
-        "CPUUsage",            // variante histórica (NO verificada)
+        "CPUBusy",             // 2.x --v2_metrics (NO verificado contra salida real)
     ];
 
-    // NOTA: MsInPresentAPI NO es CPU. Estaba mal clasificada y se corrigió: se lee como PresentApiMs.
+    // NOTA: MsInPresentAPI NO es CPU. Se lee como PresentApiMs.
 
-    private static readonly string[] CpuWaitCandidates = ["MsCPUWait"];
+    private static readonly string[] CpuWaitCandidates = ["MsCPUWait", "CPUWait"];
     private static readonly string[] GpuBusyCandidates = ["MsGPUBusy", "GPUBusy"];
     private static readonly string[] GpuTimeCandidates = ["MsGPUTime", "GPUTime", "GpuTime"];
-    private static readonly string[] DisplayChangeCandidates = ["MsBetweenDisplayChange"];
-    private static readonly string[] UntilDisplayedCandidates = ["MsUntilDisplayed"];
+    private static readonly string[] DisplayChangeCandidates = ["MsBetweenDisplayChange", "msBetweenDisplayChange"];
+    private static readonly string[] UntilDisplayedCandidates = ["MsUntilDisplayed", "msUntilDisplayed"];
     private static readonly string[] PresentApiCandidates = ["MsInPresentAPI", "msInPresentAPI"];
     private static readonly string[] PresentModeCandidates = ["PresentMode", "PresentModeName"];
     private static readonly string[] ApplicationCandidates = ["Application"];
     private static readonly string[] ProcessIdCandidates = ["ProcessID", "ProcessId"];
     private static readonly string[] SwapChainCandidates = ["SwapChainAddress"];
     private static readonly string[] TimeCandidates = ["TimeInMs", "TimeInSeconds"];
+    private static readonly string[] InputToPhotonCandidates = ["MsAllInputToPhotonLatency", "AllInputToPhotonLatency"];
+    private static readonly string[] ClickToPhotonCandidates = ["MsClickToPhotonLatency", "ClickToPhotonLatency"];
 
     /// <summary>Marcador de dato ausente en PresentMon.</summary>
     private const string NaMarker = "NA";
@@ -86,24 +92,15 @@ public static class PresentMonCsvParser
         }
 
         var idx = new ColumnMap(headers);
-        var frameTimes = new List<double>();
-        var cpuBusy = new List<double?>();
-        var cpuWait = new List<double?>();
-        var gpuBusy = new List<double?>();
-        var gpuTime = new List<double?>();
-        var displayChange = new List<double?>();
-        var untilDisplayed = new List<double?>();
-        var presentApi = new List<double?>();
-        var modes = new List<string>();
-        var times = new List<double?>();
-        var syncIntervals = new List<int?>();
-        var allowTearing = new List<bool?>();
+        var isNonStandardLayout = !headers.Any(h => string.Equals(h.Trim(), FrameTimeColumn, StringComparison.OrdinalIgnoreCase));
 
+        // Cada swapchain acumula sus PROPIAS filas. Nunca se mezclan: promediar dos flujos de
+        // presentación distintos (~104 ms y ~16.5 ms en la captura real) daría un número que no
+        // corresponde a ninguno de los dos.
+        var perSwapChain = new Dictionary<string, SwapChainRows>(StringComparer.OrdinalIgnoreCase);
         var application = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var swapChains = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         string? line;
-        string[]? lastCells = null;
         while ((line = reader.ReadLine()) is not null)
         {
             if (line.Length == 0) continue;
@@ -112,43 +109,58 @@ public static class PresentMonCsvParser
             if (cells.Length <= frameTimeIndex) continue;
             if (!TryParseDouble(cells[frameTimeIndex], out var frameTime) || frameTime <= 0) continue;
 
-            lastCells = cells;
-            frameTimes.Add(frameTime);
-            cpuBusy.Add(idx.ReadDouble(cells, idx.CpuBusy));
-            cpuWait.Add(idx.ReadDouble(cells, idx.CpuWait));
-            gpuBusy.Add(idx.ReadDouble(cells, idx.GpuBusy));
-            gpuTime.Add(idx.ReadDouble(cells, idx.GpuTime));
-            displayChange.Add(idx.ReadDouble(cells, idx.DisplayChange));
-            untilDisplayed.Add(idx.ReadDouble(cells, idx.UntilDisplayed));
-            presentApi.Add(idx.ReadDouble(cells, idx.PresentApi));
-            modes.Add(idx.ReadString(cells, idx.PresentMode) ?? string.Empty);
-            times.Add(idx.ReadDouble(cells, idx.Time));
-            syncIntervals.Add(idx.ReadInt(cells, idx.SyncInterval));
-            allowTearing.Add(idx.ReadBool(cells, idx.AllowsTearing));
+            var swapChain = idx.ReadString(cells, idx.SwapChain) ?? string.Empty;
+            if (!perSwapChain.TryGetValue(swapChain, out var rows))
+            {
+                rows = new SwapChainRows(swapChain);
+                perSwapChain[swapChain] = rows;
+            }
+            rows.Add(cells, frameTime, idx);
 
             var app = idx.ReadString(cells, idx.Application);
             if (app is not null) application[app] = application.GetValueOrDefault(app) + 1;
-            var swapChain = idx.ReadString(cells, idx.SwapChain);
-            if (swapChain is not null) swapChains[swapChain] = swapChains.GetValueOrDefault(swapChain) + 1;
         }
 
         var warnings = new List<string>();
 
-        // Swapchain dominante: la que más filas aporta. No se mezclan swapchains.
-        string? dominantSwapChain = null;
-        if (swapChains.Count > 0)
+        // ---- Elección de swapchain (heurística documentada) ----
+        // 1) Primero las que tienen seguimiento de display (al menos una celda MsUntilDisplayed != NA).
+        // 2) Entre esas (o entre todas si ninguna lo tiene), la de más filas.
+        // Desempate final por dirección, solo para que sea determinista.
+        var all = perSwapChain.Values.ToArray();
+        var withDisplay = all.Where(r => r.HasDisplayTracking).ToArray();
+        var pool = withDisplay.Length > 0 ? withDisplay : all;
+        var chosen = pool
+            .OrderByDescending(r => r.FrameCount)
+            .ThenBy(r => r.Address, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        string? chosenAddress = null;
+        if (chosen is not null)
         {
-            dominantSwapChain = swapChains.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal).First().Key;
-            if (swapChains.Count > 1)
+            chosenAddress = chosen.Address;
+
+            if (all.Length > 1)
             {
-                var detail = string.Join(", ", swapChains.OrderByDescending(p => p.Value).Select(p => $"{p.Key}={p.Value}"));
-                warnings.Add($"varias swapchains: {detail}; se analiza {dominantSwapChain}");
+                var reason = withDisplay.Length > 0
+                    ? "varias swapchains en el proceso: se elige la de más filas con seguimiento de display"
+                    : "varias swapchains en el proceso: ninguna tiene seguimiento de display; se elige la de más filas";
+                // Motivo de la elección + por cada descartada, filas y mediana de MsBetweenPresents.
+                var detail = string.Join(" | ", all
+                    .OrderByDescending(r => r.FrameCount)
+                    .Select(r => $"{r.Address}: filas={r.FrameCount}, medianaMsBetweenPresents={Format(r.MedianFrameTime)}, display={(r.HasDisplayTracking ? "sí" : "no")}{(ReferenceEquals(r, chosen) ? " [elegida]" : " [descartada]")}"));
+                warnings.Add(reason + " -> " + detail);
             }
         }
 
-        // GPU "no disponible": había columna pero todas las celdas fueron 0 o null.
-        var gpuUnavailable = idx.GpuBusy >= 0 && gpuBusy.All(value => value is null or 0d);
-        if (gpuUnavailable) warnings.Add("GPU no disponible: todas las filas de MsGPUBusy son 0 o NA");
+        var series = chosen ?? new SwapChainRows(string.Empty);
+
+        // GPU "no disponible": TODA la columna en 0 o NA DENTRO DE LA SWAPCHAIN ELEGIDA.
+        // Un 0 aislado es un dato; una columna entera en cero dentro de la swapchain elegida no lo es.
+        var gpuUnavailable = idx.GpuBusy >= 0 && series.GpuBusy.All(value => value is null or 0d);
+        if (gpuUnavailable) warnings.Add("GPU no disponible en la swapchain elegida: todas las filas de MsGPUBusy son 0 o NA");
+
+        if (isNonStandardLayout) warnings.Add("formato de CSV no estándar: no está la columna MsBetweenPresents");
 
         var dominantApplication = application.Count == 0
             ? null
@@ -156,27 +168,37 @@ public static class PresentMonCsvParser
 
         return new FrameSeries
         {
-            FrameTimesMs = frameTimes,
-            CpuBusyMs = cpuBusy,
-            CpuWaitMs = cpuWait,
-            GpuBusyMs = gpuBusy,
-            GpuTimeMs = gpuTime,
-            DisplayChangeMs = displayChange,
-            UntilDisplayedMs = untilDisplayed,
-            PresentApiMs = presentApi,
-            PresentModes = modes,
-            TimesMs = times,
-            SyncIntervals = syncIntervals,
-            AllowsTearing = allowTearing,
+            FrameTimesMs = series.FrameTimes,
+            CpuBusyMs = series.CpuBusy,
+            CpuWaitMs = series.CpuWait,
+            GpuBusyMs = series.GpuBusy,
+            GpuTimeMs = series.GpuTime,
+            DisplayChangeMs = series.DisplayChange,
+            UntilDisplayedMs = series.UntilDisplayed,
+            PresentApiMs = series.PresentApi,
+            PresentModes = series.PresentModes,
+            TimesMs = series.Times,
+            SyncIntervals = series.SyncIntervals,
+            AllowsTearing = series.AllowsTearing,
+            InputToPhotonMs = series.InputToPhoton,
+            ClickToPhotonMs = series.ClickToPhoton,
             ApplicationName = dominantApplication,
-            ProcessId = lastCells is null ? null : idx.ReadInt(lastCells, idx.ProcessId),
-            SwapChainAddress = dominantSwapChain,
+            ProcessId = series.ProcessId,
+            SwapChainAddress = chosenAddress,
+            SwapChainReason = chosen is not null && all.Length > 1 ? warnings.FirstOrDefault(w => w.StartsWith("varias swapchains", StringComparison.Ordinal)) : null,
+            SwapChains = all
+                .OrderByDescending(r => r.FrameCount)
+                .Select(r => new SwapChainSummary(r.Address, r.FrameCount, r.MedianFrameTime, r.HasDisplayTracking, ReferenceEquals(r, chosen)))
+                .ToArray(),
             GpuUnavailable = gpuUnavailable,
+            IsNonStandardLayout = isNonStandardLayout,
             Warnings = warnings,
             HeaderColumns = headers,
             SourceColumns = BuildSourceColumns(headers, idx)
         };
     }
+
+    private static string Format(double? value) => value is null ? "NA" : value.Value.ToString("0.####", CultureInfo.InvariantCulture);
 
     private static string BuildSourceColumns(string[] headers, ColumnMap idx) =>
         $"frameTime={Name(headers, idx.FrameTime)}" +
@@ -197,6 +219,62 @@ public static class PresentMonCsvParser
         return -1;
     }
 
+    /// <summary>Acumula las filas de UNA swapchain. Cada instancia es independiente por diseño.</summary>
+    private sealed class SwapChainRows(string address)
+    {
+        public string Address { get; } = address;
+        public List<double> FrameTimes { get; } = [];
+        public List<double?> CpuBusy { get; } = [];
+        public List<double?> CpuWait { get; } = [];
+        public List<double?> GpuBusy { get; } = [];
+        public List<double?> GpuTime { get; } = [];
+        public List<double?> DisplayChange { get; } = [];
+        public List<double?> UntilDisplayed { get; } = [];
+        public List<double?> PresentApi { get; } = [];
+        public List<string> PresentModes { get; } = [];
+        public List<double?> Times { get; } = [];
+        public List<int?> SyncIntervals { get; } = [];
+        public List<bool?> AllowsTearing { get; } = [];
+        public List<double?> InputToPhoton { get; } = [];
+        public List<double?> ClickToPhoton { get; } = [];
+        public int? ProcessId { get; private set; }
+
+        public int FrameCount => FrameTimes.Count;
+
+        /// <summary>True si al menos una celda de MsUntilDisplayed trae dato (seguimiento de display activo).</summary>
+        public bool HasDisplayTracking => UntilDisplayed.Any(v => v is not null);
+
+        public double? MedianFrameTime
+        {
+            get
+            {
+                if (FrameTimes.Count == 0) return null;
+                var ordered = FrameTimes.OrderBy(v => v).ToArray();
+                var middle = ordered.Length / 2;
+                return ordered.Length % 2 == 1 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2.0;
+            }
+        }
+
+        public void Add(string[] cells, double frameTime, ColumnMap idx)
+        {
+            FrameTimes.Add(frameTime);
+            CpuBusy.Add(idx.ReadDouble(cells, idx.CpuBusy));
+            CpuWait.Add(idx.ReadDouble(cells, idx.CpuWait));
+            GpuBusy.Add(idx.ReadDouble(cells, idx.GpuBusy));
+            GpuTime.Add(idx.ReadDouble(cells, idx.GpuTime));
+            DisplayChange.Add(idx.ReadDouble(cells, idx.DisplayChange));
+            UntilDisplayed.Add(idx.ReadDouble(cells, idx.UntilDisplayed));
+            PresentApi.Add(idx.ReadDouble(cells, idx.PresentApi));
+            PresentModes.Add(idx.ReadString(cells, idx.PresentMode) ?? string.Empty);
+            Times.Add(idx.ReadDouble(cells, idx.Time));
+            SyncIntervals.Add(idx.ReadInt(cells, idx.SyncInterval));
+            AllowsTearing.Add(idx.ReadBool(cells, idx.AllowsTearing));
+            InputToPhoton.Add(idx.ReadDouble(cells, idx.InputToPhoton));
+            ClickToPhoton.Add(idx.ReadDouble(cells, idx.ClickToPhoton));
+            ProcessId ??= idx.ReadInt(cells, idx.ProcessId);
+        }
+    }
+
     private sealed class ColumnMap(string[] headers)
     {
         public int FrameTime { get; } = FindColumn(headers, FrameTimeCandidates);
@@ -214,6 +292,8 @@ public static class PresentMonCsvParser
         public int Time { get; } = FindColumn(headers, TimeCandidates);
         public int SyncInterval { get; } = FindColumn(headers, ["SyncInterval"]);
         public int AllowsTearing { get; } = FindColumn(headers, ["AllowsTearing"]);
+        public int InputToPhoton { get; } = FindColumn(headers, InputToPhotonCandidates);
+        public int ClickToPhoton { get; } = FindColumn(headers, ClickToPhotonCandidates);
 
         public double? ReadDouble(string[] cells, int index) =>
             index >= 0 && index < cells.Length && TryParseDouble(cells[index], out var value) ? value : null;
