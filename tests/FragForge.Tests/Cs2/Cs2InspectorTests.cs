@@ -54,7 +54,9 @@ public sealed class Cs2InspectorTests : IDisposable
 
         // Por CLAVE: el orden no importa y los bloques intermedios tampoco.
         Assert.Equal("240", Cs2ConfigParser.FindLeaf(settings, "refreshrate_numerator"));
-        Assert.Equal("1", Cs2ConfigParser.FindLeaf(settings, "mat_vsync"));
+        // mat_vsync vale "0" en el fixture de arriba: se espera ESE valor. Estaba puesto "1", que no
+        // aparece en ninguna parte del VDF de este test; el parser devolvia "0", que es lo correcto.
+        Assert.Equal("0", Cs2ConfigParser.FindLeaf(settings, "mat_vsync"));
         Assert.Equal(240, Cs2ConfigParser.ParseRefreshHz(settings));
     }
 
