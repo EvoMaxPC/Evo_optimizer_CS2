@@ -278,3 +278,29 @@ idioma en vivo, el motivo del bloqueo R-J no, hasta reiniciar.
 `admin` Blocking está en `:41`, después del `return`. La App exige elevación por manifiesto
 (`app.manifest:5`, `requireAdministrator`), así que en el uso normal no se da; el CLI sí puede ejecutarse
 sin elevación.
+
+**El export de CS2 no se registra en el journal.** `Cs2ProfileExporter` y `Cs2ProfileCommands` no escriben
+ni una línea en el journal: no hay llamada a `JournalEventType` en `src/FragForge.Core/Cs2Profile/` ni en
+`src/FragForge.Cli/Cs2ProfileCommands.cs`. El journal solo tiene eventos de aplicación de tweaks
+(`OperationCompleted` es el más cercano), y forzar uno de ellos para una escritura de archivo habría
+descrito mal lo ocurrido. La recuperación no depende del journal: antes de tocar `autoexec.cfg` se crea una
+copia `autoexec.cfg.fragforge-backup-<yyyyMMdd-HHmmss>` (con sufijo `-02`…`-99` si ese segundo ya tenía
+copia) y `fragforge cs2 restore-autoexec` la devuelve. **Qué verifica ese comando y qué no:** comprueba que
+la copia que va a restaurar es idéntica al backup elegido (y que el backup no está vacío); lo que **no**
+puede comprobar es que el backup no haya sido alterado *después* de crearse, porque no existe ningún hash
+del original guardado en ningún sitio. Es una verificación de integridad de la copia restaurada, no una
+garantía de que el contenido sea el que había antes. Tampoco hay manifiesto.
+
+**Un fallo de disco al escribir deja el autoexec sin tocar y con mensaje, pero solo para E/S y permisos.**
+El exportador y `restore-autoexec` capturan `UnauthorizedAccessException` e `IOException` alrededor de la
+escritura, devuelven un mensaje en español con la ruta que falló y dicen explícitamente que
+`autoexec.cfg` no se modificó; si el fallo ocurre después de crear el backup, esa copia se retira para que
+`restore-autoexec` no la elija como «la última». Cualquier **otra** excepción sigue llegando al
+`catch (Exception)` de `Program.cs:180`, que imprime `Error inesperado: <tipo>: <mensaje>` y sale con
+código 1: no hay stack trace, pero tampoco un mensaje que explique qué ruta falló.
+
+**La precedencia entre `autoexec.cfg` y los convars guardados por la cuenta no está verificada.** Cuando
+el valor de `autoexec` y el que Steam guarda en `cs2_convars.vcfg` discrepan, `Cs2ProfileComparer` informa
+de los dos valores y añade «no está verificada»; no afirma cuál gana. No hay fuente citable para el orden
+de aplicación, y depende de cuándo se ejecute `autoexec` y de si el convar se escribe al salir. Cualquier
+texto que diga «el valor del autoexec manda» sería una suposición.
