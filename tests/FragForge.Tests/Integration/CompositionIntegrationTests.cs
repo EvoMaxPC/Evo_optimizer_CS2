@@ -89,6 +89,49 @@ public sealed class CompositionIntegrationTests
         Assert.Null(report.SnapshotId);
     }
 
+    /// <summary>
+    /// E1e: el cableado REAL. Se arma el preflight por <see cref="CompositionRoot"/> (no con un <c>new</c>) y
+    /// se comprueba que RECIBE el catálogo y que bloquea el tweak de red cuando consta como seleccionado.
+    /// </summary>
+    /// <remarks>
+    /// Sin esto, RecoveryCoverage podría no ejecutarse nunca en producción y todos los tests anteriores
+    /// seguirían verdes: es el mismo tipo de agujero que tuvo adapterResolver. El catálogo real trae
+    /// network.i225v-eee-off, así que no hay que inyectar nada para que la comprobación tenga algo que ver.
+    /// </remarks>
+    [Fact]
+    public async Task PreflightFromComposition_ReceivesTheCatalog_AndBlocksTheNetworkTweakWhenSelected()
+    {
+        using var directory = new TempDirectory();
+        using var host = await CompositionRoot.BuildAsync(Options(directory.Path), cancellationToken: default, overrides: Fakes());
+        var preflight = host.Services.GetRequiredService<IPreflightService>();
+        var catalog = host.Services.GetRequiredService<ITweakCatalog>();
+        var engine = host.Services.GetRequiredService<ITweakEngine>();
+
+        // El catálogo real: el tweak de red TIENE que estar, o el test no probaría nada.
+        Assert.Contains(catalog.Definitions, d => d.Id == "network.i225v-eee-off");
+
+        var hardware = await host.Services.GetRequiredService<IHardwareProfiler>().ProfileAsync();
+        var options = new ApplyOptions
+        {
+            Profile = TweakProfile.Advanced,
+            CreateRestorePoint = true,
+            TargetUserSid = "S-1-5-21-1-2-3-1001",
+            SelectedIds = new HashSet<string>(["network.i225v-eee-off"])
+        };
+
+        var report = await preflight.CheckAsync(options, hardware);
+
+        var check = Assert.Single(report.Checks, c => c.Id == "recovery");
+        Assert.Equal(PreflightSeverity.Blocking, check.Severity);
+        Assert.Contains("network.i225v-eee-off", check.Message, StringComparison.Ordinal);
+        Assert.False(report.CanApply);
+
+        // Y sin ese id seleccionado, el MISMO preflight de la MISMA composición no bloquea por R-J.
+        var sinSeleccion = await preflight.CheckAsync(options with { SelectedIds = new HashSet<string>(["latency.game-mode-on"]) }, hardware);
+        Assert.DoesNotContain(sinSeleccion.Checks, c => c.Id == "recovery");
+        _ = engine;
+    }
+
     [Fact]
     [Trait("Category", "Windows")]
     public async Task Report_IsGeneratedAsJsonAndHtml_WithAllSections()
