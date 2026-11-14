@@ -212,8 +212,14 @@ public sealed class PowerPlanAction : ITweakAction
     public async Task<string> DryRunAsync(ActionExecutionContext context, CancellationToken cancellationToken = default)
     {
         var existing = FindPlan(await ListPlansAsync(cancellationToken));
-        var action = existing is null ? $"Duplicar esquema {_parameters.SourceSchemeGuid} como '{_parameters.PlanName}'" : $"Actualizar el plan existente '{_parameters.PlanName}' sin eliminarlo";
         var settings = string.Join(", ", _parameters.Settings.Select(s => $"{s.SettingGuid} AC={s.AcValue} DC={s.DcValue}"));
+
+        if (_parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase))
+            return existing is null
+                ? $"El plan '{_parameters.PlanName}' no existe: no se crea (settingsOnly). No se escribirá nada."
+                : $"Escribir solo valores en el plan existente '{_parameters.PlanName}' ({existing.Value.Guid}): {settings}. No duplica, no borra y no cambia el plan activo; revert restaura solo estos valores.";
+
+        var action = existing is null ? $"Duplicar esquema {_parameters.SourceSchemeGuid} como '{_parameters.PlanName}'" : $"Actualizar el plan existente '{_parameters.PlanName}' sin eliminarlo";
         return $"{action}; {settings}; activar={_parameters.Activate}. Revert reactiva el plan anterior y elimina solo el plan nuevo, o restaura los ajustes previos si ya existía.";
     }
     private void Validate()

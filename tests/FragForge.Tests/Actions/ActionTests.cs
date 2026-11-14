@@ -340,6 +340,90 @@ public sealed class PowerPlanActionTests
         })
     };
 
+    // ---------- Bloque 3: modo settingsOnly ----------
+
+    private const string SettingsOnlyJson = """
+        {"planName":"FragForge Performance","sourceSchemeGuid":"8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c","activate":false,"mode":"settingsOnly","settings":[{"subgroupGuid":"54533251-82be-4824-96c1-47b60b740d00","settingGuid":"893dee8e-2bef-41e0-89c6-b55d0929964c","acValue":0,"dcValue":0}]}
+        """;
+
+    private static ActionSpec SettingsOnlySpec() => new() { Kind = "PowerPlan", Parameters = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(SettingsOnlyJson) };
+
+    [Fact]
+    public async Task SettingsOnly_DoesNotDuplicateNorDeleteNorActivateThePlan()
+    {
+        var simulator = new PowerCfgSimulator { PlanExists = true, ActiveIsFragForge = false };
+        var action = new PowerPlanAction(simulator.Runner, SettingsOnlySpec());
+        var context = Context();
+        var before = await action.CaptureAsync(context);
+        await action.ApplyAsync(before, context);
+
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/duplicatescheme", StringComparison.Ordinal));
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/delete", StringComparison.Ordinal));
+        // activate=false y el plan no es el activo: no se activa nada.
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setactive", StringComparison.Ordinal));
+        Assert.Contains(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SettingsOnly_WithoutThePlan_IsNotApplicable_InsteadOfCreatingIt()
+    {
+        var simulator = new PowerCfgSimulator { PlanExists = false };
+        var action = new PowerPlanAction(simulator.Runner, SettingsOnlySpec());
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.Contains("no crea planes", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/duplicatescheme", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SettingsOnly_RevertRestoresOnlyItsValues_AndNeverDeletesThePlan()
+    {
+        var simulator = new PowerCfgSimulator { PlanExists = true, ActiveIsFragForge = false };
+        var action = new PowerPlanAction(simulator.Runner, SettingsOnlySpec());
+        var context = Context();
+        var before = await action.CaptureAsync(context);
+        Assert.Equal(5, ((PowerPlanActionState)before).Settings[0].AcIndex); // capturado antes de escribir el 0
+        await action.ApplyAsync(before, context);
+        await action.RevertAsync(before, context);
+
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/delete", StringComparison.Ordinal));
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/duplicatescheme", StringComparison.Ordinal));
+        Assert.Equal(5, simulator.AcIndex); // volvió al valor capturado
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyRevertAsync(before, context)).Outcome);
+    }
+
+    [Fact]
+    public async Task SettingsOnly_RevertWithPlanAlreadyGone_SucceedsWithANote()
+    {
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        var action = new PowerPlanAction(simulator.Runner, SettingsOnlySpec());
+        var context = Context();
+        var before = await action.CaptureAsync(context);
+        await action.ApplyAsync(before, context);
+        simulator.PlanExists = false; // el padre borró el plan (revert del padre primero)
+
+        await action.RevertAsync(before, context); // no debe lanzar
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyRevertAsync(before, context)).Outcome);
+    }
+
+    [Fact]
+    public async Task SettingsOnly_OnTheActivePlan_RepeatsSetactiveWithTheSameGuid()
+    {
+        // Regla 5: tras escribir settings en el plan ACTIVO, se repite /setactive con el MISMO GUID.
+        var simulator = new PowerCfgSimulator { PlanExists = true, ActiveIsFragForge = true };
+        var action = new PowerPlanAction(simulator.Runner, SettingsOnlySpec());
+        var context = Context();
+        await action.ApplyAsync(await action.CaptureAsync(context), context);
+        Assert.Contains(simulator.Commands, c => c.StartsWith("/setactive", StringComparison.Ordinal) && c.Contains(PlanGuid, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void UnknownMode_IsRejectedEagerly()
+    {
+        var spec = new { planName = "X", sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", mode = "overlay", settings = new[] { new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = 0, dcValue = 0 } } };
+        var actionSpec = new ActionSpec { Kind = "PowerPlan", Parameters = System.Text.Json.JsonSerializer.SerializeToElement(spec) };
+        Assert.Throws<CatalogValidationException>(() => new PowerPlanAction(new FakeProcessRunner(), actionSpec));
+    }
+
     [Fact]
     public void AmbiguousPlanNames_AreRejected()
     {

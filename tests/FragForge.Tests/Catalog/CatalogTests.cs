@@ -317,6 +317,30 @@ public sealed class CatalogTests
     }
 
     [Fact]
+    public async Task NoTwoTweaksOwnTheSamePowerSetting()
+    {
+        // Un solo dueño por (subgrupo, setting): dos tweaks escribiendo el mismo valor lo dejan
+        // inconsistente al revertir uno de ellos. power.fragforge-performance es el dueño de base.
+        var (loader, _) = CreateLoader();
+        var catalog = await loader.LoadEmbeddedAsync();
+        var owners = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var definition in catalog.Definitions)
+        foreach (var action in definition.Actions.Where(a => a.Kind.Equals("PowerPlan", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!action.Parameters.TryGetProperty("settings", out var settings) || settings.ValueKind != JsonValueKind.Array) continue;
+            foreach (var setting in settings.EnumerateArray())
+            {
+                var key = setting.GetProperty("subgroupGuid").GetString() + "|" + setting.GetProperty("settingGuid").GetString();
+                if (!owners.TryGetValue(key, out var list)) owners[key] = list = [];
+                list.Add(definition.Id);
+            }
+        }
+
+        var clashes = owners.Where(o => o.Value.Count > 1).Select(o => $"{o.Key}: {string.Join(", ", o.Value)}").ToArray();
+        Assert.True(clashes.Length == 0, "Dos tweaks declaran el mismo ajuste de energía:\n  - " + string.Join("\n  - ", clashes));
+    }
+
+    [Fact]
     public void APolicyRejectedAction_FailsTheWholeCatalogLoad_InsteadOfIsolatingTheTweak()
     {
         // Punto 5 del hotfix: este es el comportamiento REAL de hoy, fijado para que nadie lo dé por
