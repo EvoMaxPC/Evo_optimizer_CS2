@@ -18,10 +18,21 @@
       <Setter Property="BorderBrush" Value="#3B4C60"/>
       <Setter Property="Padding" Value="4"/>
     </Style>
+    <!-- Ronda 4: el combo se veia "vacio" (filas en blanco, caja gris claro) aunque el binding era
+         correcto. El cromo es el de la plantilla Aero2, que es CLARO e IGNORA Background: por eso el
+         #243140 nunca se vio. Con Foreground claro heredado, el texto quedaba claro sobre claro.
+         Con la plantilla por defecto el texto solo se ve bien OSCURO. Se cambia el Foreground, no el
+         fondo: la caja se seguira viendo gris claro (es el cromo del tema, no nuestro Background). -->
     <Style TargetType="ComboBox">
       <Setter Property="Background" Value="#243140"/>
-      <Setter Property="Foreground" Value="#E8EDF2"/>
+      <Setter Property="Foreground" Value="#101820"/>
       <Setter Property="Margin" Value="0,0,8,0"/>
+    </Style>
+    <!-- El desplegable NO hereda los setters del ComboBox: ComboBoxItem es un contenedor aparte y sin
+         estilo propio toma el Foreground del tema, no el de la caja. Se fija explicitamente.
+         No se toca Background: el resaltado de la fila seleccionada lo pinta el tema. -->
+    <Style TargetType="ComboBoxItem">
+      <Setter Property="Foreground" Value="#101820"/>
     </Style>
     <!-- Encabezado de la tabla de tweaks. Sin este estilo, WPF usa el chrome CLARO por defecto mientras
          el texto hereda el Foreground claro de la ventana: encabezado casi ilegible (hotfix Capa 0). -->
