@@ -144,10 +144,11 @@ public sealed class ExternalCatalogResilienceTests
     /// embebido, podría reemplazar un tweak auditado por otro cualquiera.
     /// </summary>
     [Fact]
-    public void ADuplicateOfAnEmbeddedId_NeverOverwritesIt()
+    public async Task ADuplicateOfAnEmbeddedId_NeverOverwritesIt()
     {
         var loader = Loader();
-        var embedded = loader.LoadEmbeddedAsync().GetAwaiter().GetResult();
+        // xUnit1031: await en vez de bloquear con GetAwaiter().GetResult().
+        var embedded = await loader.LoadEmbeddedAsync();
         var original = embedded.Definitions.First(d => d.Id == "cs2.cpu-priority-high");
 
         var catalog = loader.LoadDocumentsResilient([
