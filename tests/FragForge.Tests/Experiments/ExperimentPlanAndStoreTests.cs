@@ -39,8 +39,10 @@ public sealed class ExperimentPlanTests
     public void BlockedMode_GroupsArmsTogether_AndWarnsThroughPlan()
     {
         var schedule = Plan(runs: 3, mode: ExperimentMode.Blocked).BuildSchedule();
-        Assert.Equal(1, schedule.Take(3).Distinct().Count());
-        Assert.Equal(1, schedule.Skip(3).Distinct().Count());
+        // xUnit2013: el tamaño 1 se comprueba con Assert.Single, que ademas dice CUAL fue el unico
+        // elemento cuando falla (con Assert.Equal solo se veia "1 != 2").
+        Assert.Single(schedule.Take(3).Distinct());
+        Assert.Single(schedule.Skip(3).Distinct());
         Assert.NotEqual(schedule[0], schedule[3]);
     }
 
