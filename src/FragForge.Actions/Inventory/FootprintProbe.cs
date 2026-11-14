@@ -7,6 +7,20 @@ using FragForge.Core.Models;
 
 namespace FragForge.Actions.Inventory;
 
+/// <summary>
+/// Valores por defecto de la huella. Vive FUERA de <see cref="FootprintProbe"/> a propósito:
+/// <c>FootprintProbe</c> está anotada <c>[SupportedOSPlatform("windows")]</c>, así que TODOS sus
+/// miembros —una constante incluida— heredan esa restricción. <see cref="UnsupportedFootprintProbe"/>
+/// es justamente la variante para plataformas SIN Windows, y usaba
+/// <c>FootprintProbe.DefaultSeconds</c> como valor por defecto: eso es CA1416 en el sitio de llamada.
+/// Este contenedor no tiene restricción, así que ambas variantes pueden usarlo.
+/// </summary>
+public static class FootprintDefaults
+{
+    /// <summary>Duración por defecto de la medición, en segundos.</summary>
+    public const double Seconds = 60.0;
+}
+
 public sealed record NamedProcess(string Name, int ProcessId);
 
 public sealed record FootprintSample
@@ -34,9 +48,7 @@ public sealed record FootprintSample
 [SupportedOSPlatform("windows")]
 public sealed class FootprintProbe(ISensorSampler sampler)
 {
-    public const double DefaultSeconds = 60.0;
-
-    public async Task<BenchmarkSession> RunAsync(string label = "footprint", double seconds = DefaultSeconds, CancellationToken cancellationToken = default)
+    public async Task<BenchmarkSession> RunAsync(string label = "footprint", double seconds = FootprintDefaults.Seconds, CancellationToken cancellationToken = default)
     {
         var duration = TimeSpan.FromSeconds(Math.Clamp(seconds, 5, 600));
         var started = DateTimeOffset.UtcNow;
@@ -158,6 +170,6 @@ public sealed class FootprintProbe(ISensorSampler sampler)
 /// <summary>Huella en plataformas sin Windows: sesión vacía con nota, nunca ceros.</summary>
 public sealed class UnsupportedFootprintProbe
 {
-    public Task<BenchmarkSession> RunAsync(string label = "footprint", double seconds = FootprintProbe.DefaultSeconds, CancellationToken cancellationToken = default) =>
+    public Task<BenchmarkSession> RunAsync(string label = "footprint", double seconds = FootprintDefaults.Seconds, CancellationToken cancellationToken = default) =>
         Task.FromResult(new BenchmarkSession(label + "-unsupported", label, [], []));
 }
