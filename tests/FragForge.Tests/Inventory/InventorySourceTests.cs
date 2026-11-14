@@ -18,23 +18,26 @@ public sealed class StartupInventorySourceTests
     }
 
     [Fact]
-    public async Task ReadsRunKeys_AndCrossesThemWithStartupApproved()
+    public async Task ReadsTheInteractiveUsersRunKey_ViaItsHive_AndCrossesItWithStartupApproved()
     {
+        const string Sid = "S-1-5-21-1-2-3-1001";
         var registry = RegistryWith(r =>
         {
-            r.Keys[@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase)
+            // El hive DEL SID, no HKCU: es la regla R-H (el HKCU del proceso no es el del jugador).
+            r.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase)
             {
                 ["OneDrive"] = ("String", "\"C:\\Users\\x\\OneDrive.exe\" /background"),
                 ["Steam"] = ("String", "C:\\Steam\\steam.exe -silent")
             };
-            r.Keys[@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"] = new(StringComparer.OrdinalIgnoreCase)
+            r.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"] = new(StringComparer.OrdinalIgnoreCase)
             {
                 ["OneDrive"] = ("Binary", new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 })
             };
         });
 
-        var (entries, warnings) = await new WindowsStartupInventorySource(registry).ReadAsync();
+        var (entries, warnings, notes) = await new WindowsStartupInventorySource(registry).ReadAsync(Sid);
         Assert.DoesNotContain(warnings, w => w.Contains("No se pudo", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.Contains(Sid, StringComparison.Ordinal));
 
         var oneDrive = entries.Single(e => e.Name == "OneDrive");
         Assert.Equal(StartupLocation.RunHkcu, oneDrive.Location);
@@ -45,6 +48,45 @@ public sealed class StartupInventorySourceTests
         var steam = entries.Single(e => e.Name == "Steam");
         Assert.Null(steam.ApprovedEnabled);
         Assert.Null(steam.ApprovalFirstByte);
+
+        // Nada se leyó del HKCU del proceso: la clave nunca se tocó.
+        Assert.DoesNotContain(registry.ReadCount.Keys, k => k.StartsWith(@"HKCU\", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task UnknownSid_DoesNotReadHkcu_AndSaysSoInNotes_NotInWarnings()
+    {
+        const string Sid = "S-1-5-21-9-9-9-1001";
+        var registry = RegistryWith(r =>
+        {
+            // Hay datos en el hive del SID y en el HKCU del proceso: NINGUNO debe usarse sin SID.
+            r.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase) { ["Oculto"] = ("String", "oculto.exe") };
+            r.Keys[@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase) { ["DelProceso"] = ("String", "proceso.exe") };
+        });
+
+        var (entries, warnings, notes) = await new WindowsStartupInventorySource(registry).ReadAsync(null);
+
+        Assert.DoesNotContain(entries, e => e.Location == StartupLocation.RunHkcu);
+        Assert.DoesNotContain(entries, e => e.Name is "Oculto" or "DelProceso");
+        Assert.Contains(notes, n => n.Contains("SID", StringComparison.OrdinalIgnoreCase) && n.Contains("no se leyó", StringComparison.OrdinalIgnoreCase));
+        // Es un ámbito no leído, no un fallo: no va a Warnings.
+        Assert.DoesNotContain(warnings, w => w.Contains("SID", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(registry.ReadCount.Keys, k => k.StartsWith(@"HKCU\", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AnInventoryWithOnlyNotes_IsStillComplete()
+    {
+        var (entries, warnings, notes) = await new WindowsStartupInventorySource(new FakeRegistry()).ReadAsync(null);
+        // Sin registro sembrado no hay entradas de Run; las carpetas Startup del equipo de pruebas son
+        // irrelevantes para esta aserción, que va sobre el estado del inventario.
+        Assert.DoesNotContain(entries, e => e.Location is StartupLocation.RunHkcu or StartupLocation.RunHklm or StartupLocation.RunWow6432);
+        Assert.Empty(warnings);
+        Assert.NotEmpty(notes);
+        var inventory = new SystemInventory { MachineName = "probe", Warnings = warnings, Notes = notes };
+        Assert.True(inventory.IsComplete);
+        var withFailure = new SystemInventory { MachineName = "probe", Warnings = ["algo falló"], Notes = notes };
+        Assert.False(withFailure.IsComplete);
     }
 
     [Fact]
@@ -56,33 +98,25 @@ public sealed class StartupInventorySourceTests
             r.Keys[@"HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase) { ["Old32"] = ("String", "old.exe") };
         });
 
-        var entries = (await new WindowsStartupInventorySource(registry).ReadAsync()).Entries;
+        var entries = (await new WindowsStartupInventorySource(registry).ReadAsync("S-1-5-21-1-2-3-1001")).Entries;
         Assert.Contains(entries, e => e is { Name: "MsTeams", Location: StartupLocation.RunHklm });
         Assert.Contains(entries, e => e is { Name: "Old32", Location: StartupLocation.RunWow6432 });
     }
 
     [Fact]
-    public async Task EmptySystem_ReturnsNoEntries_ButStillWarnsAboutTheHiveScope()
-    {
-        var (entries, warnings) = await new WindowsStartupInventorySource(new FakeRegistry()).ReadAsync();
-        Assert.Empty(entries);
-        // El inventario HKCU es el del PROCESO: el aviso es obligatorio, no opcional.
-        Assert.Contains(warnings, w => w.Contains("usuario del proceso", StringComparison.Ordinal));
-    }
-
-    [Fact]
     public async Task UnrecognizedApprovalByte_StaysUnknown()
     {
+        const string Sid = "S-1-5-21-1-2-3-1001";
         var registry = new FakeRegistry();
-        registry.Keys[@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase)
+        registry.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase)
         {
             ["Raro"] = ("String", "raro.exe")
         };
-        registry.Keys[@"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"] = new(StringComparer.OrdinalIgnoreCase)
+        registry.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"] = new(StringComparer.OrdinalIgnoreCase)
         {
             ["Raro"] = ("Binary", new byte[] { 0x42, 0x01 })
         };
-        var entries = (await new WindowsStartupInventorySource(registry).ReadAsync()).Entries;
+        var entries = (await new WindowsStartupInventorySource(registry).ReadAsync(Sid)).Entries;
         var item = Assert.Single(entries);
         Assert.Null(item.ApprovedEnabled);
         Assert.Equal(0x42, item.ApprovalFirstByte);
@@ -91,7 +125,7 @@ public sealed class StartupInventorySourceTests
     [Fact]
     public async Task UnsupportedSource_DeclaresTheReasonInsteadOfReturningSilence()
     {
-        var (entries, warnings) = await new UnsupportedStartupInventorySource().ReadAsync();
+        var (entries, warnings, _) = await new UnsupportedStartupInventorySource().ReadAsync(null);
         Assert.Empty(entries);
         Assert.Contains(warnings, w => w.Contains("Windows", StringComparison.Ordinal));
     }

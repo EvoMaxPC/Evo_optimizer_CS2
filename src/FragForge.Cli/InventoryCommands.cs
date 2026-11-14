@@ -43,6 +43,7 @@ public static class InventoryCommands
             Console.WriteLine($"  Tareas:    {inventory.Tasks.Count}  Arranque: {inventory.Startup.Count}  Appx: {inventory.Appx.Count}");
             if (report.ApplicableServices.Count > 0) Console.WriteLine($"  Servicios en tier aplicable: {string.Join(", ", report.ApplicableServices)}");
             if (report.UnknownServices.Count > 0) Console.WriteLine($"  Servicios fuera de la tabla (T0 por omisión): {report.UnknownServices.Count}");
+            foreach (var note in inventory.Notes) Console.WriteLine("  nota: " + note);
             foreach (var warning in inventory.Warnings) Console.Error.WriteLine("  AVISO: " + warning);
             Console.WriteLine("Informe: " + output);
         }
@@ -136,6 +137,7 @@ public static class InventoryCommands
                 Console.Error.WriteLine("inventory admite: services, tasks, startup, appx.");
                 return ExitCodes.Usage;
         }
+        foreach (var note in inventory.Notes) Console.WriteLine("  nota: " + note);
         foreach (var warning in inventory.Warnings) Console.Error.WriteLine("  AVISO: " + warning);
         return inventory.IsComplete ? ExitCodes.Success : ExitCodes.Failure;
     }

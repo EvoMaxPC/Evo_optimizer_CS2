@@ -12,13 +12,29 @@ public sealed class CompositionIntegrationTests
 {
     private static ShellOptions Options(string dataRoot) => new(dataRoot, "es-MX", ConsoleLogging: false);
 
+    private static readonly string[] SeedIds =
+    [
+        "cpu.power-throttling-off",
+        "cs2.cpu-priority-high",
+        "cs2.fullscreen-optimizations-off",
+        "diagnostics.system-inspect",
+        "latency.game-dvr-capture-off",
+        "latency.game-mode-on",
+        "latency.global-timer-resolution",
+        "latency.mouse-acceleration-off",
+        "network.i225v-eee-off",
+        "power.fragforge-performance"
+    ];
+
     [Fact]
     public async Task CompositionRoot_ResolvesEveryService_AndLoadsTheEmbeddedCatalog()
     {
         using var directory = new TempDirectory();
         using var host = await CompositionRoot.BuildAsync(Options(directory.Path));
         var catalog = host.Services.GetRequiredService<ITweakCatalog>();
-        Assert.Equal(10, catalog.Definitions.Count);
+        // El catálogo es acumulativo por capas: mínimo y presencia, nunca igualdad exacta.
+        Assert.True(catalog.Definitions.Count >= 10, $"El catálogo quedó en {catalog.Definitions.Count} tweaks; deben ser al menos 10.");
+        foreach (var id in SeedIds) Assert.Contains(catalog.Definitions, d => d.Id == id);
         Assert.NotNull(host.Services.GetRequiredService<ITweakEngine>());
         Assert.NotNull(host.Services.GetRequiredService<IHardwareProfiler>());
         Assert.NotNull(host.Services.GetRequiredService<IReportService>());
@@ -36,8 +52,10 @@ public sealed class CompositionIntegrationTests
         using var directory = new TempDirectory();
         using var host = await CompositionRoot.BuildAsync(Options(directory.Path));
         var engine = host.Services.GetRequiredService<ITweakEngine>();
+        var catalog = host.Services.GetRequiredService<ITweakCatalog>();
         var scan = await engine.ScanAsync();
-        Assert.Equal(10, scan.Tweaks.Count);
+        // El scan evalúa cada definición del catálogo: se compara contra el catálogo, no contra 10.
+        Assert.Equal(catalog.Definitions.Count, scan.Tweaks.Count);
         if (!OperatingSystem.IsWindows()) Assert.True(scan.Hardware.IsUnsupportedPlatform);
         var report = await engine.ApplyAsync(scan.Tweaks.Select(t => t.Id), new ApplyOptions { DryRun = true, Profile = TweakProfile.Advanced, CreateRestorePoint = true, TargetUserSid = "S-1-5-21-1-2-3-1001" });
         Assert.True(report.DryRun);

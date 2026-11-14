@@ -25,7 +25,13 @@ public interface ITaskInventorySource
 /// <summary>Inventario de arranque: claves Run, carpeta Startup y StartupApproved.</summary>
 public interface IStartupInventorySource
 {
-    Task<(IReadOnlyList<StartupEntry> Entries, IReadOnlyList<string> Warnings)> ReadAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// <paramref name="interactiveUserSid"/> es el SID del usuario que juega, para leer SU hive
+    /// (<c>HKU\&lt;SID&gt;</c>) en vez del HKCU del proceso elevado. Si es null o inválido, no se lee
+    /// HKCU y el motivo queda en <c>Notes</c>. Parámetro OPCIONAL: las implementaciones sin estado
+    /// (plataforma no soportada) lo ignoran.
+    /// </summary>
+    Task<(IReadOnlyList<StartupEntry> Entries, IReadOnlyList<string> Warnings, IReadOnlyList<string> Notes)> ReadAsync(string? interactiveUserSid, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Inventario de paquetes Appx. Solo lectura: la aplicación NO desinstala nada.</summary>

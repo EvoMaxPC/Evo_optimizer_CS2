@@ -27,12 +27,29 @@ public sealed class CatalogTests
         return (new JsonTweakCatalogLoader(validator), schema);
     }
 
+    private static readonly string[] SeedIds =
+    [
+        "cpu.power-throttling-off",
+        "cs2.cpu-priority-high",
+        "cs2.fullscreen-optimizations-off",
+        "diagnostics.system-inspect",
+        "latency.game-dvr-capture-off",
+        "latency.game-mode-on",
+        "latency.global-timer-resolution",
+        "latency.mouse-acceleration-off",
+        "network.i225v-eee-off",
+        "power.fragforge-performance"
+    ];
+
     [Fact]
-    public async Task EmbeddedCatalog_LoadsExactlyTenValidTweaks_WithBothCultures()
+    public async Task EmbeddedCatalog_LoadsAtLeastTheTenSeedTweaks_WithBothCultures()
     {
         var (loader, _) = CreateLoader();
         var catalog = await loader.LoadEmbeddedAsync();
-        Assert.Equal(10, catalog.Definitions.Count);
+        // El catálogo crece por capas: ya no hay un número exacto que cuidar. Lo que no puede
+        // pasar es PERDER un tweak semilla, así que se exige el mínimo y la presencia de cada id.
+        Assert.True(catalog.Definitions.Count >= 10, $"El catálogo quedó en {catalog.Definitions.Count} tweaks; deben ser al menos 10.");
+        Assert.All(SeedIds, id => Assert.Contains(catalog.Definitions, d => d.Id == id));
         Assert.All(catalog.Definitions, d =>
         {
             Assert.False(string.IsNullOrWhiteSpace(d.Title.EsMx));
@@ -40,9 +57,6 @@ public sealed class CatalogTests
             Assert.NotEmpty(d.References);
             Assert.NotEmpty(d.Actions);
         });
-        Assert.Contains(catalog.Definitions, d => d.Id == "power.fragforge-performance");
-        Assert.Contains(catalog.Definitions, d => d.Id == "network.i225v-eee-off");
-        Assert.Contains(catalog.Definitions, d => d.Id == "cs2.fullscreen-optimizations-off");
         Assert.Single(catalog.Definitions, d => d.ReadOnly);
     }
 
@@ -132,6 +146,14 @@ public sealed class CatalogTests
         Assert.DoesNotContain(catalog.Definitions, d => d.Actions.Any(a => a.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase) && a.Parameters.ToString().Contains("WinDefend", StringComparison.OrdinalIgnoreCase)));
     }
 
+    /// <summary>Semilla con opt-in ANTERIOR al hotfix: conserva su perfil, no es debloat.</summary>
+    private static readonly string[] LegacyOptInSeeds =
+    [
+        "cs2.fullscreen-optimizations-off",
+        "network.i225v-eee-off",
+        "power.fragforge-performance"
+    ];
+
     [Fact]
     public async Task ProfileSelection_MatchesDocumentedRiskGates()
     {
@@ -141,11 +163,87 @@ public sealed class CatalogTests
         var balanced = FragForge.Core.Engine.ProfileSelector.Select(catalog.Definitions, TweakProfile.Balanced);
         var competitive = FragForge.Core.Engine.ProfileSelector.Select(catalog.Definitions, TweakProfile.Competitive);
         var advanced = FragForge.Core.Engine.ProfileSelector.Select(catalog.Definitions, TweakProfile.Advanced);
+
         Assert.DoesNotContain(safe, d => d.Risk != RiskLevel.Safe);
         Assert.Contains(balanced, d => d.Id == "latency.game-dvr-capture-off");
+        // Safe y Balanced ya excluían todo opt-in: sigue igual.
         Assert.DoesNotContain(balanced, d => d.Tags.Contains("opt-in"));
+        // Los semilla que ya eran opt-in conservan su perfil (no se toca nada fuera del debloat).
         Assert.Contains(competitive, d => d.Id == "power.fragforge-performance");
-        Assert.Equal(catalog.Definitions.Count, advanced.Count);
+        // Advanced ya no es "todo": el debloat opt-in queda fuera.
+        Assert.DoesNotContain(advanced, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
+
+        var debloat = catalog.Definitions.Count(d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(catalog.Definitions.Count - debloat, advanced.Count);
+        Assert.Contains(advanced, d => LegacyOptInSeeds.Contains(d.Id));
+    }
+
+    [Theory]
+    [InlineData(TweakProfile.Safe)]
+    [InlineData(TweakProfile.Balanced)]
+    [InlineData(TweakProfile.Competitive)]
+    [InlineData(TweakProfile.Advanced)]
+    public async Task DebloatOptIn_IsNeverSelectedByAnyProfile(TweakProfile profile)
+    {
+        var (loader, _) = CreateLoader();
+        var catalog = await loader.LoadEmbeddedAsync();
+        var selected = FragForge.Core.Engine.ProfileSelector.Select(catalog.Definitions, profile);
+
+        // El debloat de la Capa 2 es opt-in de verdad: aparece SOLO si se pide por id.
+        Assert.DoesNotContain(selected, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
+
+        // Ningún tweak CON opt-in entra automáticamente salvo los semilla que ya lo eran.
+        Assert.DoesNotContain(selected, d => d.Tags.Contains("opt-in", StringComparer.OrdinalIgnoreCase)
+            && !LegacyOptInSeeds.Contains(d.Id, StringComparer.OrdinalIgnoreCase));
+
+        // Pero el tweak existe en el catálogo: sigue siendo aplicable por id explícito.
+        Assert.Contains(catalog.Definitions, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task EveryDebloatTweak_IsSelectableOnlyByExplicitId()
+    {
+        var (loader, _) = CreateLoader();
+        var catalog = await loader.LoadEmbeddedAsync();
+        var debloat = catalog.Definitions.Where(d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase)).ToArray();
+        // El catálogo crece por capas: mínimo, nunca un número exacto (regla R-N).
+        Assert.True(debloat.Length >= 16, $"El debloat quedó en {debloat.Length} tweaks; deben ser al menos 16.");
+        foreach (var definition in debloat)
+        {
+            Assert.Contains("windows", definition.Conditions.Select(c => c.Type), StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain("atlas", definition.Conditions.Select(c => c.Type), StringComparer.OrdinalIgnoreCase);
+            Assert.Equal(1, definition.Tags.Count(t => string.Equals(t, "opt-in", StringComparison.OrdinalIgnoreCase)));
+            // Permiso explícito por id: única vía de entrada, ni siquiera en Advanced.
+            Assert.False(FragForge.Core.Engine.ProfileSelector.Allows(TweakProfile.Advanced, definition));
+        }
+    }
+
+    [Fact]
+    public void APolicyRejectedAction_FailsTheWholeCatalogLoad_InsteadOfIsolatingTheTweak()
+    {
+        // Punto 5 del hotfix: este es el comportamiento REAL de hoy, fijado para que nadie lo dé por
+        // bueno sin querer. ValidateCatalog llama a ITweakActionFactory.Create y acumula su excepción:
+        // un solo tweak con destino protegido tumba la carga ENTERA, no se aísla.
+        // NO se arregla en este hotfix (se pidió reportar). El test fallará el día que se decida aislar.
+        const string Protected = """
+        {"id":"probe.protected","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"WinDefend","startMode":"Manual"}}],"references":["r"]}
+        """;
+        const string Good = """
+        {"id":"probe.good","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"DiagTrack","startMode":"Manual"}}],"references":["r"]}
+        """;
+
+        var (loader, _) = CreateLoader();
+
+        // El tweak sano, solo, carga perfectamente: el catálogo no está roto de origen.
+        Assert.Equal("probe.good", Assert.Single(loader.LoadDocuments([("good.json", Good)]).Definitions).Id);
+
+        // Con el tweak protegido presente no se pierde solo ese: se pierde TODO el catálogo.
+        var ex = Assert.Throws<CatalogValidationException>(() => loader.LoadDocuments([("good.json", Good), ("protected.json", Protected)]));
+        Assert.Contains(ex.Errors, e => e.Contains("probe.protected", StringComparison.Ordinal));
+        Assert.Contains(ex.Errors, e => e.Contains("protegido", StringComparison.OrdinalIgnoreCase));
+
+        // Y por tanto el tweak bueno NO llega a cargarse: esa es la consecuencia que se reporta.
+        Assert.DoesNotContain(ex.Errors, e => e.Contains("probe.good", StringComparison.Ordinal));
     }
 
     [Fact]

@@ -141,16 +141,31 @@ public sealed class DebloatCatalogTests
     }
 
     [Fact]
-    public void ServiceTweaks_AlwaysComeWithAtlasAndWindowsConditions()
+    public void ServiceTweaks_AlwaysComeWithWindowsCondition_AndNoAtlasGate()
     {
         foreach (var file in DebloatFiles())
         {
             using var document = JsonDocument.Parse(File.ReadAllText(file));
-            var kinds = document.RootElement.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString()).ToArray();
+            var kinds = document.RootElement.GetProperty("conditions").EnumerateArray().Select(c => c.GetProperty("type").GetString()!).ToArray();
             Assert.Contains("windows", kinds, StringComparer.OrdinalIgnoreCase);
-            // Los servicios solo aplican si Atlas ya hizo el debloat: premisa de Capa 2.
-            if (document.RootElement.GetProperty("actions").EnumerateArray().Any(a => a.GetProperty("kind").GetString() == "Service"))
-                Assert.Contains("atlas", kinds, StringComparer.OrdinalIgnoreCase);
+            // Corregido en la Capa 2: el debloat NO se condiciona a Atlas. Atlas es una referencia
+            // informativa (AtlasProfile), no una compuerta: el tweak aplica en cualquier Windows.
+            Assert.DoesNotContain("atlas", kinds, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void DebloatTweaks_AreOptInExactlyOnce()
+    {
+        foreach (var file in DebloatFiles())
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(file));
+            var id = document.RootElement.GetProperty("id").GetString();
+            string[] tags = document.RootElement.TryGetProperty("tags", out var tagsElement)
+                ? tagsElement.EnumerateArray().Select(t => t.GetString()!).ToArray()
+                : Array.Empty<string>();
+            Assert.Equal(1, tags.Count(t => string.Equals(t, "opt-in", StringComparison.OrdinalIgnoreCase)));
+            Assert.False(string.IsNullOrWhiteSpace(id));
         }
     }
 

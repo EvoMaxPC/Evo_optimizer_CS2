@@ -81,10 +81,43 @@ public sealed class InventorySerializationTests
     }
 
     [Fact]
+    public void Notes_RoundTrip_AndDoNotMakeTheInventoryIncomplete()
+    {
+        // Notes es un campo ADITIVO: se persiste con el inventario y NO cuenta como fallo de lectura.
+        var inventory = new SystemInventory
+        {
+            MachineName = "PN64",
+            Notes = ["SID del usuario interactivo desconocido: no se leyó el arranque HKCU."],
+            Warnings = []
+        };
+        var json = JsonSerializer.Serialize(inventory, JsonDefaults.Options);
+        Assert.Contains("\"notes\"", json);
+        var back = JsonSerializer.Deserialize<SystemInventory>(json, JsonDefaults.Options);
+        Assert.NotNull(back);
+        Assert.Single(back!.Notes);
+        Assert.True(back.IsComplete);
+    }
+
+    [Fact]
     public void UnknownJsonMember_InInventory_IsRejected()
     {
         var json = """{"machineName":"x","campo":"desconocido"}""";
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SystemInventory>(json, JsonDefaults.Options));
+    }
+
+    [Fact]
+    public void AuditReport_WithoutWarnings_CarriesTheNotesAndStaysComplete()
+    {
+        // La decisión de `audit` es `inventory.IsComplete`: con solo notas debe ser TRUE (exit 0).
+        // Las notas del inventario además viajan al informe para que se vean sin abrir el inventario.
+        var inventory = new SystemInventory
+        {
+            MachineName = "PN64",
+            Notes = ["SID del usuario interactivo desconocido: no se leyó el arranque HKCU."]
+        };
+        var report = AuditReport.From(inventory, ServiceTierCatalog.Empty);
+        Assert.True(inventory.IsComplete);
+        Assert.Contains(report.Notes, n => n.Contains("SID del usuario interactivo", StringComparison.Ordinal));
     }
 
     [Fact]

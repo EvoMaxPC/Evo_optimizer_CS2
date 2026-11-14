@@ -22,7 +22,7 @@ public sealed class WindowsSystemInventory(
     public async Task<SystemInventory> BuildAsync(CancellationToken cancellationToken = default)
     {
         var hardware = await profiler.ProfileAsync(cancellationToken);
-        return await InventoryComposer.ComposeAsync(hardware, services, tasks, startup, appx, [], cancellationToken);
+        return await InventoryComposer.ComposeAsync(hardware, services, tasks, startup, appx, [], [], cancellationToken);
     }
 }
 
@@ -33,7 +33,7 @@ public sealed class WindowsSystemInventory(
 /// </summary>
 public static class InventoryComposer
 {
-    public static async Task<SystemInventory> ComposeAsync(HardwareProfile hardware, IServiceInventorySource serviceSource, ITaskInventorySource taskSource, IStartupInventorySource startupSource, IAppxInventorySource appxSource, List<string> warnings, CancellationToken cancellationToken)
+    public static async Task<SystemInventory> ComposeAsync(HardwareProfile hardware, IServiceInventorySource serviceSource, ITaskInventorySource taskSource, IStartupInventorySource startupSource, IAppxInventorySource appxSource, List<string> warnings, List<string> notes, CancellationToken cancellationToken)
     {
         IReadOnlyList<ServiceEntry> serviceList = [];
         IReadOnlyList<UserServiceTemplate> templates = [];
@@ -47,7 +47,14 @@ public static class InventoryComposer
         try { var result = await taskSource.ReadAsync(cancellationToken); taskList = result.Tasks; warnings.AddRange(result.Warnings); }
         catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add("Tareas: " + ex.Message); }
 
-        try { var result = await startupSource.ReadAsync(cancellationToken); startupList = result.Entries; warnings.AddRange(result.Warnings); }
+        // El inventario de arranque necesita el SID del usuario interactivo: su hive, no el del proceso (R-H).
+        try
+        {
+            var result = await startupSource.ReadAsync(hardware.InteractiveUserSid, cancellationToken);
+            startupList = result.Entries;
+            warnings.AddRange(result.Warnings);
+            notes.AddRange(result.Notes);
+        }
         catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add("Arranque: " + ex.Message); }
 
         try { var result = await appxSource.ReadAsync(cancellationToken); appxList = result.Entries; warnings.AddRange(result.Warnings); }
@@ -63,7 +70,8 @@ public static class InventoryComposer
             Tasks = taskList,
             Startup = startupList,
             Appx = appxList,
-            Warnings = warnings
+            Warnings = warnings,
+            Notes = notes
         };
     }
 }
@@ -74,7 +82,7 @@ public sealed class UnsupportedSystemInventory(IHardwareProfiler profiler) : ISy
     public async Task<SystemInventory> BuildAsync(CancellationToken cancellationToken = default)
     {
         var hardware = await profiler.ProfileAsync(cancellationToken);
-        return await InventoryComposer.ComposeAsync(hardware, new UnsupportedServiceInventorySource(), new UnsupportedTaskInventorySource(), new UnsupportedStartupInventorySource(), new UnsupportedAppxInventorySource(), [], cancellationToken);
+        return await InventoryComposer.ComposeAsync(hardware, new UnsupportedServiceInventorySource(), new UnsupportedTaskInventorySource(), new UnsupportedStartupInventorySource(), new UnsupportedAppxInventorySource(), [], [], cancellationToken);
     }
 }
 

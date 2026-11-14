@@ -21,12 +21,6 @@
         "maxBuild": 26299,
         "architecture": "X64"
       }
-    },
-    {
-      "type": "atlas",
-      "parameters": {
-        "expected": true
-      }
     }
   ],
   "actions": [

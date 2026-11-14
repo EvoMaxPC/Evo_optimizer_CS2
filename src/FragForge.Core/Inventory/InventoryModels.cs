@@ -99,6 +99,12 @@ public sealed record SystemInventory
     public IReadOnlyList<AppxEntry> Appx { get; init; } = [];
     /// <summary>Lo que NO se pudo leer, con el motivo. Ausencia de dato nunca es dato.</summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
+    /// <summary>
+    /// Observaciones informativas que NO son un fallo de lectura (ámbito del hive, por ejemplo).
+    /// Campo ADITIVO y opcional: un inventario con solo notas sigue siendo completo.
+    /// </summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+    /// <summary>Solo los fallos de lectura cuentan; una nota informativa no invalida el inventario.</summary>
     public bool IsComplete => Warnings.Count == 0;
 }
 
@@ -126,7 +132,8 @@ public sealed record AuditReport
         var notes = new List<string>
         {
             "Inventario de solo lectura: FragForge no modificó nada para generarlo.",
-            $"{unknown.Length} servicios no figuran en service-tiers.json y se tratan como T0 (nunca aplicables)."
+            $"{unknown.Length} servicios no figuran en service-tiers.json y se tratan como T0 (nunca aplicables).",
+            .. inventory.Notes
         };
         return new AuditReport
         {

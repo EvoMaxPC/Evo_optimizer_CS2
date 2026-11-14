@@ -42,7 +42,8 @@
   "tags": [
     "debloat",
     "privacidad",
-    "telemetria"
+    "telemetria",
+    "opt-in"
   ],
   "conflictsWith": [],
   "dependsOn": [],
