@@ -85,5 +85,6 @@
   "security.title": "Security posture",
   "security.refresh": "Refresh posture",
   "summary.hint": "Click Scan to detect hardware and evaluate the catalog.",
-  "preflight.recovery": "{0}: blocked by R-J — FragForge does not write the out-of-band recovery script yet. If this change leaves you without network or unable to boot, there would be no way to undo it from here: apply it by hand with the vendor or OS tool, keeping the recovery key at hand."
+  "preflight.recovery": "{0}: blocked by R-J — FragForge does not write the out-of-band recovery script yet. If this change leaves you without network or unable to boot, there would be no way to undo it from here: apply it by hand with the vendor or OS tool, keeping the recovery key at hand.",
+  "preflight.recovery.remediation": "There is no recovery script yet: this will be revisited when the engine writes it (round 10). In the meantime, apply those changes with the vendor tool."
 }

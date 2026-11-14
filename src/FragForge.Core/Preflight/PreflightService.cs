@@ -122,7 +122,9 @@ public sealed class PreflightService(
         yield return new("recovery",
             PreflightSeverity.Blocking,
             Text.Format("preflight.recovery", string.Join(", ", affected)),
-            "No hay script de recuperación: se retomará cuando el motor lo escriba (ronda 10). Mientras tanto, aplica esos cambios con la herramienta del fabricante.");
+            // B3 (ronda 10B): el Remediation tambien pasa por el Localizer. Antes estaba fijo en espanol,
+            // asi que un check en ingles salia con la explicacion de recuperacion en espanol.
+            Text["preflight.recovery.remediation"]);
     }
 
     /// <summary>

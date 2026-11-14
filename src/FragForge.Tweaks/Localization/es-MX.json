@@ -85,5 +85,6 @@
   "security.title": "Postura de seguridad",
   "security.refresh": "Actualizar postura",
   "summary.hint": "Pulsa Escanear para detectar el hardware y evaluar el catálogo.",
-  "preflight.recovery": "{0}: bloqueado por R-J — FragForge todavía no escribe el script de recuperación fuera de banda. Si este cambio te deja sin red o sin arranque, no habría forma de deshacerlo desde aquí: aplícalo a mano con la herramienta del fabricante o del sistema operativo, y con la clave de recuperación a la vista."
+  "preflight.recovery": "{0}: bloqueado por R-J — FragForge todavía no escribe el script de recuperación fuera de banda. Si este cambio te deja sin red o sin arranque, no habría forma de deshacerlo desde aquí: aplícalo a mano con la herramienta del fabricante o del sistema operativo, y con la clave de recuperación a la vista.",
+  "preflight.recovery.remediation": "No hay script de recuperación: se retomará cuando el motor lo escriba (ronda 10). Mientras tanto, aplica esos cambios con la herramienta del fabricante."
 }

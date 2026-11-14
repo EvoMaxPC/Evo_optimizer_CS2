@@ -99,7 +99,12 @@ public sealed class RecoveryCoverageTests
         // El motivo: qué puede pasar y por qué no hay vuelta atrás.
         Assert.Contains("network.i225v-eee-off", check.Message, StringComparison.Ordinal);
         Assert.Contains("R-J", check.Message, StringComparison.Ordinal);
+        // B3 (ronda 10B): el Remediation sale AHORA del Localizer, y este test le pasa el real (:94). Antes
+        // bastaba con "no está vacío", pero con la clave sin traducir eso también pasaba: Localizer[key]
+        // devuelve la clave (Localizer.cs:15), que no es blanca. Se comprueba el texto de verdad.
         Assert.False(string.IsNullOrWhiteSpace(check.Remediation));
+        Assert.DoesNotContain("preflight.recovery", check.Remediation, StringComparison.Ordinal);
+        Assert.Contains("herramienta del fabricante", check.Remediation, StringComparison.Ordinal);
     }
 
     /// <summary>Probado por las tres vías por separado: no se exige que vengan juntas.</summary>
