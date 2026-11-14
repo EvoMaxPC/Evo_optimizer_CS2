@@ -140,14 +140,26 @@ public sealed class MainViewModelTests
     public async Task ChangingTheCulture_NotifiesTheLocalizedProperties()
     {
         using var vm = await CreateAsync("es-MX");
+
+        // El valor inicial NO es fijo: el constructor lo elige con la cultura de la maquina
+        // (CultureDefaults.PickInitialCulture(Cultures, CultureInfo.CurrentUICulture.Name)). Escribir
+        // "en-US" a pelo hacia que, en un equipo con la UI en ingles, el valor asignado FUERA ya el actual:
+        // CommunityToolkit no notifica si el valor no cambia, OnCultureChanged no corria y el test fallaba
+        // con "No se notificó Localizer". En CI, con otra cultura, pasaba. Se parte del valor real y se
+        // cambia al OTRO, que siempre es un cambio de verdad.
+        var other = vm.Culture == "en-US" ? "es-MX" : "en-US";
+
         using var spy = new PropertySpy(vm);
 
-        vm.Culture = "en-US";
-        // El cambio de cultura recarga el localizador de forma asincrona; se le da un turno.
-        await Task.Delay(50);
+        vm.Culture = other;
+        // El cambio de cultura recarga el localizador de forma asincrona y OnCultureChanged descarta la tarea
+        // (`_ = ChangeCultureAsync(value)`), asi que no hay nada que esperar. Un Task.Delay fijo convierte el
+        // test en una carrera: pasa o falla segun lo cargada que este la maquina. Se espera a la CONDICION,
+        // con tope, y si no llega se falla con el motivo.
+        for (var i = 0; i < 200 && !spy.Saw(nameof(MainViewModel.Localizer)); i++) await Task.Delay(10);
 
         Assert.True(spy.Saw(nameof(MainViewModel.Localizer)), "No se notificó Localizer.");
-        Assert.Equal("en-US", vm.Localizer.Culture);
+        Assert.Equal(other, vm.Localizer.Culture);
     }
 
     /// <summary>Cada tweak expone el aviso anticheat (Capa 10.2) sin dejar la celda vacía.</summary>
