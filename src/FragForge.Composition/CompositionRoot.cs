@@ -95,7 +95,19 @@ public static class CompositionRoot
             sp.GetRequiredService<ITweakActionFactory>(),
             ServiceTierCatalog.LoadEmbedded()));
         builder.Services.AddSingleton<JsonTweakCatalogLoader>();
-        builder.Services.AddSingleton<ITweakCatalog>(sp => sp.GetRequiredService<JsonTweakCatalogLoader>().LoadEmbeddedAsync(Path.Combine(paths.Root, "catalog")).GetAwaiter().GetResult());
+        builder.Services.AddSingleton<ITweakCatalog>(sp =>
+        {
+            var catalog = sp.GetRequiredService<JsonTweakCatalogLoader>().LoadEmbeddedAsync(Path.Combine(paths.Root, "catalog")).GetAwaiter().GetResult();
+            // Capa 10.4: si el catálogo EXTERNO del usuario tenía entradas malas, se dicen por el log en vez de
+            // dejarlas invisibles. La app arranca igual: la entrada mala no está, el resto del catálogo sí.
+            if (catalog.LoadReport.HasRejections)
+            {
+                var logger = sp.GetService<ILogger<CatalogLoadReport>>();
+                foreach (var rejection in catalog.LoadReport.Rejected)
+                    logger?.LogWarning("Entrada de catálogo rechazada ({Name}{Id}): {Reason}", rejection.Name, rejection.Id is null ? "" : " [" + rejection.Id + "]", rejection.Reason);
+            }
+            return catalog;
+        });
         builder.Services.AddSingleton<ISnapshotStore, FileSnapshotStore>();
         builder.Services.AddSingleton<IJournal, FileJournal>();
         builder.Services.AddSingleton<IExecutionGate, FileExecutionGate>();
