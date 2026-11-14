@@ -23,7 +23,7 @@ namespace FragForge.Tests.Security;
 public sealed class IntegrityTests
 {
     /// <summary>
-    /// El journal firmado (encadenado por hash) detecta que se cambia UNA línea.
+    /// El journal (cadena SHA-256 tamper-evident, NO firmado ni autenticado) detecta que se cambia UNA línea.
     /// Ya existía: <c>tests/FragForge.Tests/Core/EngineTests.cs:339 Journal_IsTamperEvident</c>.
     /// Aquí se repite en aislamiento para dejar explícito qué se garantiza y qué no.
     /// </summary>
@@ -46,6 +46,38 @@ public sealed class IntegrityTests
         var integrity = await journal.VerifyIntegrityAsync();
         Assert.False(integrity.IsValid);
         Assert.Contains("Integridad", integrity.Error!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// C4.6: un journal CORRUPTO (JSON roto, línea vacía) no puede leerse, y lo dice con una excepción de
+    /// datos, no con un IndexOutOfRange ni un NullReference a mitad.
+    /// </summary>
+    /// <remarks>
+    /// HALLAZGO, no una virtud: <see cref="FileJournal.ReadAllAsync"/> NO captura nada (líneas 46-57), así que
+    /// la excepción sale hasta quien llama, y <c>ReportService.CreateAsync:17</c> lo llama sin `try`. Con el
+    /// journal corrupto, generar el informe falla entero. Se documenta aquí porque un test que dijera
+    /// "devuelve una lista vacía" estaría describiendo un comportamiento que el código NO tiene.
+    /// No se arregla en esta ronda: cambiar <c>ReadAllAsync</c> para que trague y devuelva lo legible toca
+    /// una firma pública y es decisión de producto (¿historial vacío o error visible?). Queda anotado.
+    /// </remarks>
+    [Theory]
+    [InlineData("\"esto no es json")]
+    [InlineData("")]
+    public async Task ACorruptJournal_CannotBeRead_AndSaysSo(string contenido)
+    {
+        using var directory = new TempDirectory();
+        var paths = new FragForgePaths(directory.Path);
+        paths.EnsureCreated();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.Journal)!);
+        await File.WriteAllTextAsync(paths.Journal, contenido);
+        var journal = new FileJournal(paths);
+
+        // Lo que NO pasa: devolver silenciosamente una lista vacía.
+        await Assert.ThrowsAnyAsync<Exception>(() => journal.ReadAllAsync());
+        // Lo que SÍ: la verificación de integridad es la que sabe describir el daño sin propagar.
+        var integrity = await journal.VerifyIntegrityAsync();
+        Assert.False(integrity.IsValid);
+        Assert.False(string.IsNullOrWhiteSpace(integrity.Error));
     }
 
     /// <summary>

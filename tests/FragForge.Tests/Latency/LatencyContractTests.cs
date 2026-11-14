@@ -64,6 +64,38 @@ public sealed class LatencyContractTests
     }
 
     /// <summary>
+    /// Membresía en los CUATRO perfiles, comprobada con <see cref="FragForge.Core.Engine.ProfileSelector.Allows"/>
+    /// y no con la tabla de <c>CatalogTests</c>: así el test falla si cambia la REGLA de selección, no solo el
+    /// JSON. El ratón no declara <c>profiles</c> (ausente, no <c>[]</c>), no lleva tag <c>opt-in</c> y su riesgo
+    /// es Safe con evidencia Low: por eso entra en los cuatro, incluido el más conservador.
+    /// </summary>
+    [Fact]
+    public async Task MouseAcceleration_IsInAllFourProfiles_ByTheActualSelectorRule()
+    {
+        var definition = (await LoadAsync()).Get("latency.mouse-acceleration-off");
+
+        Assert.Null(definition.Profiles);                                   // ausente: rige la regla por riesgo
+        Assert.DoesNotContain("opt-in", definition.Tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(RiskLevel.Safe, definition.Risk);
+
+        foreach (var profile in Enum.GetValues<TweakProfile>())
+            Assert.True(FragForge.Core.Engine.ProfileSelector.Allows(profile, definition),
+                $"El ratón debería entrar en {profile}: es el tweak de input con menos riesgo del catálogo.");
+    }
+
+    /// <summary>
+    /// El ratón escribe HKCU. Se comprueba que NO se toca nada fuera del perfil del usuario: si algún día
+    /// pasara a HKLM, exigiría admin de otra forma y el aviso sería otro.
+    /// </summary>
+    [Fact]
+    public async Task MouseAcceleration_OnlyWritesInTheCurrentUserHive()
+    {
+        var definition = (await LoadAsync()).Get("latency.mouse-acceleration-off");
+
+        Assert.All(RegistryValues(definition), v => Assert.StartsWith(@"HKCU\", v.Key, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// Honestidad del efecto: CS2 con raw input no pasa por el puntero de Windows. El JSON tiene que decirlo,
     /// y el EvidenceLevel tiene que reflejarlo.
     /// </summary>
