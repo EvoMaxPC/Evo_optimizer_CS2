@@ -1,0 +1,61 @@
+{
+  "id": "cs2.cpu-priority-high",
+  "category": "Cs2",
+  "title": {
+    "es-MX": "Prioridad alta de CPU para cs2.exe",
+    "en-US": "High CPU priority for cs2.exe"
+  },
+  "description": {
+    "es-MX": "Configura IFEO PerfOptions CpuPriorityClass=3 (High) para el nombre de imagen cs2.exe.",
+    "en-US": "Configures IFEO PerfOptions CpuPriorityClass=3 (High) for the cs2.exe image name."
+  },
+  "evidence": "Medium",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "IfeoPerfOptions",
+      "parameters": {
+        "imageName": "cs2.exe",
+        "priorityClass": 3
+      }
+    }
+  ],
+  "tags": [
+    "competitive",
+    "scheduler"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Moderado/variable",
+    "1%lows": "Posible mejora si hay competencia de CPU",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/previous-versions/windows/desktop/xperf/image-file-execution-options",
+    "https://learn.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities"
+  ],
+  "notes": {
+    "es-MX": "No usa Realtime ni afinidad. No inyecta código ni lee memoria de cs2.exe. Puede perjudicar audio, Discord o procesos de fondo si compiten por CPU.",
+    "en-US": "Does not use Realtime or affinity. Does not inject code or read cs2.exe memory. May hurt audio, Discord or background processes competing for CPU."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si causa audio entrecortado, peor frametime o inestabilidad. Reiniciar el juego después de aplicar/revertir.",
+    "en-US": "Do not apply if it causes crackling audio, worse frametime or instability. Restart the game after apply/revert."
+  }
+}

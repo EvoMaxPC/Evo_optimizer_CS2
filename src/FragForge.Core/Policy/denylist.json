@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    "WinDefend", "WdNisSvc", "SecurityHealthService", "Sense", "WebThreatDefSvc", "wscsvc",
+    "mpssvc", "BFE", "RpcSs", "DcomLaunch", "PlugPlay", "Power", "EventLog", "CryptSvc",
+    "TrustedInstaller", "Winmgmt", "ProfSvc", "gpsvc", "SamSs", "Schedule", "SENS",
+    "Dnscache", "Dhcp", "NlaSvc", "nsi", "netprofm", "NcbService", "BrokerInfrastructure",
+    "CoreMessagingRegistrar", "StateRepository", "SystemEventsBroker", "TimeBrokerSvc",
+    "TokenBroker", "UserManager", "ShellHwDetection", "wuauserv", "UsoSvc", "WaaSMedicSvc",
+    "BITS", "DoSvc", "TBS", "KeyIso", "VaultSvc", "EFS", "iphlpsvc", "WinHttpAutoProxySvc",
+    "ipfsvc", "jhi_service", "cplspcon", "WMIRegistrationService"
+  ],
+  "registryKeyPrefixes": [
+    "HKLM\\SOFTWARE\\Microsoft\\Windows Defender",
+    "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender",
+    "HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecureBoot",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Lsa",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI",
+    "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management",
+    "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate",
+    "HKLM\\SOFTWARE\\Microsoft\\WindowsUpdate",
+    "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate",
+    "HKLM\\BCD00000000"
+  ],
+  "registryValueNames": [ "Debugger", "GlobalFlag", "VerifierDlls", "VerifierFlags", "MitigationOptions", "MitigationAuditOptions", "DisableExceptionChainValidation" ],
+  "taskPrefixes": [
+    "\\Microsoft\\Windows\\Windows Defender",
+    "\\Microsoft\\Windows\\WindowsUpdate",
+    "\\Microsoft\\Windows\\UpdateOrchestrator",
+    "\\Microsoft\\Windows\\BitLocker",
+    "\\Microsoft\\Windows\\TPM",
+    "\\Microsoft\\Windows\\CertificateServicesClient"
+  ],
+  "bcdDenyElements": [ "testsigning", "nointegritychecks", "hypervisorlaunchtype", "nx", "pae", "safeboot", "bootstatuspolicy", "recoveryenabled", "isolatedcontext", "vsmlaunchtype", "loadoptions", "path", "device", "osdevice" ],
+  "bcdAllowedElements": [ "disabledynamictick" ],
+  "filePrefixes": [
+    "%SystemRoot%\\System32\\config",
+    "%SystemRoot%\\System32\\drivers",
+    "%SystemRoot%\\System32\\drivers\\etc\\hosts",
+    "%SystemRoot%\\System32\\DriverStore",
+    "%SystemRoot%\\Boot",
+    "%ProgramData%\\Microsoft\\Windows Defender",
+    "%SystemDrive%\\Boot",
+    "%SystemDrive%\\bootmgr",
+    "%SystemDrive%\\$WINDOWS.~BT"
+  ],
+  "networkPropertyKeywords": [ "*DeviceSleepOnDisconnect", "*WakeOnMagicPacket", "*WakeOnPattern", "*NetworkAddress", "*FlowControl", "*RSS", "*RscIPv4", "*RscIPv6", "*InterruptModeration" ],
+  "powerShellDeniedTokens": [ "Invoke-Expression", "IEX", "DownloadString", "DownloadFile", "Invoke-WebRequest", "Invoke-RestMethod", "FromBase64String", "EncodedCommand", "Add-Type", "Start-Process", "Restart-Computer", "Stop-Computer", "Set-MpPreference", "Set-NetFirewallProfile", "bcdedit", "reg.exe", "sc.exe", "vssadmin", "WinDefend", "mpssvc", "BFE", "ipfsvc", "jhi_service", "cplspcon", "WMIRegistrationService" ]
+}

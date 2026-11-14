@@ -1,0 +1,102 @@
+{
+  "id": "latency.mouse-acceleration-off",
+  "category": "Latency",
+  "title": {
+    "es-MX": "Desactivar aceleración del mouse del escritorio",
+    "en-US": "Disable desktop mouse acceleration"
+  },
+  "description": {
+    "es-MX": "Establece MouseSpeed y umbrales en 0 y curvas lineales 1:1 en el hive del usuario interactivo.",
+    "en-US": "Sets MouseSpeed and thresholds to 0 and linear 1:1 curves in the interactive user hive."
+  },
+  "evidence": "High",
+  "risk": "Safe",
+  "requiresReboot": true,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "userHive",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKCU\\Control Panel\\Mouse",
+            "name": "MouseSpeed",
+            "kind": "String",
+            "value": "0",
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\Control Panel\\Mouse",
+            "name": "MouseThreshold1",
+            "kind": "String",
+            "value": "0",
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\Control Panel\\Mouse",
+            "name": "MouseThreshold2",
+            "kind": "String",
+            "value": "0",
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\Control Panel\\Mouse",
+            "name": "SmoothMouseXCurve",
+            "kind": "Binary",
+            "value": "AAAAAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAADAAAAAAAAAAQAAAAAAA==",
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\Control Panel\\Mouse",
+            "name": "SmoothMouseYCurve",
+            "kind": "Binary",
+            "value": "AAAAAAAAAAAAAAEAAAAAAAAAAgAAAAAAAAADAAAAAAAAAAQAAAAAAA==",
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "input",
+    "desktop-wide"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "None",
+    "1%lows": "None",
+    "inputLatency": "Consistencia del puntero; no garantiza menor latencia en CS2 con raw input",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-systemparametersinfoa",
+    "https://fleexlab.blogspot.com/2020/08/setting-arbitrarily-precise-mouse.html"
+  ],
+  "notes": {
+    "es-MX": "Afecta a todo el escritorio y a aplicaciones que usan el puntero de Windows. CS2 puede usar raw input y no verse afectado. Los cambios de registro requieren cerrar sesión/reiniciar; no se inyecta ni se modifica cs2.exe.",
+    "en-US": "Affects the entire desktop and applications using the Windows pointer. CS2 may use raw input and be unaffected. Registry changes require sign-out/reboot; cs2.exe is not injected or modified."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si dependes de Precisión mejorada del puntero o de una curva personalizada. Guarda tu configuración actual; la reversión restaura bytes exactos.",
+    "en-US": "Do not apply if you rely on Enhance pointer precision or a custom curve. The revert restores exact bytes."
+  }
+}

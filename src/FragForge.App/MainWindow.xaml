@@ -1,0 +1,83 @@
+<Window x:Class="FragForge.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{Binding Localizer[app.title]}" Height="820" Width="1280" MinHeight="640" MinWidth="980"
+        Background="#101418" Foreground="#E8EDF2" WindowStartupLocation="CenterScreen">
+  <Grid Margin="14">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="140"/>
+    </Grid.RowDefinitions>
+    <DockPanel Grid.Row="0" Margin="0,0,0,10">
+      <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+        <TextBlock Text="{Binding Localizer[profile.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+        <ComboBox Width="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"/>
+        <TextBlock Text="{Binding Localizer[culture.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+        <ComboBox Width="90" ItemsSource="{Binding Cultures}" SelectedItem="{Binding Culture}"/>
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="{Binding Localizer[nav.scan]}" Command="{Binding ScanCommand}"/>
+        <Button Content="{Binding Localizer[nav.dryRun]}" Command="{Binding DryRunCommand}"/>
+        <Button Content="{Binding Localizer[nav.apply]}" Command="{Binding ApplyCommand}" Background="#1F5F8B"/>
+        <Button Content="{Binding Localizer[nav.revert]}" Command="{Binding RevertCommand}"/>
+        <Button Content="{Binding Localizer[cancel]}" Command="{Binding CancelCommand}"/>
+      </StackPanel>
+    </DockPanel>
+    <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10">
+      <StackPanel>
+        <TextBlock Text="{Binding Localizer[hardware.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,4"/>
+        <TextBlock Text="{Binding HardwareSummary}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"/>
+      </StackPanel>
+    </Border>
+    <Grid Grid.Row="2">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+      <DataGrid Grid.Column="0" ItemsSource="{Binding Tweaks}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" SelectionMode="Extended" HeadersVisibility="Column" GridLinesVisibility="Horizontal" Background="#0D1218" Foreground="#E8EDF2" BorderBrush="{StaticResource BorderBrush}" RowBackground="#121922" AlternatingRowBackground="#17212C">
+        <DataGrid.Columns>
+          <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="36"/>
+          <DataGridTextColumn Header="Tweak" Binding="{Binding Title}" Width="240" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Categoría" Binding="{Binding Category}" Width="90" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Evidencia" Binding="{Binding Evidence}" Width="90" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Riesgo" Binding="{Binding Risk}" Width="90" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Estado" Binding="{Binding StateDisplay}" Width="140" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Motivo" Binding="{Binding Reason}" Width="*" IsReadOnly="True"/>
+        </DataGrid.Columns>
+      </DataGrid>
+      <Border Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="10,0,0,0">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel>
+            <TextBlock Text="{Binding Localizer[doctor.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+            <ItemsControl ItemsSource="{Binding Checks}">
+              <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,4"/></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button Content="Doctor" Command="{Binding DoctorCommand}" Margin="0,8,0,8"/>
+            <Button Content="{Binding Localizer[nav.snapshot]}" Command="{Binding SnapshotCommand}" Margin="0,0,0,8"/>
+            <Button Content="{Binding Localizer[nav.export]}" Command="{Binding ExportCommand}"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
+    <WrapPanel Grid.Row="3" Margin="0,10,0,6">
+      <CheckBox Content="{Binding Localizer[restorePoint]}" IsChecked="{Binding CreateRestorePoint}" Foreground="#E8EDF2" Margin="0,0,14,0"/>
+      <CheckBox Content="{Binding Localizer[enableProtection]}" IsChecked="{Binding EnableSystemProtection}" Foreground="#E8EDF2" Margin="0,0,14,0"/>
+      <CheckBox Content="{Binding Localizer[force]}" IsChecked="{Binding Force}" Foreground="#E8EDF2" Margin="0,0,14,0"/>
+      <CheckBox Content="{Binding Localizer[allowPowerShell]}" IsChecked="{Binding AllowPowerShell}" Foreground="#E8EDF2"/>
+    </WrapPanel>
+    <Grid Grid.Row="4" Margin="0,0,0,8">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions>
+      <TextBlock Text="{Binding Localizer[cs2Path]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+      <TextBox Grid.Column="1" Text="{Binding Cs2Path, UpdateSourceTrigger=PropertyChanged}"/>
+      <Button Grid.Column="2" Content="…" Command="{Binding BrowseCs2Command}" Margin="6,0,12,0"/>
+      <TextBlock Grid.Column="3" Text="{Binding Localizer[risk.phrase]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+      <TextBox Grid.Column="4" Text="{Binding RiskPhrase, UpdateSourceTrigger=PropertyChanged}"/>
+    </Grid>
+    <Grid Grid.Row="5">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <DockPanel Grid.Row="0" Margin="0,0,0,4"><TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AccentBrush}" TextTrimming="CharacterEllipsis"/><ProgressBar Width="220" Height="10" Minimum="0" Maximum="100" Value="{Binding ProgressValue}" HorizontalAlignment="Right"/></DockPanel>
+      <ListBox Grid.Row="1" ItemsSource="{Binding Logs}" Background="#0D1218" Foreground="#B8C7D9" BorderBrush="{StaticResource BorderBrush}" FontFamily="Consolas" FontSize="11"/>
+    </Grid>
+  </Grid>
+</Window>

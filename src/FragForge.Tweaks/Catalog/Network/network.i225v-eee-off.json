@@ -1,0 +1,76 @@
+{
+  "id": "network.i225v-eee-off",
+  "category": "Network",
+  "title": {
+    "es-MX": "Desactivar EEE en Intel I225-V",
+    "en-US": "Disable EEE on Intel I225-V"
+  },
+  "description": {
+    "es-MX": "Desactiva la propiedad avanzada Energy Efficient Ethernet (*EEE) si el controlador la expone exactamente.",
+    "en-US": "Disables the Energy Efficient Ethernet (*EEE) advanced property if the driver exposes it exactly."
+  },
+  "evidence": "Medium",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "adapter",
+      "parameters": {
+        "descriptionContains": "I225-V",
+        "physicalOnly": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "NetAdapterProperty",
+      "parameters": {
+        "adapterName": "{AdapterDescription:I225-V}",
+        "properties": [
+          {
+            "keyword": "*EEE",
+            "value": [
+              "0"
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "competitive",
+    "opt-in",
+    "network"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "None",
+    "1%lows": "None",
+    "inputLatency": "None",
+    "network": "Posible reducción de latencia de salida de baja potencia; no aumenta FPS",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/powershell/module/netadapter/set-netadapteradvancedproperty",
+    "https://learn.microsoft.com/en-us/windows-hardware/drivers/network/energy-efficient-ethernet"
+  ],
+  "notes": {
+    "es-MX": "Solo I225-V; no toca Wi-Fi ni otros adaptadores. Puede renegociar el enlace y causar una interrupción breve. Si la palabra clave no existe, el tweak es NotApplicable.",
+    "en-US": "I225-V only; Wi-Fi and other adapters are untouched. It may renegotiate the link and cause a brief interruption. If the keyword is absent, the tweak is NotApplicable."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar durante una partida o si el enlace es inestable. No esperar menor ping a Internet; el efecto es local al enlace.",
+    "en-US": "Do not apply during a match or if the link is unstable. Do not expect lower Internet ping; the effect is local to the link."
+  }
+}

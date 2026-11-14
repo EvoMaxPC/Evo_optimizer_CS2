@@ -1,0 +1,77 @@
+{
+  "id": "power.fragforge-performance",
+  "category": "Power",
+  "title": {
+    "es-MX": "Plan FragForge Performance",
+    "en-US": "FragForge Performance plan"
+  },
+  "description": {
+    "es-MX": "Duplica Alto rendimiento, fija procesador mínimo 100% y CPMINCORES 100% en AC/DC, y activa el plan nuevo.",
+    "en-US": "Duplicates High performance, sets minimum processor 100% and CPMINCORES 100% on AC/DC, and activates the new plan."
+  },
+  "evidence": "Medium",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": true,
+        "settings": [
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "893dee8e-2bef-41e0-89c6-b55d0929964c",
+            "acValue": 100,
+            "dcValue": 100
+          },
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "0cc5b647-c1df-4637-891a-dec35c318583",
+            "acValue": 100,
+            "dcValue": 100
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "competitive",
+    "opt-in",
+    "thermal-opt-in"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Variable",
+    "1%lows": "Posible mejora de consistencia; puede empeorar por temperatura",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Peor: más consumo/reposo caliente"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/powercfg-command-line-options",
+    "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/powercfg"
+  ],
+  "notes": {
+    "es-MX": "No borra planes existentes. Si el plan ya existe, captura sus ajustes antes de modificarlo. En el PN64, DTT/IPF y PL1/PL2 siguen mandando; 100% mínimo no elimina límites térmicos. Revert reactiva el plan anterior y elimina solo el plan creado.",
+    "en-US": "Does not delete existing plans. If the plan already exists, its settings are captured before modification. On the PN64, DTT/IPF and PL1/PL2 still dominate; 100% minimum does not remove thermal limits. Revert reactivates the previous plan and deletes only the created plan."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si el mini PC se calienta demasiado, hace ruido o reduce clocks bajo carga sostenida. No es recomendable para batería.",
+    "en-US": "Do not apply if the mini PC overheats, is noisy, or clocks down under sustained load. Not recommended on battery."
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "id": "diagnostics.system-inspect",
+  "category": "Diagnostics",
+  "title": {
+    "es-MX": "Inspección de sistema de solo lectura",
+    "en-US": "Read-only system inspection"
+  },
+  "description": {
+    "es-MX": "Reporta HAGS, MPO, VBS/HVCI, Secure Boot, canales de RAM, PL1/PL2 y salud básica del SSD sin escribir.",
+    "en-US": "Reports HAGS, MPO, VBS/HVCI, Secure Boot, RAM channels, PL1/PL2 and basic SSD health without writing."
+  },
+  "evidence": "High",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": false,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "InspectOnly",
+      "parameters": {
+        "probes": [
+          "hags",
+          "mpo",
+          "vbs",
+          "hvci",
+          "secureBoot",
+          "dualChannel",
+          "powerLimits",
+          "ssdHealth"
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "diagnostic",
+    "read-only"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "None",
+    "1%lows": "None",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/drivers/display/hardware-accelerated-gpu-scheduling",
+    "https://learn.microsoft.com/en-us/windows/win32/sr/system-restore-wmi-classes"
+  ],
+  "notes": {
+    "es-MX": "Unknown significa que no hay prueba suficiente, no que esté desactivado. Esta acción alimenta la línea base de Capa 1; Apply y Revert no realizan cambios.",
+    "en-US": "Unknown means insufficient evidence, not disabled. This action feeds the Layer 1 baseline; Apply and Revert make no changes."
+  },
+  "whenNotToApply": {
+    "es-MX": "No hay riesgo de cambio; puede ejecutarse siempre que WMI/registro estén disponibles.",
+    "en-US": "There is no mutation risk; run whenever WMI/registry are available."
+  }
+}

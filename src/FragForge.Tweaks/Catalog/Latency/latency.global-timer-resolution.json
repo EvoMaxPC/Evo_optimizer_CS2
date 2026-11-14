@@ -1,0 +1,68 @@
+{
+  "id": "latency.global-timer-resolution",
+  "category": "Latency",
+  "title": {
+    "es-MX": "Solicitudes globales de resolución de timer",
+    "en-US": "Global timer resolution requests"
+  },
+  "description": {
+    "es-MX": "Establece GlobalTimerResolutionRequests=1 para solicitar el comportamiento global previo a Windows 10 2004.",
+    "en-US": "Sets GlobalTimerResolutionRequests=1 to request the pre-Windows 10 2004 global behavior."
+  },
+  "evidence": "Medium",
+  "risk": "Moderate",
+  "requiresReboot": true,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel",
+            "name": "GlobalTimerResolutionRequests",
+            "kind": "DWord",
+            "value": 1,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "timer",
+    "measure-ab"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "None",
+    "1%lows": "No garantizado",
+    "inputLatency": "Variable; puede afectar esperas/temporización",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Peor: posible mayor consumo"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod",
+    "https://learn.microsoft.com/en-us/windows/win32/directshow/ireferenceclocktimercontrol"
+  ],
+  "notes": {
+    "es-MX": "La documentación oficial describe timeBeginPeriod y el cambio de Windows 10 2004/Windows 11; esta clave concreta no está documentada como contrato público. Evidence Medium se refiere al mecanismo del timer, no a una ganancia probada en CS2. Puede aumentar interrupciones/consumo.",
+    "en-US": "Official docs describe timeBeginPeriod and the Windows 10 2004/Windows 11 change; this specific value is not a documented public contract. Medium evidence refers to the timer mechanism, not a proven CS2 gain. It may increase interrupts/power."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar sin línea base A/B. Evitar si aumenta temperatura, consumo o DPC/ISR, o si el juego ya solicita resolución adecuada.",
+    "en-US": "Do not apply without an A/B baseline. Avoid if temperature, power or DPC/ISR rise, or if the game already requests an adequate resolution."
+  }
+}

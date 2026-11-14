@@ -1,0 +1,87 @@
+{
+  "id": "latency.game-dvr-capture-off",
+  "category": "Latency",
+  "title": {
+    "es-MX": "Desactivar captura Game DVR en segundo plano",
+    "en-US": "Disable background Game DVR capture"
+  },
+  "description": {
+    "es-MX": "Desactiva AppCaptureEnabled, GameDVR_Enabled y la política AllowGameDVR sin desinstalar Xbox Game Bar.",
+    "en-US": "Disables AppCaptureEnabled, GameDVR_Enabled and the AllowGameDVR policy without uninstalling Xbox Game Bar."
+  },
+  "evidence": "High",
+  "risk": "Moderate",
+  "requiresReboot": true,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "userHive",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR",
+            "name": "AppCaptureEnabled",
+            "kind": "DWord",
+            "value": 0,
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\System\\GameConfigStore",
+            "name": "GameDVR_Enabled",
+            "kind": "DWord",
+            "value": 0,
+            "mode": "Set"
+          },
+          {
+            "key": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR",
+            "name": "AllowGameDVR",
+            "kind": "DWord",
+            "value": 0,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "capture",
+    "background"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Variable; puede reducir trabajo de captura si estaba activo",
+    "1%lows": "Posible mejora modesta si había captura en segundo plano",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-applicationmanagement#allowgamedvr"
+  ],
+  "notes": {
+    "es-MX": "La política bloquea grabación/retransmisión de Windows. Game Bar no se desinstala, pero sus funciones de captura quedan deshabilitadas. No toca Defender, Firewall ni Update.",
+    "en-US": "The policy blocks Windows recording/broadcasting. Game Bar is not uninstalled, but its capture features are disabled. Defender, Firewall and Update are untouched."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si usas Game Bar para clips, grabación o streaming. Si ya está desactivado por Atlas, se marcará AppliedExternally y no se sobrescribirá.",
+    "en-US": "Do not apply if you use Game Bar for clips, recording or streaming. If Atlas already disabled it, it is marked AppliedExternally and not overwritten."
+  }
+}

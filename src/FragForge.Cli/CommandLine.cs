@@ -1,0 +1,44 @@
+namespace FragForge.Cli;
+
+public sealed class ParsedArgs
+{
+    public string Command { get; init; } = "help";
+    public IReadOnlyList<string> Positionals { get; init; } = [];
+    public IReadOnlyDictionary<string, List<string>> Options { get; init; } = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+    public bool Has(string name) => Options.ContainsKey(name);
+    public string? Value(string name) => Options.TryGetValue(name, out var values) ? values.LastOrDefault() : null;
+    public IReadOnlyList<string> Values(string name) => Options.TryGetValue(name, out var values) ? values : [];
+}
+public static class CommandLineParser
+{
+    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help" };
+    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase" };
+    public static ParsedArgs Parse(string[] args)
+    {
+        if (args.Length == 0 || args[0] is "--help" or "-h" or "help") return new ParsedArgs { Command = "help" };
+        var command = args[0].ToLowerInvariant();
+        var positionals = new List<string>();
+        var options = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 1; i < args.Length; i++)
+        {
+            var token = args[i];
+            if (!token.StartsWith("--", StringComparison.Ordinal)) { positionals.Add(token); continue; }
+            var name = token[2..];
+            if (Flags.Contains(name)) { options[name] = ["true"]; continue; }
+            if (!ValueOptions.Contains(name)) throw new ArgumentException($"Opción desconocida: --{name}");
+            if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal)) throw new ArgumentException($"Falta el valor de --{name}");
+            if (!options.TryGetValue(name, out var values)) { values = []; options[name] = values; }
+            values.Add(args[++i]);
+        }
+        return new ParsedArgs { Command = command, Positionals = positionals, Options = options };
+    }
+}
+public static class ExitCodes
+{
+    public const int Success = 0;
+    public const int Failure = 1;
+    public const int Usage = 2;
+    public const int Preflight = 3;
+    public const int Cancelled = 4;
+    public const int RollbackCritical = 5;
+}

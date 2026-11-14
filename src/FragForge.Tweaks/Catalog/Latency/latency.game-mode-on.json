@@ -1,0 +1,79 @@
+{
+  "id": "latency.game-mode-on",
+  "category": "Latency",
+  "title": {
+    "es-MX": "Activar Modo de juego de Windows",
+    "en-US": "Enable Windows Game Mode"
+  },
+  "description": {
+    "es-MX": "Activa AutoGameModeEnabled y AllowAutoGameMode para el usuario interactivo.",
+    "en-US": "Enables AutoGameModeEnabled and AllowAutoGameMode for the interactive user."
+  },
+  "evidence": "Medium",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "userHive",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKCU\\Software\\Microsoft\\GameBar",
+            "name": "AutoGameModeEnabled",
+            "kind": "DWord",
+            "value": 1,
+            "mode": "Set"
+          },
+          {
+            "key": "HKCU\\Software\\Microsoft\\GameBar",
+            "name": "AllowAutoGameMode",
+            "kind": "DWord",
+            "value": 1,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "scheduling"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Variable, generalmente pequeño",
+    "1%lows": "Posible mejora de consistencia en equipos con carga de fondo",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://support.xbox.com/es-ES/help/games-apps/game-setup-and-play/use-game-mode-for-best-gaming-experience"
+  ],
+  "notes": {
+    "es-MX": "Game Mode prioriza el juego frente a tareas de fondo; no es un multiplicador de FPS. El beneficio depende de la carga y del reconocimiento del juego.",
+    "en-US": "Game Mode prioritizes the game over background work; it is not an FPS multiplier. Benefit depends on load and game recognition."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si una prueba A/B muestra peor frametime o si una herramienta de gestión ya fuerza otra política equivalente.",
+    "en-US": "Do not apply if an A/B test shows worse frametime or another management tool already enforces an equivalent policy."
+  }
+}

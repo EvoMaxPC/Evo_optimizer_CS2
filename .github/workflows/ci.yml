@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-core:
+    name: Core + Actions + Tweaks + Composition + Tests (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Restore (CLI and App excluded; Windows-only)
+        run: dotnet restore tests/FragForge.Tests/FragForge.Tests.csproj
+      - name: Build (warnings as errors in Core)
+        run: dotnet build tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-restore
+      - name: Test
+        run: dotnet test tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=results.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: '**/TestResults/results.trx'
+
+  windows-full:
+    name: Solution completa + publish (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: dotnet restore FragForge.sln
+      - run: dotnet build FragForge.sln -c Release --no-restore
+      - run: dotnet test tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build
+      - run: dotnet publish src/FragForge.Cli/FragForge.Cli.csproj -c Release -r win-x64 --self-contained true -o publish/cli -p:PublishSingleFile=true
+      - run: dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --self-contained true -o publish/app -p:PublishSingleFile=true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fragforge-win-x64
+          path: publish/

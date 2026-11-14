@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../FragForge.Core/FragForge.Core.csproj" />
+    <EmbeddedResource Include="Catalog/**/*.json" />
+    <EmbeddedResource Include="Localization/*.json" />
+    <EmbeddedResource Include="Schema/*.json" />
+    <None Include="Catalog/**/*.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Catalog/%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="Localization/*.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Localization/%(Filename)%(Extension)" />
+    <None Include="Schema/*.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Schema/%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

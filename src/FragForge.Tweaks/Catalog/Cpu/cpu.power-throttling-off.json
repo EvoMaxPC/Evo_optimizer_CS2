@@ -1,0 +1,73 @@
+{
+  "id": "cpu.power-throttling-off",
+  "category": "Cpu",
+  "title": {
+    "es-MX": "Desactivar Power Throttling global",
+    "en-US": "Disable global Power Throttling"
+  },
+  "description": {
+    "es-MX": "Aplica la política documentada PowerThrottlingOff=1 en sistemas con CPU híbrida confirmada.",
+    "en-US": "Applies the documented PowerThrottlingOff=1 policy on systems with a confirmed hybrid CPU."
+  },
+  "evidence": "Medium",
+  "risk": "Moderate",
+  "requiresReboot": true,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "hybridCpu",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling",
+            "name": "PowerThrottlingOff",
+            "kind": "DWord",
+            "value": 1,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "cpu",
+    "thermal-opt-in"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Bajo/variable",
+    "1%lows": "Posible reducción de throttling de fondo; no garantizado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Peor: más consumo y temperatura"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-admx-power#powerthrottlingturnoff"
+  ],
+  "notes": {
+    "es-MX": "El i3-1220P es híbrido, pero solo se aplica si EfficiencyClass lo confirma. En un mini PC de 28 W, DTT/IPF sigue gobernando límites térmicos; desactivar throttling puede aumentar temperatura y reducir boost sostenido.",
+    "en-US": "The i3-1220P is hybrid, but this only applies if EfficiencyClass confirms it. On a 28 W mini PC, DTT/IPF still owns thermal limits; disabling throttling can raise temperature and reduce sustained boost."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si el equipo ya alcanza límites térmicos, el ventilador es insuficiente o priorizas silencio/consumo. Medir temperatura y 1% lows antes/después.",
+    "en-US": "Do not apply if the system already hits thermal limits, cooling is insufficient, or silence/power matter more. Measure temperature and 1% lows before/after."
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "id": "cs2.fullscreen-optimizations-off",
+  "category": "Cs2",
+  "title": {
+    "es-MX": "Desactivar Fullscreen Optimizations para CS2",
+    "en-US": "Disable Fullscreen Optimizations for CS2"
+  },
+  "description": {
+    "es-MX": "Añade DISABLEDXMAXIMIZEDWINDOWEDMODE a AppCompatFlags/Layers para la ruta real de cs2.exe, conservando otros flags.",
+    "en-US": "Adds DISABLEDXMAXIMIZEDWINDOWEDMODE to AppCompatFlags/Layers for the actual cs2.exe path, preserving other flags."
+  },
+  "evidence": "Experimental",
+  "risk": "Experimental",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "userHive",
+      "parameters": {
+        "expected": true
+      }
+    },
+    {
+      "type": "cs2",
+      "parameters": {
+        "installed": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\AppCompatFlags\\Layers",
+            "name": "{Cs2Executable}",
+            "kind": "String",
+            "value": "DISABLEDXMAXIMIZEDWINDOWEDMODE",
+            "mode": "AddToken"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "opt-in",
+    "display",
+    "measure-ab"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Desconocido; depende del modo de presentación",
+    "1%lows": "Experimental",
+    "inputLatency": "Experimental",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/flip-model",
+    "https://devblogs.microsoft.com/directx/dxgi-flip-model/"
+  ],
+  "notes": {
+    "es-MX": "El efecto depende de fullscreen exclusivo, ventana sin bordes, flip model y controlador Intel. No es una mejora garantizada. Requiere perfil Advanced y doble confirmación; reiniciar el juego, no Windows.",
+    "en-US": "Effect depends on exclusive fullscreen, borderless window, flip model and the Intel driver. Not a guaranteed improvement. Requires Advanced profile and double confirmation; restart the game, not Windows."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si usas ventana sin bordes y el frametime ya es estable, o si empeora alt-tab/overlays. Detectar ruta por Steam o seleccionarla manualmente.",
+    "en-US": "Do not apply if borderless frametime is already stable, or if alt-tab/overlays worsen. Detect the path through Steam or select it manually."
+  }
+}
