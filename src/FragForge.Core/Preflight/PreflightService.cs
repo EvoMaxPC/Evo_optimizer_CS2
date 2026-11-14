@@ -53,17 +53,37 @@ public sealed class PreflightService(
     }
 
     /// <summary>
-    /// Idiomas del mensaje de R-J. es-MX por omision: es el idioma en el que estan escritos TODOS los demas
-    /// mensajes de este preflight. El localizador solo cambia esto, no el resto, para no traducir media
-    /// pantalla y dejar la otra media en espanol.
+    /// Idioma del mensaje de R-J.
     /// </summary>
-    private Localizer Text => localizer ?? LocalizerEsMx;
+    /// <remarks>
+    /// CORRECCION (ronda 9d): en la 9b escribi que "Localizer no esta registrado en CompositionRoot" y que
+    /// por eso se caia a es-MX. Era FALSO. CompositionRoot.cs:95 registra el Localizer (cargado en :77 con
+    /// options.Culture), y el contenedor lo inyecta en este parametro porque el tipo es Localizer. El
+    /// fallback a es-MX solo aplica a quien construya el servicio a mano (tests, o un `new` directo).
+    ///
+    /// Se mantiene el valor por defecto para no romper esas construcciones; el resto de los mensajes de este
+    /// preflight siguen en espanol fijo, y traducirlos todos es otra tarea.
+    /// </remarks>
+    /// <summary>
+    /// Idioma del mensaje de R-J.
+    /// </summary>
+    /// <remarks>
+    /// CORRECCION (ronda 9d): en la 9b escribi que "Localizer no esta registrado en CompositionRoot" y que
+    /// por eso se caia a es-MX. Era FALSO. CompositionRoot.cs:95 registra el Localizer (cargado en :77 con
+    /// options.Culture), y el contenedor lo inyecta en este parametro porque su tipo es Localizer. El
+    /// fallback solo aplica a quien construya el servicio a mano (tests, o un `new` directo).
+    ///
+    /// El resto de mensajes de este preflight siguen en espanol fijo; traducirlos todos es otra tarea.
+    /// </remarks>
+    private Localizer Text => localizer ?? LocalizerVacio;
 
-    private static readonly Localizer LocalizerEsMx = new("es-MX", new Dictionary<string, string>(StringComparer.Ordinal)
-    {
-        ["preflight.recovery.es-MX"] = "FragForge todavía no escribe el script de recuperación fuera de banda (R-J). Si este cambio te deja sin red o sin arranque, no habría forma de deshacerlo desde aquí: aplica {0} con la herramienta del fabricante o del sistema operativo a mano, y con la clave de recuperación a la vista.",
-        ["preflight.recovery.en-US"] = "FragForge does not write the out-of-band recovery script yet (R-J). If this change leaves you without network or unable to boot, there would be no way to undo it from here: apply {0} by hand with the vendor or OS tool, keeping the recovery key at hand."
-    });
+    /// <summary>
+    /// Solo para construcciones a mano sin localizador (un `new` en un test). NO lleva textos: si se usa,
+    /// el mensaje sale como la CLAVE, que es lo que hace visible que falta inyectar el Localizer.
+    /// Los textos viven en FragForge.Tweaks/Localization/{es-MX,en-US}.json, la misma fuente que el resto
+    /// de la app, para no tener dos diccionarios que se desincronicen.
+    /// </summary>
+    private static readonly Localizer LocalizerVacio = new("es-MX", new Dictionary<string, string>(StringComparer.Ordinal));
 
     /// <summary>
     /// R-J: nada que necesite recuperacion FUERA DE BANDA puede aplicarse mientras el motor no escriba ese
@@ -94,7 +114,7 @@ public sealed class PreflightService(
         if (affected.Length == 0) yield break;
         yield return new("recovery",
             PreflightSeverity.Blocking,
-            Text.Format($"preflight.recovery.{Text.Culture}", string.Join(", ", affected)),
+            Text.Format("preflight.recovery", string.Join(", ", affected)),
             "No hay script de recuperación: se retomará cuando el motor lo escriba (ronda 10). Mientras tanto, aplica esos cambios con la herramienta del fabricante.");
     }
 

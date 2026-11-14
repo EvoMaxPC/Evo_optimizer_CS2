@@ -84,5 +84,6 @@
   "a11y.tweaks": "Lista de tweaks",
   "security.title": "Postura de seguridad",
   "security.refresh": "Actualizar postura",
-  "summary.hint": "Pulsa Escanear para detectar el hardware y evaluar el catálogo."
+  "summary.hint": "Pulsa Escanear para detectar el hardware y evaluar el catálogo.",
+  "preflight.recovery": "FragForge todavía no escribe el script de recuperación fuera de banda (R-J). Si este cambio te deja sin red o sin arranque, no habría forma de deshacerlo desde aquí: aplica {0} con la herramienta del fabricante o del sistema operativo a mano, y con la clave de recuperación a la vista."
 }
