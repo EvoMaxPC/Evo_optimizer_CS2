@@ -103,14 +103,17 @@ public static class InventoryCommands
 
         if (parsed.Has("json"))
         {
-            ConsoleOutput.Json(section switch
+            // El switch mezclaba IReadOnlyList<ServiceEntry|TaskEntry|StartupEntry|AppxEntry> con
+            // SystemInventory: no hay un T común, así que Json<T> no puede inferirse (CS0411).
+            // Se serializa por rama, cada una con su tipo concreto.
+            switch (section)
             {
-                "services" => inventory.Services,
-                "tasks" => inventory.Tasks,
-                "startup" => inventory.Startup,
-                "appx" => inventory.Appx,
-                _ => inventory
-            });
+                case "services": ConsoleOutput.Json(inventory.Services); break;
+                case "tasks": ConsoleOutput.Json(inventory.Tasks); break;
+                case "startup": ConsoleOutput.Json(inventory.Startup); break;
+                case "appx": ConsoleOutput.Json(inventory.Appx); break;
+                default: ConsoleOutput.Json(inventory); break;
+            }
             return inventory.IsComplete ? ExitCodes.Success : ExitCodes.Failure;
         }
 

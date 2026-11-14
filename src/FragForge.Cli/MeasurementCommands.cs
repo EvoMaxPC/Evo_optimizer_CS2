@@ -41,7 +41,7 @@ public static class MeasurementCommands
         if (key is null)
         {
             if (parsed.Has("json")) ConsoleOutput.Json(probes.Select(p => p.Key).ToArray());
-            else { Console.WriteLine("Sondas disponibles:"); foreach (var probe in probes) Console.WriteLine("  " + probe.Key); }
+            else { Console.WriteLine("Sondas disponibles:"); foreach (var availableProbe in probes) Console.WriteLine("  " + availableProbe.Key); }
             return ExitCodes.Success;
         }
         var probe = probes.FirstOrDefault(p => p.Key.Equals(key, StringComparison.OrdinalIgnoreCase));
