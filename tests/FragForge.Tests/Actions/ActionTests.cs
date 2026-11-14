@@ -114,6 +114,8 @@ public sealed class PowerPlanActionTests
         public bool SourceExists { get; set; } = true;
         /// <summary>Índices posibles que el sistema enumera para el ajuste de prueba.</summary>
         public int[] PossibleIndices { get; set; } = [0, 1, 2];
+        /// <summary>GUID de ajustes que el sistema NO tiene: el powercfg real responde exit=1 ("no existe") a /qh de ellos.</summary>
+        public HashSet<string> MissingSettingGuids { get; } = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>Bloque /qh con rango (mín/máx/inc) cuando es true; enumerado cuando es false.</summary>
         public bool EnumeratedRange { get; set; } = true; // el Spec_ usa 100: debe estar en 0..100
         public const string SourceGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
@@ -151,6 +153,8 @@ public sealed class PowerPlanActionTests
                 // /qh <plan> <subgrupo> <ajuste> (lectura de UN ajuste, como QuerySettingAsync): devuelve el bloque
                 // con los GUID pedidos. /qh <plan> devuelve el bloque de prueba tal cual.
                 var qh = QhOutput();
+                if (request.Arguments.Count() >= 4 && MissingSettingGuids.Contains(request.Arguments[3]))
+                    return new ProcessResult(1, "", "El plan, subgrupo o configuracion de energia especificado no existe.", false);
                 if (request.Arguments.Count() >= 4)
                     qh = qh.Replace("54533251-82be-4824-96c1-47b60b740d00", request.Arguments[2], StringComparison.OrdinalIgnoreCase)
                            .Replace("893dee8e-2bef-41e0-89c6-b55d0929964c", request.Arguments[3], StringComparison.OrdinalIgnoreCase);
@@ -231,7 +235,7 @@ public sealed class PowerPlanActionTests
             settings = new[]
             {
                 new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = 0, dcValue = 0 },
-                // Este segundo ajuste NO lo enumera el simulador: es la variante ausente en la PN64.
+                // Este segundo ajuste NO lo enumera el simulador: modela un equipo que no expone esa variante (la PN64 real enumera las tres de PERFEPP).
                 new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "de67a0c0-0c8e-4c1f-a1e0-000000000002", acValue = 0, dcValue = 0 }
             }
         })
@@ -240,7 +244,7 @@ public sealed class PowerPlanActionTests
     [Fact]
     public async Task SkipUnenumeratedSettings_WritesOnlyWhatTheSystemEnumerates()
     {
-        // Caso PN64: de las tres variantes de PERFEPP solo una está enumerada. Con la bandera activa,
+        // Equipo que solo expone una de las tres variantes de PERFEPP (no es el caso de la PN64 real): solo una está enumerada. Con la bandera activa,
         // el tweak NO debe declararse inaplicable: escribe la que existe y omite la que no.
         var simulator = new PowerCfgSimulator { PlanExists = true };
         var action = new PowerPlanAction(simulator.Runner, SpecTwoVariants(skip: true));
@@ -253,6 +257,29 @@ public sealed class PowerPlanActionTests
         // El ajuste ausente nunca se escribe.
         Assert.DoesNotContain(simulator.Commands, c => (c.StartsWith("/setacvalueindex", StringComparison.Ordinal) || c.StartsWith("/setdcvalueindex", StringComparison.Ordinal)) && c.Contains("de67a0c0", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(VerificationOutcome.Matches, (await action.VerifyAsync(captured, Context())).Outcome);
+    }
+
+    [Fact]
+    public async Task SkipUnenumeratedSettings_RealPowerCfgFailsOnAMissingGuid_CaptureSkipsItInsteadOfFailing()
+    {
+        // powercfg real: /qh <plan> <subgrupo> <ajuste inexistente> sale con codigo 1 ("no existe"). Con la bandera
+        // activa la captura no debe leer esa variante (antes reventaba con ProcessFailedException).
+        const string Missing = "de67a0c0-0c8e-4c1f-a1e0-000000000002";
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        simulator.MissingSettingGuids.Add(Missing);
+        var action = new PowerPlanAction(simulator.Runner, SpecTwoVariants(skip: true));
+
+        await action.PreflightAsync(Context());
+        var captured = await action.CaptureAsync(Context());
+        var state = (PowerPlanActionState)captured;
+        Assert.Single(state.Settings);
+        Assert.DoesNotContain(state.Settings, s => s.SettingGuid == Missing);
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/qh ", StringComparison.Ordinal) && c.Contains("de67a0c0", StringComparison.OrdinalIgnoreCase) && c.Split(' ').Length >= 4);
+
+        await action.ApplyAsync(captured, Context());
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyAsync(captured, Context())).Outcome);
+        await action.RevertAsync(captured, Context());
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyRevertAsync(captured, Context())).Outcome);
     }
 
     [Fact]

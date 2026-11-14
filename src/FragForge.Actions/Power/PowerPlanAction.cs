@@ -83,7 +83,15 @@ public sealed class PowerPlanAction : ITweakAction
         string? export = null;
         if (capturePlan is not null)
         {
-            foreach (var setting in _parameters.Settings) settings.Add(await QuerySettingAsync(capturePlan.Value.Guid, setting.SubgroupGuid, setting.SettingGuid, cancellationToken));
+            // Con skipUnenumeratedSettings las variantes que este equipo no enumera NO se leen: powercfg /qh de un GUID
+            // inexistente sale con codigo 1 y reventaria la captura. Lo no capturado tampoco se escribe ni se revierte.
+            IReadOnlyList<PowerSettingQuery>? enumerated = null;
+            if (_parameters.SkipUnenumeratedSettings) enumerated = await QuerySettingsAsync(capturePlan.Value.Guid, cancellationToken);
+            foreach (var setting in _parameters.Settings)
+            {
+                if (enumerated is not null && FindSetting(enumerated, setting) is null) continue;
+                settings.Add(await QuerySettingAsync(capturePlan.Value.Guid, setting.SubgroupGuid, setting.SettingGuid, cancellationToken));
+            }
             if (context.ArtifactDirectory is not null)
             {
                 export = $"power-{capturePlan.Value.Guid}.pow";
@@ -329,7 +337,7 @@ internal sealed record PowerPlanParameters
     /// <summary>
     /// Si es true, las variantes de un mismo ajuste que el sistema NO enumere se omiten en vez de
     /// hacer fallar el tweak entero (siempre que al menos una esté enumerada). Es lo que necesita un
-    /// tweak que declara las tres variantes de PERFEPP cuando la PN64 solo expone una: se escribe la
+    /// tweak que declara las tres variantes de PERFEPP cuando un equipo solo expone una (la PN64 real expone las tres): se escribe la
     /// que existe y se omiten las demás. Con false (por defecto) cualquier ajuste no enumerado hace
     /// que el tweak sea NotApplicable: no se escribe "casi todo" en silencio.
     /// </summary>

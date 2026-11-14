@@ -63,7 +63,7 @@ Todos: Kind `PowerPlan`, `settingsOnly`, `dependsOn: ["power.fragforge-performan
 
 ### 1.4 `skipUnenumeratedSettings`: el problema que apareció al aplicar los datos reales
 
-La PN64 enumera **una sola** variante de PERFEPP, pero el tweak declara tres (`…63/…64/…65`) porque
+La PN64 enumera **las tres** variantes de PERFEPP (verificado con powercfg /qh: sufijos 63 y 64 con AC 5, sufijo 65 con AC 0; una versién anterior de este texto decía "una sola" y era un error). El tweak declara tres (`…63/…64/…65`) porque
 no se sabe cuál corresponde a qué. Con el Preflight tal como estaba, cualquier ajuste no enumerado
 hacía **fallar el tweak entero**: el resultado habría sido "no aplica" en el equipo de referencia.
 

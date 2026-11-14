@@ -81,8 +81,8 @@
     "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/processor-performance-control"
   ],
   "notes": {
-    "es-MX": "Solo escribe las variantes de PERFEPP que /qh enumere en este equipo; las que no estén enumeradas se omiten y el tweak se marca no aplicable. En la PN64 el valor AC actual es 5. Depende de power.fragforge-performance: aplicarlo también crea ese plan si no existe. Reversible: revierte solo sus valores.",
-    "en-US": "Only writes the PERFEPP variants that /qh enumerates on this machine; variants that are not enumerated are skipped and the tweak is reported not applicable. On the PN64 the current AC value is 5. It depends on power.fragforge-performance: applying it also creates that plan if missing. Reversible: reverts only its own values."
+    "es-MX": "Solo escribe las variantes de PERFEPP que /qh enumere en este equipo; las que no estén enumeradas se omiten (el tweak solo es no aplicable si no se enumera ninguna). En la PN64 las tres variantes están enumeradas (AC actual: 5, 5 y 0), así que escribe las tres. Depende de power.fragforge-performance: aplicarlo también crea ese plan si no existe. Reversible: revierte solo sus valores.",
+    "en-US": "Only writes the PERFEPP variants that /qh enumerates on this machine; variants that are not enumerated are skipped (the tweak is only reported not applicable if none is enumerated). On the PN64 all three variants are enumerated (current AC: 5, 5 and 0), so it writes all three. It depends on power.fragforge-performance: applying it also creates that plan if missing. Reversible: reverts only its own values."
   },
   "whenNotToApply": {
     "es-MX": "No aplicar en un equipo de 28 W con DTT: puede subir la temperatura y recortar el boost sostenido, dejando menos rendimiento sostenido que antes. Validar con A/B que incluye térmicos y carga sostenida. No aplicar si el equipo ya se calienta o hace ruido.",
