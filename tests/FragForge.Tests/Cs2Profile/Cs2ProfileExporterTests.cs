@@ -51,6 +51,131 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         Overwrite = overwrite
     };
 
+    // ------------------------------------------------------------------ fallos de disco (paso 4)
+
+    /// <summary>
+    /// Escritor inyectable que falla SOLO para una ruta concreta y delega el resto en la escritura real.
+    /// Provoca un fallo de disco sin depender del sistema operativo ni de sus permisos.
+    /// </summary>
+    private static Func<string, byte[], CancellationToken, Task> FailingOn(
+        string pathToFail, Exception failure, Func<string, byte[], CancellationToken, Task>? inner = null) =>
+        (path, content, token) => string.Equals(
+            Path.GetFullPath(path), Path.GetFullPath(pathToFail), StringComparison.OrdinalIgnoreCase)
+            ? throw failure
+            : (inner ?? ((p, c, ct) => File.WriteAllBytesAsync(p, c, ct)))(path, content, token);
+
+    [Fact]
+    public async Task AccessDeniedWhenWritingTheBackup_AbortsAndLeavesAutoexecByteForByteUntouched()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        var originalBytes = new UTF8Encoding(true).GetBytes("// mio\nsensitivity 2.5\n");
+        await File.WriteAllBytesAsync(autoexec, originalBytes);
+        var before = Cs2ProfileExporter.Sha256(originalBytes);
+
+        // El backup es el PRIMER archivo de ese segundo: su ruta es determinista.
+        var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
+        var writer = FailingOn(backupPath, new UnauthorizedAccessException("acceso denegado (test)"));
+
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("No se pudo escribir la copia de seguridad", message, StringComparison.Ordinal);
+        Assert.Contains(backupPath, message, StringComparison.Ordinal);
+        Assert.Contains("no se ha modificado", message, StringComparison.Ordinal);
+        // Sugiere administrador SOLO porque la causa es de permisos.
+        Assert.Contains("administrador", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("stack", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("   at ", message, StringComparison.Ordinal);
+
+        // La excepción no escapó y el autoexec sigue byte a byte igual. Tampoco hay autoexec tocado ni backup.
+        Assert.Equal(before, Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(autoexec)));
+        Assert.False(File.Exists(backupPath));
+    }
+
+    [Fact]
+    public async Task AccessDeniedWhenWritingAutoexec_AbortsAndRemovesTheJustCreatedBackup()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        var originalBytes = new UTF8Encoding(true).GetBytes("// mio\nsensitivity 2.5\n");
+        await File.WriteAllBytesAsync(autoexec, originalBytes);
+        var before = Cs2ProfileExporter.Sha256(originalBytes);
+
+        var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
+        var writer = FailingOn(autoexec, new UnauthorizedAccessException("acceso denegado (test)"));
+
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("No se pudo escribir autoexec.cfg", message, StringComparison.Ordinal);
+        Assert.Contains("no se ha modificado", message, StringComparison.Ordinal);
+        // Se informa de la limpieza que de verdad ocurrió.
+        Assert.Contains("se retiró la copia de seguridad", message, StringComparison.Ordinal);
+
+        // Nada quedó: ni autoexec cambiado ni backup huérfano que restore-autoexec confundiría con «el último».
+        Assert.Equal(before, Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(autoexec)));
+        Assert.False(File.Exists(backupPath));
+        Assert.Empty(Directory.GetFiles(_cfg, Cs2ProfileGenerator.BackupPrefix + "*"));
+    }
+
+    [Fact]
+    public async Task DiskFullWhenWritingAutoexec_SaysItIsNotAPermissionsProblem()
+    {
+        // IOException (disco lleno): NO se sugiere administrador, porque no arreglaría nada.
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        await File.WriteAllTextAsync(autoexec, "// mio\n");
+        var writer = FailingOn(autoexec, new IOException("no hay espacio en el dispositivo (test)"));
+
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("el sistema no pudo completar la escritura", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("administrador", message, StringComparison.Ordinal);
+        Assert.Contains("no se ha modificado", message, StringComparison.Ordinal);
+        Assert.Equal("// mio\n", await File.ReadAllTextAsync(autoexec));
+    }
+
+    [Fact]
+    public async Task AccessDeniedInTheFolderDestination_IsReportedWithoutThrowing()
+    {
+        var folder = Path.Combine(_root, "salida-denegada");
+        Directory.CreateDirectory(folder);
+        var target = Path.Combine(folder, "fragforge-cs2.cfg");
+        var writer = FailingOn(target, new UnauthorizedAccessException("acceso denegado (test)"));
+
+        var request = new ExportRequest
+        {
+            Kind = ExportDestinationKind.Folder,
+            FolderPath = folder,
+            CfgText = CfgBody,
+            Timestamp = FixedTime
+        };
+
+        var result = await Cs2ProfileExporter.ExportAsync(request, verifyBackup: null, writer, CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("No se pudo escribir el perfil", message, StringComparison.Ordinal);
+        Assert.Contains(target, message, StringComparison.Ordinal);
+        Assert.False(File.Exists(target));
+    }
+
+    [Fact]
+    public async Task ThePublicOverloadsStillWork_AndFileWriterIsTheRealOne()
+    {
+        // Las tres sobrecargas delegan y la pública sin verificador escribe de verdad.
+        var folder = Path.Combine(_root, "salida-normal");
+        Directory.CreateDirectory(folder);
+        var request = new ExportRequest { Kind = ExportDestinationKind.Folder, FolderPath = folder, CfgText = CfgBody, Timestamp = FixedTime };
+
+        var result = await Cs2ProfileExporter.ExportAsync(request);
+
+        Assert.True(result.Written);
+        Assert.Equal(CfgBody.Replace("\r\n", "\n", StringComparison.Ordinal), await File.ReadAllTextAsync(result.TargetPath!));
+    }
+
     // ------------------------------------------------------------------ colisión de backup (mismo segundo)
 
     private static readonly DateTimeOffset NextSecond = new(2026, 11, 13, 10, 0, 1, TimeSpan.Zero);

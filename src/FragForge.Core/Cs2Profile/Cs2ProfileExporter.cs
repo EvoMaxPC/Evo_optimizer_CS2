@@ -89,23 +89,41 @@ public static class Cs2ProfileExporter
     /// el camino de ABORTO, que de otro modo exigiría un fallo de disco real.
     /// </summary>
     /// <param name="verifyBackup">Comprueba que la copia coincide con el original. Null = SHA-256 real.</param>
+    public static Task<ExportResult> ExportAsync(
+        ExportRequest request,
+        Func<byte[], byte[], bool>? verifyBackup,
+        CancellationToken cancellationToken = default) =>
+        ExportAsync(request, verifyBackup, FileWriter, cancellationToken);
+
+    /// <summary>
+    /// Igual que las anteriores, con el ESCRITOR inyectable. En producción se usa
+    /// <see cref="FileWriter"/>; el test lo sustituye para provocar un fallo de disco (acceso denegado,
+    /// archivo en uso, disco lleno) sin depender del sistema operativo ni de sus permisos.
+    /// </summary>
+    /// <param name="write">Escribe los bytes en la ruta indicada. Puede lanzar E/S o acceso denegado.</param>
     public static async Task<ExportResult> ExportAsync(
         ExportRequest request,
         Func<byte[], byte[], bool>? verifyBackup,
+        Func<string, byte[], CancellationToken, Task> write,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(write);
         return request.Kind switch
         {
-            ExportDestinationKind.Folder => await ExportToFolderAsync(request, cancellationToken),
-            ExportDestinationKind.GameNewFile => await ExportToGameNewFileAsync(request, cancellationToken),
-            ExportDestinationKind.GameAutoexecBlock => await ExportToAutoexecAsync(request, verifyBackup, cancellationToken),
+            ExportDestinationKind.Folder => await ExportToFolderAsync(request, write, cancellationToken),
+            ExportDestinationKind.GameNewFile => await ExportToGameNewFileAsync(request, write, cancellationToken),
+            ExportDestinationKind.GameAutoexecBlock => await ExportToAutoexecAsync(request, verifyBackup, write, cancellationToken),
             _ => Fail("Destino desconocido.")
         };
     }
 
+    /// <summary>Escritura real: atómica (temporal + mover) y sin tocar el archivo si falla.</summary>
+    internal static Task FileWriter(string path, byte[] content, CancellationToken cancellationToken) =>
+        AtomicFile.WriteAllBytesAsync(path, content, cancellationToken);
+
     // ------------------------------------------------------------------ destinos
 
-    private static async Task<ExportResult> ExportToFolderAsync(ExportRequest request, CancellationToken cancellationToken)
+    private static async Task<ExportResult> ExportToFolderAsync(ExportRequest request, Func<string, byte[], CancellationToken, Task> write, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.FolderPath)) return Fail("Falta la carpeta de destino.");
         var normalized = Cs2PathGuard.Normalize(request.FolderPath, Directory.GetCurrentDirectory());
@@ -115,18 +133,29 @@ public static class Cs2ProfileExporter
         if (File.Exists(target) && !request.Overwrite)
             return Fail($"Ya existe '{target}'. No se sobrescribe sin confirmación explícita.");
 
-        await AtomicFile.WriteAllBytesAsync(target, Utf8NoBom.GetBytes(NormalizeNewlines(request.CfgText)), cancellationToken);
-        var bytes = await File.ReadAllBytesAsync(target, cancellationToken);
+        var bytes = Utf8NoBom.GetBytes(NormalizeNewlines(request.CfgText));
+        try
+        {
+            await write(target, bytes, cancellationToken);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FailWrite(ex, "el perfil", target, "No se escribió ningún archivo.");
+        }
+
+        // Se hashea lo que QUEDÓ en disco, no lo que creemos haber escrito: si el escritor hiciera otra
+        // cosa, el hash lo delataría.
+        var written = await File.ReadAllBytesAsync(target, cancellationToken);
         return new ExportResult
         {
             Written = true,
             TargetPath = target,
-            WrittenSha256 = Sha256(bytes),
+            WrittenSha256 = Sha256(written),
             Messages = [$"Perfil escrito en '{target}'. Para usarlo, cópialo a la carpeta cfg del juego y ejecuta '{Cs2ProfileGenerator.ExecHint}'."]
         };
     }
 
-    private static async Task<ExportResult> ExportToGameNewFileAsync(ExportRequest request, CancellationToken cancellationToken)
+    private static async Task<ExportResult> ExportToGameNewFileAsync(ExportRequest request, Func<string, byte[], CancellationToken, Task> write, CancellationToken cancellationToken)
     {
         var cfgDirectory = Cs2PathGuard.CfgDirectoryFor(request.GameExecutablePath);
         if (cfgDirectory is null) return Fail("No se pudo derivar la carpeta cfg: ¿está instalado CS2?");
@@ -138,18 +167,29 @@ public static class Cs2ProfileExporter
         if (File.Exists(target) && !request.Overwrite)
             return Fail($"Ya existe '{target}'. No se sobrescribe sin confirmación explícita.");
 
-        await AtomicFile.WriteAllBytesAsync(target, Utf8NoBom.GetBytes(NormalizeNewlines(request.CfgText)), cancellationToken);
-        var bytes = await File.ReadAllBytesAsync(target, cancellationToken);
+        var bytes = Utf8NoBom.GetBytes(NormalizeNewlines(request.CfgText));
+        try
+        {
+            await write(target, bytes, cancellationToken);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return FailWrite(ex, "el perfil", target, "No se escribió ningún archivo.");
+        }
+
+        // Se hashea lo que QUEDÓ en disco, no lo que creemos haber escrito: si el escritor hiciera otra
+        // cosa, el hash lo delataría.
+        var written = await File.ReadAllBytesAsync(target, cancellationToken);
         return new ExportResult
         {
             Written = true,
             TargetPath = target,
-            WrittenSha256 = Sha256(bytes),
+            WrittenSha256 = Sha256(written),
             Messages = [$"Perfil escrito en '{target}'. Añade '{Cs2ProfileGenerator.ExecHint}' a tu autoexec (o escríbelo en la consola) para activarlo."]
         };
     }
 
-    private static async Task<ExportResult> ExportToAutoexecAsync(ExportRequest request, Func<byte[], byte[], bool>? verifyBackup, CancellationToken cancellationToken)
+    private static async Task<ExportResult> ExportToAutoexecAsync(ExportRequest request, Func<byte[], byte[], bool>? verifyBackup, Func<string, byte[], CancellationToken, Task> write, CancellationToken cancellationToken)
     {
         var cfgDirectory = Cs2PathGuard.CfgDirectoryFor(request.GameExecutablePath);
         if (cfgDirectory is null) return Fail("No se pudo derivar la carpeta cfg: ¿está instalado CS2?");
@@ -174,7 +214,15 @@ public static class Cs2ProfileExporter
                             $"'{cfgDirectory}'. No se sobrescribe ninguna copia anterior y no se ha modificado autoexec.cfg. " +
                             "Borra alguna copia antigua o espera un segundo y vuelve a intentarlo.");
             }
-            await AtomicFile.WriteAllBytesAsync(backupPath, original, cancellationToken);
+            try
+            {
+                await write(backupPath, original, cancellationToken);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                // Sin copia fiable no hay red de seguridad: se ABORTA sin tocar autoexec.cfg.
+                return FailWrite(ex, "la copia de seguridad", backupPath, $"'{target}' no se ha modificado.");
+            }
 
             var backupBytes = await File.ReadAllBytesAsync(backupPath, cancellationToken);
             var originalHash = Sha256(original);
@@ -193,7 +241,20 @@ public static class Cs2ProfileExporter
 
         // 2) Componer el archivo: el resto byte a byte + el bloque al final.
         var merged = MergeBlock(original, request.CfgText);
-        await AtomicFile.WriteAllBytesAsync(target, merged, cancellationToken);
+        try
+        {
+            await write(target, merged, cancellationToken);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            // Si el fallo deja una copia recién creada y sin usar, se retira: no se deja basura que confunda
+            // al próximo restore-autoexec (que elige «el último backup» por nombre).
+            var cleaned = TryRemoveLeftoverBackup(backupPath);
+            return FailWrite(ex, "autoexec.cfg", target,
+                cleaned
+                    ? $"'{target}' no se ha modificado y se retiró la copia de seguridad que se acababa de crear ('{backupPath}')."
+                    : $"'{target}' no se ha modificado." + (backupPath is null ? "" : $" La copia '{backupPath}' se conserva."));
+        }
 
         // 3) Conflicto con líneas del USUARIO fuera del bloque: se informan, NO se tocan.
         var userCommands = ExtractCommands(original);
@@ -338,6 +399,41 @@ public static class Cs2ProfileExporter
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Convierte un fallo de disco en un resultado con mensaje en español, sin stack trace. Nombra la ruta
+    /// que falló y dice explícitamente que <c>autoexec.cfg</c> no se modificó. Solo sugiere ejecutar como
+    /// administrador cuando la causa ES de permisos: un disco lleno o un archivo en uso no se arreglan así.
+    /// </summary>
+    private static ExportResult FailWrite(Exception ex, string what, string path, string consequence)
+    {
+        var cause = ex is UnauthorizedAccessException
+            ? "no hay permisos para escribir ahí (si el juego o Steam están abiertos, ciérralos; si la carpeta es del sistema, ejecuta FragForge como administrador)"
+            : "el sistema no pudo completar la escritura (puede que el archivo esté en uso, que falte espacio o que la ruta no esté disponible)";
+        return Fail($"No se pudo escribir {what} en '{path}': {cause}. Detalle: {ex.Message} {consequence}");
+    }
+
+    /// <summary>
+    /// Retira el backup recién creado si el paso siguiente falló, para no dejar una copia huérfana que
+    /// <c>restore-autoexec</c> elegiría como «la última». Devuelve true si se retiró.
+    /// </summary>
+    /// <remarks>
+    /// Si borrar también falla, se responde false y el mensaje dice que la copia se conserva: se informa de
+    /// lo que de verdad quedó en disco en vez de suponer que se limpió.
+    /// </remarks>
+    private static bool TryRemoveLeftoverBackup(string? backupPath)
+    {
+        if (backupPath is null || !File.Exists(backupPath)) return false;
+        try
+        {
+            File.Delete(backupPath);
+            return true;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
     }
 
     private static ExportResult Fail(string message) => new() { Written = false, Messages = [message] };

@@ -122,9 +122,16 @@ public static class Cs2ProfileCommands
         };
 
         var result = await Cs2ProfileExporter.ExportAsync(request, cancellationToken);
-        foreach (var message in result.Messages) prompt.WriteLine(message);
 
-        if (!result.Written) return ExitCodes.Failure;
+        if (!result.Written)
+        {
+            // Los fallos van por el canal de avisos (stderr en la consola real), no mezclados con la
+            // salida normal: el usuario tiene que poder ver que NO se escribió.
+            foreach (var message in result.Messages) prompt.WriteWarning(message);
+            return ExitCodes.Failure;
+        }
+
+        foreach (var message in result.Messages) prompt.WriteLine(message);
 
         prompt.WriteLine("");
         prompt.WriteLine("Cómo activarlo:");
@@ -298,9 +305,20 @@ public static class Cs2ProfileCommands
         }
 
         var backup = backups[0];
-        var backupBytes = await File.ReadAllBytesAsync(backup, cancellationToken);
         var target = Path.Combine(cfgDirectory, Cs2ProfileGenerator.AutoexecFileName);
-        var currentBytes = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken) : [];
+
+        byte[] backupBytes;
+        byte[] currentBytes;
+        try
+        {
+            backupBytes = await File.ReadAllBytesAsync(backup, cancellationToken);
+            currentBytes = File.Exists(target) ? await File.ReadAllBytesAsync(target, cancellationToken) : [];
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            prompt.WriteWarning($"No se pudo leer la copia o el autoexec actual: {ex.Message} No se ha modificado nada.");
+            return ExitCodes.Failure;
+        }
 
         // El backup se verifica antes de restaurar: si no se puede leer o está vacío, no se toca nada.
         if (backupBytes.Length == 0)
@@ -315,7 +333,19 @@ public static class Cs2ProfileCommands
             return ExitCodes.Success;
         }
 
-        await Core.Persistence.AtomicFile.WriteAllBytesAsync(target, backupBytes, cancellationToken);
+        try
+        {
+            await Core.Persistence.AtomicFile.WriteAllBytesAsync(target, backupBytes, cancellationToken);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            var cause = ex is UnauthorizedAccessException
+                ? "no hay permisos para escribir ahí (si el juego está abierto, ciérralo; si la carpeta es del sistema, ejecuta FragForge como administrador)"
+                : "el sistema no pudo completar la escritura (puede que el archivo esté en uso o que falte espacio)";
+            prompt.WriteWarning($"No se pudo restaurar '{target}': {cause}. Detalle: {ex.Message} El autoexec no se ha modificado.");
+            return ExitCodes.Failure;
+        }
+
         prompt.WriteLine($"autoexec.cfg restaurado desde '{backup}'.");
         prompt.WriteLine($"SHA-256 del backup restaurado: {Cs2ProfileExporter.Sha256(backupBytes)}");
         prompt.WriteLine($"El autoexec que había antes ({currentBytes.Length} bytes) se ha sobrescrito; no se generó otra copia.");
