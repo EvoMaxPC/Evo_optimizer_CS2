@@ -5,40 +5,14 @@ using Xunit;
 namespace FragForge.Tests.Measurement;
 
 /// <summary>
-/// CSV de PresentMon. Las fixtures <c>Real260*</c> son una captura REAL de PresentMon 2.6.0 en la PC
-/// objetivo (10 s sobre cs2.exe, flags por defecto, sin <c>--v1_metrics</c>/<c>--v2_metrics</c>),
-/// copiada verbatim: 28 columnas, faltantes como <c>NA</c> y hasta 14 decimales.
+/// CSV de PresentMon contra fixtures REALES de 2.6.0 (ver <see cref="PresentMonFixtures"/>).
 ///
-/// OJO: esa captura fue ~8,6 FPS con <c>PresentMode=Other</c>, display en NA y GPU=0. NO es un
-/// baseline válido (probable ventana sin foco o pantalla de carga; causa NO confirmada). Se usa
-/// únicamente como fixture de "captura sospechosa" y para validar el parseo.
-///
-/// Las fixtures <c>V1Csv</c>/<c>V2Csv</c> son SINTÉTICAS y cubren formas de columna de otras versiones.
+/// La captura de referencia tiene DOS swapchains del mismo ProcessID y NO es un baseline válido:
+/// se usa solo para probar el parseo y la elección de swapchain. Estas pruebas no afirman nada sobre
+/// los FPS del juego ni sobre la frecuencia de la pantalla.
 /// </summary>
 public sealed class CsvParserTests
 {
-    /// <summary>Encabezado real de PresentMon 2.6.0, en su orden exacto (28 columnas).</summary>
-    internal const string Header260 =
-        "Application,ProcessID,SwapChainAddress,PresentRuntime,SyncInterval,PresentFlags,AllowsTearing,PresentMode," +
-        "TimeInMs,MsBetweenSimulationStart,MsBetweenPresents,MsBetweenDisplayChange,MsInPresentAPI,MsRenderPresentLatency," +
-        "MsUntilDisplayed,CPUStartTimeInMs,MsBetweenAppStart,MsCPUBusy,MsCPUWait,MsGPULatency,MsGPUTime,MsGPUBusy,MsGPUWait," +
-        "MsAnimationError,AnimationTime,MsFlipDelay,MsAllInputToPhotonLatency,MsClickToPhotonLatency";
-
-    private const string Row1 =
-        "cs2.exe,9556,0x167400D5A60,DXGI,0,0,0,Other,283.2085,NA,115.63470000000001,NA,1.62490000000000,0.00000000000000,NA,169.4300,115.4034,113.7785,1.6249,0.0000,0.0000,0.0000,0.0000,NA,NA,NA,NA,NA";
-
-    private const string Row2 =
-        "cs2.exe,9556,0x167400D5A60,DXGI,0,0,0,Other,400.9229,NA,117.71440000000001,NA,1.87450000000000,0.00000000000000,NA,284.8334,117.9640,116.0895,1.8745,0.0000,0.0000,0.0000,0.0000,NA,NA,NA,NA,NA";
-
-    private const string Row3 =
-        "cs2.exe,9556,0x167400D5A60,DXGI,0,0,0,Other,520.6847,NA,119.76180000000001,NA,1.66020000000000,0.00000000000000,NA,402.7974,119.5475,117.8873,1.6602,0.0000,0.0000,0.0000,0.0000,NA,NA,NA,NA,NA";
-
-    /// <summary>Captura real de 2.6.0: LF.</summary>
-    internal static string Real260 => Header260 + "\n" + Row1 + "\n" + Row2 + "\n" + Row3 + "\n";
-
-    /// <summary>La misma captura con CRLF, para probar ambos finales de línea.</summary>
-    internal static string Real260Crlf => Header260 + "\r\n" + Row1 + "\r\n" + Row2 + "\r\n" + Row3 + "\r\n";
-
     private const string V1Csv = """
         Application,ProcessID,SwapChainAddress,Runtime,SyncInterval,PresentFlags,AllowsTearing,PresentMode,MsBetweenPresents,MsBetweenDisplayChange,MsInPresentAPI,MsUntilRenderComplete,MsUntilDisplayed,TimeInSeconds,Dropped
         cs2.exe,4242,0x1,DXGI,1,0,1,Composed: Flip,5.000,5.100,0.400,4.000,5.000,0.005,0
@@ -52,25 +26,28 @@ public sealed class CsvParserTests
         cs2.exe,4242,0x1,DXGI,1,0,1,Independent Flip,5.000,3.950,2.200,1.000,5.050,0.000,9.100
         """;
 
-    // ---------------------------------------------------------------- contrato 2.6.0
+    // ---------------------------------------------------------------- contrato 2.6.0 (una swapchain)
 
     [Fact]
-    public void Real260_ParsesEveryRow_AndReadsFrameTimeFromMsBetweenPresents()
+    public void Real260_DxgiOnly_ParsesEveryRow_FromMsBetweenPresents()
     {
-        var series = PresentMonCsvParser.Parse(new StringReader(Real260));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyDxgi));
 
         Assert.Equal(3, series.FrameCount);
         Assert.Equal(115.63470000000001, series.FrameTimesMs[0], 12);
         Assert.Equal(117.71440000000001, series.FrameTimesMs[1], 12);
         Assert.Equal(119.76180000000001, series.FrameTimesMs[2], 12);
+        Assert.Equal("0x167400D5A60", series.SwapChainAddress);
+        // Una sola swapchain en el fichero -> un solo resumen, y es la elegida.
+        var only = Assert.Single(series.SwapChains);
+        Assert.True(only.Chosen);
     }
 
     [Fact]
     public void Real260_CpuComesFromMsCPUBusy_NotFromMsInPresentAPI()
     {
-        var series = PresentMonCsvParser.Parse(new StringReader(Real260));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyDxgi));
 
-        // MsCPUBusy = 113.7785 (la columna 18 del contrato real).
         Assert.Equal(113.7785, series.CpuBusyMs[0]!.Value, 6);
         // MsInPresentAPI = 1.6249 va a PresentApiMs, NO a CPU. Este es el error que se corrigió.
         Assert.Equal(1.6249, series.PresentApiMs[0]!.Value, 6);
@@ -79,100 +56,259 @@ public sealed class CsvParserTests
     }
 
     [Fact]
-    public void Real260_NaCells_BecomeNull_AndNeverZero()
+    public void Real260_NaCells_BecomeNull_NeverZero()
     {
-        var series = PresentMonCsvParser.Parse(new StringReader(Real260));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyDxgi));
 
-        // MsBetweenDisplayChange y MsUntilDisplayed son NA en toda la captura.
+        // Display en NA en toda la swapchain DXGI.
         Assert.All(series.DisplayChangeMs, value => Assert.Null(value));
         Assert.All(series.UntilDisplayedMs, value => Assert.Null(value));
-        // MsCPUWait sí trae dato (1.6249).
+        // MsCPUWait sí trae dato.
         Assert.Equal(1.6249, series.CpuWaitMs[0]!.Value, 6);
-        // MsGPUTime y MsGPUBusy son 0.0000; 0 es un dato, no null.
+        // Un 0 es un dato real, no null: MsGPUTime/MsGPUBusy son 0.0000.
         Assert.Equal(0.0, series.GpuTimeMs[0]!.Value, 6);
         Assert.Equal(0.0, series.GpuBusyMs[0]!.Value, 6);
     }
 
     [Fact]
-    public void Real260_GpuAllZero_IsReportedUnavailable_NotAsZeroPerformance()
+    public void Real260_GpuAllZeroInChosenChain_IsUnavailable()
     {
-        var series = PresentMonCsvParser.Parse(new StringReader(Real260));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyDxgi));
 
         Assert.True(series.GpuUnavailable);
         Assert.Contains(series.Warnings, warning => warning.Contains("GPU no disponible", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Real260_ReadsIdentityColumns_AndPresentMode()
+    public void Real260_ZeroSwapChain_GpuIsAvailable_AndPresentModeIsLegacyFlip()
     {
-        var series = PresentMonCsvParser.Parse(new StringReader(Real260));
-
-        Assert.Equal("cs2.exe", series.ApplicationName);
-        Assert.Equal(9556, series.ProcessId);
-        Assert.Equal("0x167400D5A60", series.SwapChainAddress);
-        Assert.Equal(283.2085, series.TimesMs[0]!.Value, 6);
-        Assert.All(series.PresentModes, mode => Assert.Equal("Other", mode));
-        Assert.All(series.SyncIntervals, value => Assert.Equal(0, value));
-        Assert.All(series.AllowsTearing, value => Assert.False(value));
-    }
-
-    [Fact]
-    public void Real260_ColumnOrderCanBePermuted_AndStillParses()
-    {
-        var permuted = PermuteColumns(Real260);
-        var series = PresentMonCsvParser.Parse(new StringReader(permuted));
+        // La adenda lo verifica: la iGPU Intel SÍ da MsGPUBusy con datos en la swapchain 0x0.
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyZero));
 
         Assert.Equal(3, series.FrameCount);
-        Assert.Equal(115.63470000000001, series.FrameTimesMs[0], 12);
-        Assert.Equal(113.7785, series.CpuBusyMs[0]!.Value, 6);
-        Assert.Equal(9556, series.ProcessId);
+        Assert.Equal("0x0", series.SwapChainAddress);
+        Assert.False(series.GpuUnavailable, "La swapchain 0x0 trae GPU real; 0x0 no es inválida por sí sola.");
+        Assert.All(series.GpuBusyMs, value => Assert.NotNull(value));
+        Assert.All(series.PresentModes, mode => Assert.Equal("Hardware: Legacy Flip", mode));
+        Assert.All(series.AllowsTearing, value => Assert.True(value));
     }
 
     [Fact]
-    public void Real260_CrlfAndLf_ProduceIdenticalResults()
+    public void Real260_InputToPhoton_IsNullable_AndClickToPhotonAllNa()
     {
-        var lf = PresentMonCsvParser.Parse(new StringReader(Real260));
-        var crlf = PresentMonCsvParser.Parse(new StringReader(Real260Crlf));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyZero));
 
-        Assert.Equal(lf.FrameTimesMs, crlf.FrameTimesMs);
-        Assert.Equal(lf.CpuBusyMs, crlf.CpuBusyMs);
-        Assert.Equal(lf.ProcessId, crlf.ProcessId);
+        // MsAllInputToPhotonLatency: dato en 11 de 449 filas de la captura completa; aquí, NA en las 3.
+        Assert.All(series.InputToPhotonMs, value => Assert.Null(value));
+        Assert.All(series.ClickToPhotonMs, value => Assert.Null(value));
+    }
+
+    // ---------------------------------------------------------------- dos swapchains: elección
+
+    [Fact]
+    public void TwoSwapChains_ChoosesTheOneWithDisplayTracking_NotTheLargest()
+    {
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChains));
+
+        // 0x0 tiene seguimiento de display, así que gana aunque el desempate por filas fuera otro.
+        Assert.Equal("0x0", series.SwapChainAddress);
+        Assert.Equal(3, series.FrameCount);
+        // Las filas son las de 0x0 (~16.5 ms), no las de DXGI (~104-119 ms).
+        Assert.Equal(16.34370000000000, series.FrameTimesMs[0], 12);
+        Assert.Equal(16.91710000000000, series.FrameTimesMs[1], 12);
+        Assert.Equal(16.72970000000000, series.FrameTimesMs[2], 12);
     }
 
     [Fact]
-    public void TruncatedRow_IsDiscarded_NotPartiallyUsed()
+    public void TwoSwapChains_RecordsChosenReason_AndEveryDiscardedChainWithItsNumbers()
     {
-        // Fila cortada justo antes de la columna de frametime.
-        var csv = Header260 + "\n" + Row1 + "\n" + "cs2.exe,9556,0x167400D5A60,DXGI,0,0,0,Other,283.2085,NA\n" + Row3 + "\n";
-        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChains));
 
-        Assert.Equal(2, series.FrameCount);
-        Assert.Equal(115.63470000000001, series.FrameTimesMs[0], 12);
-        Assert.Equal(119.76180000000001, series.FrameTimesMs[1], 12);
+        Assert.NotNull(series.SwapChainReason);
+        Assert.Contains("seguimiento de display", series.SwapChainReason);
+
+        Assert.Equal(2, series.SwapChains.Count);
+        var chosen = Assert.Single(series.SwapChains.Where(c => c.Chosen));
+        Assert.Equal("0x0", chosen.Address);
+        Assert.True(chosen.HasDisplayTracking);
+
+        var discarded = Assert.Single(series.SwapChains.Where(c => c.Discarded));
+        Assert.Equal("0x167400D5A60", discarded.Address);
+        Assert.Equal(3, discarded.FrameCount);
+        Assert.False(discarded.HasDisplayTracking);
+        // Mediana de la descartada calculada sobre SUS filas: 117.7144 (la del medio de 115.63/117.71/119.76).
+        Assert.Equal(117.71440000000001, discarded.MedianFrameTimeMs!.Value, 9);
     }
 
     [Fact]
-    public void MultipleSwapChains_AnalysesDominant_AndWarns()
+    public void TwoSwapChains_StatisticsComeFromOneChainOnly_AndMixingWouldDiffer()
     {
-        var otherRow = Row2.Replace("0x167400D5A60", "0xDEADBEEF000", StringComparison.Ordinal);
-        var csv = Header260 + "\n" + Row1 + "\n" + Row2 + "\n" + Row3 + "\n" + otherRow + "\n";
-        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+        // RED-FIRST. Con la regla vieja ("la de más filas") el desempate era entre 3 y 3, y si el
+        // parser hubiera mezclado las 6 filas, la mediana habría caído entre los dos flujos.
+        var parsed = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChains));
+        var onlyZero = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyZero));
 
-        Assert.Equal("0x167400D5A60", series.SwapChainAddress);
+        // 1) Solo entran las filas de UNA swapchain: 3, no 6.
+        Assert.Equal(3, parsed.FrameCount);
+        Assert.Equal(onlyZero.FrameTimesMs, parsed.FrameTimesMs);
+        Assert.Equal(onlyZero.CpuBusyMs, parsed.CpuBusyMs);
+        Assert.Equal(onlyZero.GpuBusyMs, parsed.GpuBusyMs);
+        Assert.Equal(onlyZero.PresentModes, parsed.PresentModes);
+
+        // 2) La mediana real de la cadena elegida es ~16.73 y la de la descartada ~117.71.
+        //    Si se mezclaran las 6 filas, la mediana sería la media de las dos centrales: ~67, muy lejos
+        //    de cualquiera de las dos. Se comprueba ese número para dejar constancia de la diferencia.
+        var chosenMedian = Median(parsed.FrameTimesMs);
+        var discarded = Assert.Single(parsed.SwapChains.Where(c => c.Discarded));
+        var mixedMedian = Median([.. parsed.FrameTimesMs, 115.63470000000001, 117.71440000000001, 119.76180000000001]);
+
+        Assert.Equal(chosenMedian, Median(onlyZero.FrameTimesMs));
+        Assert.Equal(16.72970000000000, chosenMedian, 9);
+        Assert.Equal(117.71440000000001, discarded.MedianFrameTimeMs!.Value, 9);
+        Assert.True(Math.Abs(mixedMedian - chosenMedian) > 40, $"mezclar daría {mixedMedian}, muy distinto de {chosenMedian}");
+    }
+
+    private static double Median(IReadOnlyList<double> values)
+    {
+        var ordered = values.OrderBy(v => v).ToArray();
+        var middle = ordered.Length / 2;
+        return ordered.Length % 2 == 1 ? ordered[middle] : (ordered[middle - 1] + ordered[middle]) / 2.0;
+    }
+
+    [Fact]
+    public void TwoSwapChains_IsNotABaseline_AndDoesNotClaimFps()
+    {
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChains));
+
+        // No se afirma nada sobre FPS: solo se comprueba que la serie es de UNA swapchain y está marcada.
+        Assert.Equal(2, series.SwapChains.Count);
         Assert.Contains(series.Warnings, w => w.Contains("varias swapchains", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void MissingRequiredColumn_ListsTheColumnsFound()
+    public void TwoSwapChains_CrlfAndLf_ProduceIdenticalResults()
     {
-        var csv = "Application,PresentMode\ncs2.exe,Composed: Flip\n";
+        var lf = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChains));
+        var crlf = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.TwoSwapChainsCrlf));
+
+        Assert.Equal(lf.FrameTimesMs, crlf.FrameTimesMs);
+        Assert.Equal(lf.CpuBusyMs, crlf.CpuBusyMs);
+        Assert.Equal(lf.SwapChainAddress, crlf.SwapChainAddress);
+        Assert.Equal(lf.SwapChains.Count, crlf.SwapChains.Count);
+    }
+
+    [Fact]
+    public void SingleChain_WithMoreRows_IsStillTheOnlyOne_AndHasNoReason()
+    {
+        // Una sola swapchain repetida: no hay elección que justificar, aunque tenga muchas filas.
+        var extra = PresentMonFixtures.OnlyDxgi.TrimEnd('\n') + "\n" + PresentMonFixtures.DxgiRow1 + "\n" + PresentMonFixtures.DxgiRow2 + "\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(extra));
+
+        Assert.Equal("0x167400D5A60", series.SwapChainAddress);
+        Assert.Equal(5, series.FrameCount);
+        Assert.Single(series.SwapChains);
+        Assert.Null(series.SwapChainReason); // una sola swapchain: no hay nada que justificar
+        Assert.Empty(series.Warnings.Where(w => w.Contains("varias swapchains", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void TwoChains_NoDisplayTrackingAnywhere_FallsBackToMostRows()
+    {
+        // Contraste con la captura real: si NINGUNA cadena tiene seguimiento de display, gana la de más
+        // filas. Para forzar ese caso se sustituye la columna MsUntilDisplayed (índice 14) por NA en una
+        // copia de las filas reales. Es una MUTACIÓN solo para ejercitar la rama: no describe el hardware.
+        var withMoreDxgiRows = PresentMonFixtures.Header260 + "\n"
+            + string.Join("\n", new[]
+            {
+                PresentMonFixtures.DxgiRow1, PresentMonFixtures.DxgiRow2,
+                PresentMonFixtures.DxgiRow3, PresentMonFixtures.DxgiRow1,
+                PresentMonFixtures.ZeroRow1, PresentMonFixtures.ZeroRow2, PresentMonFixtures.ZeroRow3
+            }) + "\n";
+
+        var noDisplay = WithoutColumn(withMoreDxgiRows, columnIndex: 14);
+        var series = PresentMonCsvParser.Parse(new StringReader(noDisplay));
+
+        // DXGI tiene 4 filas y 0x0 tiene 3: sin display en ninguna, gana DXGI por número de filas.
+        Assert.Equal("0x167400D5A60", series.SwapChainAddress);
+        Assert.Equal(4, series.FrameCount);
+        Assert.Contains(series.Warnings, w => w.Contains("ninguna tiene seguimiento de display", StringComparison.Ordinal));
+        Assert.Contains(series.Warnings, w => w.Contains("0x167400D5A60", StringComparison.Ordinal) && w.Contains("[elegida]", StringComparison.Ordinal));
+        Assert.Contains(series.Warnings, w => w.Contains("0x0", StringComparison.Ordinal) && w.Contains("[descartada]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TwoChains_DisplayTrackingWinsOverHavingMoreRows()
+    {
+        // La regla no es "la de más filas": con 4 filas DXGI sin display, gana 0x0 con 3 filas y display.
+        var withMoreDxgiRows = PresentMonFixtures.Header260 + "\n"
+            + string.Join("\n", new[]
+            {
+                PresentMonFixtures.DxgiRow1, PresentMonFixtures.DxgiRow2,
+                PresentMonFixtures.DxgiRow3, PresentMonFixtures.DxgiRow1,
+                PresentMonFixtures.ZeroRow1, PresentMonFixtures.ZeroRow2, PresentMonFixtures.ZeroRow3
+            }) + "\n";
+
+        var series = PresentMonCsvParser.Parse(new StringReader(withMoreDxgiRows));
+
+        Assert.Equal("0x0", series.SwapChainAddress);
+        Assert.Equal(3, series.FrameCount);
+        var discarded = Assert.Single(series.SwapChains.Where(c => c.Discarded));
+        Assert.Equal("0x167400D5A60", discarded.Address);
+        Assert.Equal(4, discarded.FrameCount);
+        Assert.False(discarded.HasDisplayTracking);
+    }
+
+    /// <summary>Sustituye una columna por <c>NA</c> en todas las filas de datos. Solo para pruebas.</summary>
+    private static string WithoutColumn(string csv, int columnIndex)
+    {
+        var lines = csv.TrimEnd('\n').Split('\n');
+        var output = new List<string> { lines[0] };
+        foreach (var line in lines.Skip(1))
+        {
+            var cells = SplitLine(line);
+            if (columnIndex < cells.Count) cells[columnIndex] = "NA";
+            output.Add(string.Join(",", cells));
+        }
+        return string.Join("\n", output) + "\n";
+    }
+
+    /// <summary>Split mínimo de las fixtures (sin comillas: los valores reales no las llevan).</summary>
+    private static List<string> SplitLine(string line) => [.. line.Split(',')];
+
+    // ---------------------------------------------------------------- formatos no estándar
+
+    [Fact]
+    public void V1MetricsLayout_IsAcceptedAsFallback_AndFlaggedNonStandard()
+    {
+        var csv = PresentMonFixtures.V1MetricsHeader + "\n" +
+                  "dwm.exe,100,0x1,DXGI,1,0,0,1.5,0.4,16.6,1,Hardware: Legacy Flip,1.0,16.7,16.8,0.5,1.0,2.0,NA\n";
         var series = PresentMonCsvParser.Parse(new StringReader(csv));
 
-        Assert.True(series.IsEmpty);
-        Assert.StartsWith("missing-frame-time", series.SourceColumns ?? string.Empty);
-        Assert.Contains("Application", series.SourceColumns);
-        Assert.Contains("PresentMode", series.SourceColumns);
-        Assert.Equal(["Application", "PresentMode"], series.HeaderColumns);
+        Assert.Equal(1, series.FrameCount);
+        Assert.Equal(16.6, series.FrameTimesMs[0], 6);
+        Assert.True(series.IsNonStandardLayout);
+        Assert.Contains(series.Warnings, w => w.Contains("formato de CSV no estándar", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void V2MetricsLayout_IsAcceptedAsFallback_AndFlaggedNonStandard()
+    {
+        var csv = PresentMonFixtures.V2MetricsHeader + "\n" +
+                  "dwm.exe,100,0x1,DXGI,1,0,0,Independent Flip,1.0,16.6,3.9,0.5,1.0,2.0,2.1,0.3,1.0,16.7,0.0,0.0,NA,9.0,NA\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+
+        Assert.Equal(1, series.FrameCount);
+        Assert.Equal(16.6, series.FrameTimesMs[0], 6);
+        Assert.True(series.IsNonStandardLayout);
+        Assert.Equal(3.9, series.CpuBusyMs[0]!.Value, 6);
+    }
+
+    [Fact]
+    public void DefaultLayout_IsNotFlaggedNonStandard()
+    {
+        var series = PresentMonCsvParser.Parse(new StringReader(PresentMonFixtures.OnlyDxgi));
+        Assert.False(series.IsNonStandardLayout);
+        Assert.DoesNotContain(series.Warnings, w => w.Contains("no estándar", StringComparison.Ordinal));
     }
 
     // ---------------------------------------------------------------- versiones previas (sintéticas)
@@ -189,8 +325,6 @@ public sealed class CsvParserTests
     [Fact]
     public void V1CpuColumnIsAbsent_SoCpuIsNull_NotTakenFromMsInPresentAPI()
     {
-        // La fixture V1 no tiene MsCPUBusy ni CPUBusy: CPU debe quedar Unknown.
-        // Antes se tomaba MsInPresentAPI como CPU, que es un dato distinto.
         var series = PresentMonCsvParser.Parse(new StringReader(V1Csv));
         Assert.All(series.CpuBusyMs, value => Assert.Null(value));
         Assert.Equal(0.4, series.PresentApiMs[0]!.Value, 6);
@@ -209,17 +343,16 @@ public sealed class CsvParserTests
     // ---------------------------------------------------------------- borde
 
     [Fact]
-    public void MissingCpuColumn_YieldsNullsNotZeros()
+    public void MissingRequiredColumn_ListsTheColumnsFound()
     {
-        var csv = "Application,FrameTime,PresentMode\ncs2.exe,5.0,Composed: Flip\ncs2.exe,5.1,Composed: Flip\n";
+        var csv = "Application,PresentMode\ncs2.exe,Composed: Flip\n";
         var series = PresentMonCsvParser.Parse(new StringReader(csv));
-        Assert.Equal(2, series.FrameCount);
-        Assert.All(series.CpuBusyMs, value => Assert.Null(value));
-        Assert.All(series.GpuBusyMs, value => Assert.Null(value));
-        var metrics = FrameMetricsCalculator.Compute(series, 0);
-        Assert.Null(metrics.CpuBusyP95);
-        Assert.Null(metrics.GpuBusyP95);
-        Assert.Contains("cpuBusyP95", metrics.MissingMetrics);
+
+        Assert.True(series.IsEmpty);
+        Assert.StartsWith("missing-frame-time", series.SourceColumns ?? string.Empty);
+        Assert.Contains("Application", series.SourceColumns);
+        Assert.Contains("PresentMode", series.SourceColumns);
+        Assert.Equal(["Application", "PresentMode"], series.HeaderColumns);
     }
 
     [Fact]
@@ -248,15 +381,28 @@ public sealed class CsvParserTests
     }
 
     [Fact]
+    public void TruncatedRow_IsDiscarded_NotPartiallyUsed()
+    {
+        var csv = PresentMonFixtures.Header260 + "\n" + PresentMonFixtures.DxgiRow1 + "\n" +
+                  "cs2.exe,9556,0x167400D5A60,DXGI,0,0,0,Other,283.2085,NA\n" + PresentMonFixtures.DxgiRow3 + "\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+
+        Assert.Equal(2, series.FrameCount);
+        Assert.Equal(115.63470000000001, series.FrameTimesMs[0], 12);
+        Assert.Equal(119.76180000000001, series.FrameTimesMs[1], 12);
+    }
+
+    [Fact]
     public void ParseFile_ReadsFromDisk()
     {
         var path = Path.Combine(Path.GetTempPath(), "fragforge-csv-" + Guid.NewGuid().ToString("N") + ".csv");
         try
         {
-            File.WriteAllText(path, Real260);
+            File.WriteAllText(path, PresentMonFixtures.TwoSwapChains);
             var series = PresentMonCsvParser.ParseFile(path);
             Assert.Equal(3, series.FrameCount);
             Assert.Equal(9556, series.ProcessId);
+            Assert.Equal("0x0", series.SwapChainAddress);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
@@ -296,20 +442,5 @@ public sealed class CsvParserTests
         }, 0);
         Assert.Equal(200.0, metrics.AvgFps!.Value, 6);
         Assert.NotNull(metrics.CpuBusyP95);
-    }
-
-    /// <summary>Invierte el orden de las columnas conservando las filas alineadas.</summary>
-    private static string PermuteColumns(string csv)
-    {
-        var lines = csv.TrimEnd('\n').Split('\n');
-        var header = lines[0].Split(',');
-        var order = Enumerable.Range(0, header.Length).Reverse().ToArray();
-        var output = new List<string> { string.Join(",", order.Select(i => header[i])) };
-        foreach (var line in lines.Skip(1))
-        {
-            var cells = line.Split(',');
-            output.Add(string.Join(",", order.Select(i => i < cells.Length ? cells[i] : "NA")));
-        }
-        return string.Join("\n", output) + "\n";
     }
 }
