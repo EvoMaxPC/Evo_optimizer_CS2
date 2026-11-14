@@ -154,3 +154,38 @@ El contrato de PresentMon 2.6.0 de esa ronda pedía añadir `--stop_existing_ses
 (de forma consciente y explicada), probar en la PC objetivo qué ocurre con una sesión ajena activa, y
 exigir confirmación interactiva al usuario. Mientras tanto, la captura falla de forma limpia si hay una
 sesión con el mismo nombre, que es el comportamiento seguro.
+
+---
+
+## Hotfix Capa 0 — lo que NO se implementó y por qué
+
+### Añadir `FeatureState.Unknown` (pedido en la Etapa 2)
+
+**No se hizo: no hacía falta.** `FeatureState` ya es `{ Unknown, Enabled, Disabled, NotPresent }`
+(`src/FragForge.Core/Models/Enums.cs:8`), con `Unknown = 0`, que es además el valor por defecto.
+Agregar un miembro habría cambiado el contrato JSON sin necesidad y habría roto el round-trip de los
+documentos existentes en un caso donde el enum ya cubría el requisito. El bug real no era el enum,
+sino la conversión "excepción → lista vacía → NotPresent", que sí se corrigió.
+
+### Cambiar el namespace de `MSFT_NetAdapter`
+
+**No se cambió: ya era el correcto.** `root\StandardCimv2` estaba bien desde el principio
+(`HardwareProfiler.cs:91`). El aviso "Consulta no válida" no venía del scope sino de la consulta.
+Cambiarlo a otro namespace habría roto una parte que funciona. Lo que sí se corrigió fue la consulta:
+se piden las propiedades en dos pasos para que una propiedad inexistente no tumbe las nueve.
+
+### Test de UI de los combos (Etapa 4)
+
+**No se puede, y no se inventó.** `FragForge.App` apunta a `net10.0-windows` con `UseWPF`, mientras
+que `FragForge.Tests` apunta a `net10.0`. El proyecto de tests **no puede** referenciar la App sin
+retargetear toda la suite, cosa que excede el alcance de este hotfix. Lo que sí quedó testeado es la
+lógica pura de selección (`CultureDefaults.PickInitialCulture`), que es donde estaba el fallo de
+"el valor por defecto no existe en la lista". Que WPF pinte la selección no se verificó aquí: eso lo
+hace el usuario con `dotnet run`.
+
+### Estilo oscuro completo de los controles
+
+**No se hizo: fuera de alcance.** El hotfix pedía arreglar el encabezado de la tabla, y eso se hizo.
+El mismo problema de chrome claro afecta a `ComboBox`, `CheckBox` y `ScrollBar` (no tienen plantilla
+propia). Rediseñar el tema completo no forma parte de "cambio de estilo mínimo", así que queda
+anotado como deuda visible en vez de meterse de contrabando en este cambio.
