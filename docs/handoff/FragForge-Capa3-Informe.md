@@ -61,11 +61,11 @@ Todos: Kind `PowerPlan`, `settingsOnly`, `dependsOn: ["power.fragforge-performan
 
 `cpu.priority-separation-foreground` no está en el catálogo. Motivo en §3.
 
-### 1.4 `skipUnenumeratedSettings`: el problema que apareció al aplicar los datos reales
+### 1.4 `skipUnenumeratedSettings`: robustez ante variantes ausentes
 
-La PN64 enumera **las tres** variantes de PERFEPP (verificado con powercfg /qh: sufijos 63 y 64 con AC 5, sufijo 65 con AC 0; una versién anterior de este texto decía "una sola" y era un error). El tweak declara tres (`…63/…64/…65`) porque
-no se sabe cuál corresponde a qué. Con el Preflight tal como estaba, cualquier ajuste no enumerado
-hacía **fallar el tweak entero**: el resultado habría sido "no aplica" en el equipo de referencia.
+La PN64 enumera **las tres** variantes de PERFEPP (verificado con `powercfg /qh`: sufijos 63 y 64 con AC 5, sufijo 65 con AC 0), así que en el equipo de referencia el tweak escribe las tres y la bandera no se ejerce. Una versión anterior de este informe decía "una sola"; era un error.
+El tweak declara tres (`…63/…64/…65`) porque no se sabe cuál corresponde a qué clase de núcleo y otros equipos pueden no exponer las tres. Sin la bandera, un ajuste no
+enumerado haría fallar el tweak entero; con ella se omite y el tweak sigue siendo aplicable mientras haya al menos una variante enumerada.
 
 Se añadió un parámetro explícito al `PowerPlanAction`:
 
@@ -78,9 +78,9 @@ Se añadió un parámetro explícito al `PowerPlanAction`:
 - **Con `false` (por defecto)**: comportamiento anterior, un ajuste ausente hace fallar el tweak
   entero. Así no se escribe "casi todo" en silencio.
 
-La misma regla se aplica en `Preflight`, en la revalidación de `Apply` (antes de cada
+La misma regla se aplica en `Preflight`, en `Capture` (una sola lectura `/qh` del plan; no se lee una variante ausente, porque `powercfg /qh` de un GUID inexistente sale con código 1), en la revalidación de `Apply` (antes de cada
 `/setacvalueindex`) y en `Verify` (no se exige una variante que no se escribió). Tres pruebas nuevas
-cubren los tres casos.
+cubren los tres casos; una cuarta (regresión de `Capture`, con un simulador que responde exit=1 a un GUID inexistente) fija el comportamiento del `powercfg` real.
 
 ### 1.5 Cuatro sondas de solo lectura
 
