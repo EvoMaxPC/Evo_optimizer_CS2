@@ -9,6 +9,7 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 ## Índice
 0. **[Hotfix de la PARTE A (posterior a esta entrega)](#hotfix-parte-a--correcciones-sobre-la-pc-real)** — qué se rompía en la PC real y qué se cambió
 0. **[Hotfix PARTE B / ronda 3](#hotfix-parte-b-ronda-3--los-4-tests-que-fallaban-en-la-pc-real-y-el-aviso-de-red)** — los 4 tests rojos, el aviso de `MSFT_NetAdapter` y los warnings
+0. **[Ronda 4: combos](#ronda-4-combos)** — texto oscuro sobre el cromo claro; qué se cambió y qué queda sin verificar
 0. [Briefing compacto para otra sesión de Claude](#0-briefing-compacto-para-otra-sesión-de-claude-copiarpegar)
 1. [Arquitectura y decisiones](#1-arquitectura-y-decisiones)
 2. [Árbol de carpetas](#2-árbol-de-carpetas)
@@ -270,6 +271,117 @@ candidatos por lectura del código, no la salida del build.
 | `tests/…/Integration/CompositionIntegrationTests.cs` | solo el mensaje del assert de la línea 61 |
 | `src/…/Platform/HardwareProfiler.cs` | propiedades reales, mapeo NDIS, aviso con la consulta, sin sonda |
 | `tests/…/Core/NetAdapterPropertiesTests.cs` | **nuevo**: 103 propiedades reales + mapeo + aviso |
+
+---
+
+## Ronda 4: combos
+
+**Síntoma medido en la PC real** (no es hipótesis): los dos desplegables abren, Perfil muestra **4
+filas vacías** e Idioma **2 filas vacías**; las cajas cerradas se ven **gris claro**. El contador
+("Mostrando 3 de 30 tweaks en el perfil Safe.") y el encabezado ya funcionan, así que **el binding y
+los datos están bien**: es un problema de dibujo.
+
+### Hipótesis de causa (NO verificada)
+
+La plantilla por defecto del `ComboBox` en WPF (Aero2) es **clara** e **ignora `Background`**: el
+`#243140` del estilo nunca se vio. Sobre ese cromo claro se dibuja texto con el `Foreground` claro
+heredado (`#E8EDF2`), y eso da **texto claro sobre fondo claro** = invisible. Explicaría a la vez las
+filas "vacías" y las cajas gris claro. Es consistente con el hotfix del encabezado de Capa 0, que
+tenía exactamente el mismo patrón y se resolvió igual: fijar color, sin reescribir plantillas.
+
+### Qué cambió
+
+Dos archivos, y **solo dos**: `src/FragForge.App/App.xaml` y `src/FragForge.App/MainWindow.xaml`
+(este último solo un reorden de atributos). Nada de `FragForge.Core`, `Actions`, `Tweaks`,
+`Composition`, `Cli` ni `MainViewModel.cs`.
+
+**`src/FragForge.App/App.xaml`:**
+
+| Línea | Antes | Después |
+|---|---|---|
+| **23** | `<Setter Property="Foreground" Value="#E8EDF2"/>` en el estilo `ComboBox` | `<Setter Property="Foreground" Value="#101820"/>` — ahora **línea 28** |
+| — | no existía ningún estilo de `ComboBoxItem` | estilo implícito nuevo: `<Style TargetType="ComboBoxItem">` con `Foreground` `#101820` — **líneas 34-36** (el `<Style>` en 34, el setter en 35, el cierre en 36) |
+
+El estilo `ComboBox` empieza en la **línea 26** (antes 21) y su `Background` `#243140` queda en la
+**línea 27** (antes 22), sin cambios de valor.
+
+- `Background` del `ComboBox` sigue en `#243140`: **no se tocó**.
+- **No se reescribió ninguna `ControlTemplate`** ni se añadieron plantillas.
+- **Ningún otro estilo** (botones, textos, tarjetas, DataGrid) se tocó.
+
+**Por qué dos cambios y no uno.** El `ComboBoxItem` es un contenedor aparte: **no hereda los setters
+del `ComboBox`**, toma el `Foreground` del tema. Cambiar solo el del `ComboBox` habría arreglado la caja
+cerrada y dejado el desplegable como estaba.
+
+**Colores efectivos esperados:**
+
+| Elemento | Resultado |
+|---|---|
+| Caja cerrada | texto `#101820` sobre **cromo claro del tema** (gris, **no** `#243140`, porque Aero2 ignora `Background`). Legible. |
+| Filas desplegadas | texto `#101820` sobre el fondo claro del tema. Legible. |
+| Fila resaltada/seleccionada | fondo y texto los pinta el tema: no se fija, **y puede quedar texto oscuro sobre resaltado azul oscuro**. Si se ve mal, se mide; no se adivina. |
+| Apariencia general | **sigue en chrome claro**, no en el tema oscuro. Eso es Capa 11, no esta ronda. |
+
+### Punto 2: `SelectedValuePath` antes de `SelectedValue` (SÍ se cambió)
+
+**Estado previo** — `MainWindow.xaml:18-20`:
+
+```xml
+<ComboBox Width="170" ItemsSource="{Binding Profiles}" DisplayMemberPath="Label"
+          SelectedValue="{Binding SelectedProfile}" SelectedValuePath="Profile"
+          ToolTip="{Binding TweakCountText}"/>
+```
+
+`SelectedValuePath` **ya estaba**, pero **después** de `SelectedValue` en el markup.
+
+**Corregí una afirmación mía.** En mi primer análisis dije que el orden de atributos XML "no es
+significativo" para WPF y que no hacía falta reordenar. **Eso es falso y tu premisa era correcta.** El
+parser de XAML **asigna las propiedades en el orden del markup**, y hay un modo de fallo documentado
+exactamente para este caso: si `SelectedValue` se inicializa **antes** de que exista
+`SelectedValuePath`, el valor se resuelve contra la ruta vacía y la selección inicial puede perderse
+(es el caso conocido de `SelectedValue` que "queda en blanco" al inicializarse en el orden incorrecto).
+Se descartó mi razonamiento y se aplicó tu cambio.
+
+**Cambio** — línea 19:
+
+| Antes | Después |
+|---|---|
+| `SelectedValue="{Binding SelectedProfile}" SelectedValuePath="Profile"` | `SelectedValuePath="Profile" SelectedValue="{Binding SelectedProfile}"` |
+
+Mismos atributos, mismo valor, **solo el orden**. Nada más del combo se tocó (`Width`, `ItemsSource`,
+`DisplayMemberPath="Label"`, `ToolTip` quedan igual).
+
+**Salvedad honesta.** Esto es la práctica recomendada y corrige un modo de fallo real, pero **es
+discutible que sea la causa de las filas vacías**: la lista de perfiles se llena igual, y la selección
+inicial afecta a *cuál* fila empieza seleccionada, no a que se dibujen. Muy probablemente este cambio
+**no arregla el síntoma por sí solo** — el arreglo de color sí apunta a la causa. Se aplica porque es
+correcto, es de una línea y no tiene riesgo.
+
+El combo de Idioma (`MainWindow.xaml:24`) usa `SelectedItem="{Binding Culture}"` con `ItemsSource` de
+`IReadOnlyList<string>`: **no tiene `SelectedValuePath`** y ningún atributo suyo contradice el estilo.
+**No se tocó.**
+
+### NO VERIFICADO
+
+> **NO VERIFICADO: no se compiló ni se vio en pantalla. Lo decide el usuario abriendo la app.**
+
+Lo único que se comprobó automáticamente es que los dos `.xaml` **parsean como XML** (no es compilar:
+no valida x:Class, ni bindings, ni que WPF acepte los setters). No se ejecutó la app, no hay captura y
+no se midió ningún color en pantalla. La hipótesis de Aero2 es **una explicación consistente, no un
+hecho medido** para estos dos combos.
+
+### Si no se arregla, qué haremos
+
+**Medir, no adivinar otra vez.** En la PC, en este orden:
+
+1. Un *probe* que lea el `Foreground`/`Background` **efectivos** de la caja y de un `ComboBoxItem`
+   generado (`PresentationSource` + `VisualTreeHelper`, imprimiendo `Color`), y el `Theme`/`Template`
+   real que WPF está aplicando. Eso distingue "el estilo no se aplica" de "se aplica y el tema lo
+   pisa".
+2. Confirmar si el `ComboBox` está usando la plantilla Aero2 o una del sistema distinta (Windows 11
+   cambia el chrome de algunos controles).
+3. Solo entonces decidir: fijar `Background`/`BorderBrush` del `ComboBoxItem` para el resaltado, o
+   pasar a un tema oscuro completo (que es Capa 11 y no se hace acá).
 
 ---
 
