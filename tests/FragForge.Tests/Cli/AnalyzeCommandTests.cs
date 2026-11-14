@@ -63,8 +63,9 @@ public sealed class AnalyzeCommandTests
         // Con 20 frames el peor 1 % es NULL y se dice POR QUÉ, no se pinta un 0.
         Assert.Contains("no disponible", output, StringComparison.Ordinal);
         Assert.Contains("se necesitan 1000", output, StringComparison.Ordinal);
-        // Y el aviso del IC, que no decide el veredicto.
-        Assert.Contains("no decide el veredicto", output, StringComparison.Ordinal);
+        // Y el aviso del IC. La comparación es ORDINAL (sensible a mayúsculas): se busca el texto exacto
+        // que emite AnalyzeCommands, "No decide el veredicto." con mayúscula inicial tras el punto.
+        Assert.Contains("No decide el veredicto", output, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -77,7 +78,10 @@ public sealed class AnalyzeCommandTests
         na[Array.IndexOf(cells, "Application")] = "cs2.exe";
         na[Array.IndexOf(cells, "SwapChainAddress")] = "0xABC";
         // La celda de MsBetweenPresents queda en "NA".
-        File.WriteAllText(path, Header260 + "\n" + string.Join(',', na) + "\ncs2.exe,0xABC\n" + Csv("cs2.exe", "0xABC", 3, 10.0).Split('\n')[1] + "\n");
+        // Las 3 filas válidas se toman con Skip(1).Take(3): la línea 0 del CSV generado es el ENCABEZADO, así
+        // que Split('\n')[1] a secas aportaba una sola fila (el test esperaba 3 frames y recibía 1).
+        var validRows = Csv("cs2.exe", "0xABC", 3, 10.0).Split('\n').Skip(1).Take(3);
+        File.WriteAllText(path, Header260 + "\n" + string.Join(',', na) + "\ncs2.exe,0xABC\n" + string.Join('\n', validRows) + "\n");
 
         var argv = new[] { "analyze", path };
         var (code, output, _) = Run(Args(argv), argv);
