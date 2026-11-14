@@ -135,7 +135,13 @@ public sealed class TweakEngine(
             if (linkRestarts.Length > 0)
                 warnings.Add("AVISO: " + string.Join(", ", linkRestarts) + " reinicia el adaptador de red; la conexión se cortará unos segundos. No lo apliques durante una partida.");
             var needsRestore = options.CreateRestorePoint && plans.Any(p => !p.Definition.ReadOnly);
-            var effectiveOptions = options with { CreateRestorePoint = needsRestore };
+            // R-J: el preflight necesita saber QUE se aplica, no solo que hay catalogo. Se pasan los planes ya
+            // resueltos (con dependencias y descartes por condicion hechos), no los ids que llego el llamador.
+            var effectiveOptions = options with
+            {
+                CreateRestorePoint = needsRestore,
+                SelectedIds = plans.Select(p => p.Definition.Id).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            };
             var preflightReport = await preflight.CheckAsync(effectiveOptions, hardware, cancellationToken);
             warnings.AddRange(preflightReport.Checks.Where(c => c.Severity == PreflightSeverity.Warning).Select(c => c.Message));
             if (!preflightReport.CanApply) throw new PreflightFailedException("El preflight bloqueó la aplicación: " + string.Join(" ", preflightReport.Checks.Where(c => c.Severity == PreflightSeverity.Blocking).Select(c => c.Message)), preflightReport);

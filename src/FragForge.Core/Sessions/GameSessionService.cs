@@ -55,7 +55,13 @@ public sealed class GameSessionService
         Engine.ProfileSelector.Select(_catalog.Definitions, profile)
             // Capa 5.3: un tweak que reinicia el enlace de red NUNCA entra en una sesión. Aunque alguien
             // marque sessionEligible por error, cortar la conexión en mitad de una partida no es admisible.
-            .Where(d => d.SessionEligible && !d.RequiresReboot && !d.RestartsNetworkLink)
+            //
+            // R-J: y tampoco entra ninguno que necesite recuperación FUERA DE BANDA. Se usa el MISMO
+            // predicado que el preflight (PreflightService.NeedsOutOfBandRecovery), no una copia: con
+            // `!RestartsNetworkLink` a secas, un Bcdedit o un NetAdapterProperty que no declarara el flag
+            // entraría en la sesión y el apply moriría con PreflightFailedException a mitad de partida.
+            // Hoy el catálogo no tiene ninguno así (los 32: 0 casos), pero la regla no debe depender de eso.
+            .Where(d => d.SessionEligible && !d.RequiresReboot && !FragForge.Core.Preflight.PreflightService.NeedsOutOfBandRecovery(d))
             .Select(d => d.Id)
             .ToArray();
 

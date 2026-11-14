@@ -30,6 +30,19 @@ public sealed record ApplyOptions
     public string? Cs2ExecutableOverride { get; init; }
     public string? TargetUserSid { get; init; }
     public bool AllowPowerShellActions { get; init; }
+
+    /// <summary>
+    /// Ids que se van a aplicar, para que el preflight pueda juzgar SOLO esos (R-J, recovery fuera de banda).
+    /// </summary>
+    /// <remarks>
+    /// Lo rellena <c>TweakEngine.ApplyAsync</c> con los planes ya resueltos (incluidas las dependencias), no
+    /// quien llama: quien llama puede pasar un id que no exista, o uno que se caiga por condición, y entonces
+    /// el preflight juzgaría algo que no se aplica. Es un campo de TRANSPORTE entre el motor y el preflight.
+    ///
+    /// Vacío/null = no se sabe qué se aplica; entonces el preflight NO bloquea por R-J. Que es lo correcto:
+    /// una llamada vieja o un dry-run no deben impedir nada (ver PreflightService.RecoveryCoverage).
+    /// </remarks>
+    public IReadOnlySet<string> SelectedIds { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed record RevertOptions

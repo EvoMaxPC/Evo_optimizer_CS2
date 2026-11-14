@@ -48,7 +48,7 @@ public sealed class PreflightService(
         // resto de operaciones no se ejecuta manage-bde: no se paga el coste ni se pide nada al usuario.
         if (networkChanges is not null && MayRestartNetworkLink())
             checks.AddRange(NetworkChangePreflight.ToChecks(await networkChanges.ReadAsync(cancellationToken)));
-        checks.AddRange(RecoveryCoverage());
+        checks.AddRange(RecoveryCoverage(options.SelectedIds));
         return PreflightReport.Passed(checks);
     }
 
@@ -71,18 +71,23 @@ public sealed class PreflightService(
     /// si un cambio deja el equipo sin red o sin arranque, la unica vuelta atras seria a mano.
     ///
     /// <para>
-    /// Se decide por CATALOGO, no por lo seleccionado: <see cref="ApplyOptions"/> no lleva ids (Results.cs:21-33)
-    /// y el preflight se consulta antes de saber que se aplica. Es el mismo criterio que
-    /// <see cref="MayRestartNetworkLink"/> (linea 17): conservador, un aviso de mas es mejor que uno de menos.
-    /// Consecuencia: mientras exista un tweak de estos en el catalogo, un apply sin <c>--dry-run</c> queda
-    /// bloqueado. Hoy es UNO (network.i225v-eee-off); la salida para el usuario es aplicarlo a mano o esperar
-    /// a que se cablee RecoveryWriter (ronda 10).
+    /// SE JUZGA SOLO LO SELECCIONADO, no el catalogo entero. Antes se miraba el catalogo y eso bloqueaba
+    /// TODO apply mientras existiera un tweak de red en el catalogo: rompia la app. El catalogo dice lo que
+    /// PUEDE aplicarse; <see cref="ApplyOptions.SelectedIds"/> dice lo que SE VA a aplicar, y solo eso puede
+    /// impedir la operacion.
+    /// </para>
+    /// <para>
+    /// SIN IDS no se bloquea. <c>SelectedIds</c> vacio significa "no se sabe que se aplica" (llamada vieja,
+    /// dry-run, o un preflight de solo lectura como el del informe). Bloquear en ese caso seria volver al
+    /// problema que esto arregla. El motor SIEMPRE lo rellena antes de aplicar (TweakEngine.cs:139-146), asi
+    /// que la ruta de apply nunca cae en la rama permisiva.
     /// </para>
     /// </summary>
-    private IEnumerable<PreflightCheck> RecoveryCoverage()
+    private IEnumerable<PreflightCheck> RecoveryCoverage(IReadOnlySet<string> selectedIds)
     {
+        if (selectedIds.Count == 0) yield break;
         var affected = catalog.Definitions
-            .Where(d => !d.ReadOnly && NeedsOutOfBandRecovery(d))
+            .Where(d => !d.ReadOnly && selectedIds.Contains(d.Id) && NeedsOutOfBandRecovery(d))
             .Select(d => d.Id)
             .OrderBy(id => id, StringComparer.Ordinal)
             .ToArray();
@@ -98,7 +103,14 @@ public sealed class PreflightService(
     /// red, toca propiedades del adaptador de red, o usa bcdedit. Tambien cualquier Kind de driver/dispositivo,
     /// que hoy no existe en el catalogo pero se contempla por nombre para que no entre sin querer.
     /// </summary>
-    private static bool NeedsOutOfBandRecovery(TweakDefinition definition)
+    /// <remarks>
+    /// Es <c>internal</c> y no <c>private</c> a proposito: lo usa tambien
+    /// <see cref="FragForge.Core.Sessions.GameSessionService"/> para dejar fuera de una sesion de juego
+    /// cualquier tweak que necesite recuperacion fuera de banda. Dos copias de esta regla se
+    /// desincronizarian y la sesion aceptaria algo que el preflight bloquea. <c>internal</c> porque es
+    /// FragForge.Core quien lo consume, sin tocar Abstractions.
+    /// </remarks>
+    internal static bool NeedsOutOfBandRecovery(TweakDefinition definition)
     {
         if (definition.RestartsNetworkLink) return true;
         foreach (var action in definition.Actions)
