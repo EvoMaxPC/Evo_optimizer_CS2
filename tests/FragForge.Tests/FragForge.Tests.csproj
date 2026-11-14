@@ -9,6 +9,7 @@
     <ProjectReference Include="../../src/FragForge.Tweaks/FragForge.Tweaks.csproj" />
     <ProjectReference Include="../../src/FragForge.Composition/FragForge.Composition.csproj" />
     <ProjectReference Include="../../src/FragForge.Cli/FragForge.Cli.csproj" />
+    <ProjectReference Include="../../src/FragForge.UI.Core/FragForge.UI.Core.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio"><PrivateAssets>all</PrivateAssets></PackageReference>

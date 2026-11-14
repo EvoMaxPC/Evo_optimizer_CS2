@@ -2,7 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using FragForge.Core.Localization;
 using FragForge.Core.Models;
 
-namespace FragForge.App.ViewModels;
+namespace FragForge.UI.Core;
 
 public sealed partial class TweakItemViewModel : ObservableObject
 {

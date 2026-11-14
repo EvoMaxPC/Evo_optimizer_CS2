@@ -17,6 +17,10 @@
     <IncludeNativeLibrariesForSelfExtract Condition="'$(IncludeNativeLibrariesForSelfExtract)' == ''">true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile Condition="'$(EnableCompressionInSingleFile)' == ''">true</EnableCompressionInSingleFile>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../FragForge.Composition/FragForge.Composition.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FragForge.Composition/FragForge.Composition.csproj" />
+    <!-- Capa 11.2: los ViewModels y la logica de textos viven en un proyecto sin WPF, testeable desde net10.0. -->
+    <ProjectReference Include="../FragForge.UI.Core/FragForge.UI.Core.csproj" />
+  </ItemGroup>
   <ItemGroup><PackageReference Include="CommunityToolkit.Mvvm" /></ItemGroup>
 </Project>

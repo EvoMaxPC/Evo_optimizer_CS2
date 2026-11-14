@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- net10.0 a proposito: NO net10.0-windows y NO UseWPF. Si esta libreria pudiera usar WPF, los
+         tests (net10.0) no podrian referenciarla y volveriamos al problema que esta capa resuelve. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FragForge.UI.Core</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../FragForge.Core/FragForge.Core.csproj" />
+    <ProjectReference Include="../FragForge.Tweaks/FragForge.Tweaks.csproj" />
+    <!-- Solo MVVM: ObservableObject y RelayCommand no dependen de WPF. -->
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+</Project>

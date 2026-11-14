@@ -1,6 +1,6 @@
 using System.Windows;
 using FragForge.App.Services;
-using FragForge.App.ViewModels;
+using FragForge.UI.Core;
 using FragForge.Composition;
 using FragForge.Core.Sessions;
 using Microsoft.Extensions.DependencyInjection;

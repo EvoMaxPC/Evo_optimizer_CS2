@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FragForge.App.Services;
+using FragForge.UI.Core.Services;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Engine;
 using FragForge.Core.Localization;
@@ -11,7 +11,7 @@ using FragForge.Core.Models;
 using FragForge.Core.Sessions;
 using FragForge.Tweaks.Localization;
 
-namespace FragForge.App.ViewModels;
+namespace FragForge.UI.Core;
 
 public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
