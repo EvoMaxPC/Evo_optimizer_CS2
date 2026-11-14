@@ -17,6 +17,23 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
     public ServiceTierCatalog Tiers => tiers ?? ServiceTierCatalog.Empty;
 
     public IReadOnlyList<string> ValidateStructure(JsonElement document) => schema.Validate(document);
+    /// <summary>
+    /// Validación del conjunto: reglas de cada definición + coherencia entre ellas.
+    ///
+    /// <para>
+    /// Las reglas de UNA definición viven en <see cref="ValidateSingle"/> y no se repiten aquí: se llamaba a
+    /// las dos y cualquier regla añadida en un sitio y no en el otro se desincronizaba. La parte de POLÍTICA
+    /// (<see cref="ValidatePolicy"/>) sí se ejecuta aquí, porque la ruta ESTRICTA (<c>LoadDocuments</c>) llama
+    /// a esta función y a ninguna otra: sin esto, un destino protegido escapaba como excepción en vez de
+    /// convertirse en un error de validación con su mensaje.
+    /// </para>
+    ///
+    /// <para>
+    /// La ruta RESILIENTE no pasa por aquí: llama a <c>ValidateSingle().Concat(ValidatePolicy())</c>, así que
+    /// cerrar el círculo por los dos lados no duplica nada. (Duplicaba antes, cuando la política se reportaba
+    /// en las dos: cada destino protegido salía dos veces en el informe de rechazos.)
+    /// </para>
+    /// </summary>
     public IReadOnlyList<string> ValidateCatalog(IReadOnlyList<TweakDefinition> definitions)
     {
         var errors = new List<string>();
@@ -24,45 +41,10 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
         foreach (var definition in definitions)
         {
             if (!ids.Add(definition.Id)) errors.Add($"ID duplicado: {definition.Id}");
-            if (definition.Title.EsMx.Length == 0 || definition.Title.EnUs.Length == 0 || definition.Description.EsMx.Length == 0 || definition.Description.EnUs.Length == 0) errors.Add($"{definition.Id}: textos localizados vacíos");
-            if (definition.Actions.Count == 0) errors.Add($"{definition.Id}: sin acciones");
-            if (!definition.ReadOnly && !definition.RequiresAdmin) errors.Add($"{definition.Id}: una acción mutante requiere Admin");
-            // Membresía de perfiles: nombres de miembro del enum, sin duplicados, sin valores vacíos.
-            // [] es válido y significa "en ningún perfil"; ausente es válido y significa "regla por riesgo".
-            if (definition.Profiles is not null)
-            {
-                var known = Enum.GetNames<TweakProfile>();
-                foreach (var profile in definition.Profiles)
-                {
-                    if (!known.Contains(profile, StringComparer.Ordinal)) errors.Add($"{definition.Id}: perfil desconocido '{profile}'. Válidos: {string.Join(", ", known)}");
-                }
-                var duplicates = definition.Profiles.Where(p => !string.IsNullOrWhiteSpace(p)).GroupBy(p => p, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToArray();
-                if (duplicates.Length > 0) errors.Add($"{definition.Id}: perfiles duplicados en 'profiles': {string.Join(", ", duplicates)}");
-            }
-            if (definition.References.Count == 0) errors.Add($"{definition.Id}: sin referencias");
-            if (definition.DependsOn.Contains(definition.Id, StringComparer.OrdinalIgnoreCase) || definition.ConflictsWith.Contains(definition.Id, StringComparer.OrdinalIgnoreCase)) errors.Add($"{definition.Id}: dependencia/conflicto consigo mismo");
-            foreach (var condition in definition.Conditions) { try { conditions.Create(condition); } catch (Exception ex) { errors.Add($"{definition.Id}: condición inválida: {ex.Message}"); } }
-            foreach (var action in definition.Actions)
-            {
-                // Un destino protegido NO es una acción inválida: se reporta como error de POLÍTICA, no de
-                // forma, con el mismo formato que ValidatePolicy. Antes se dejaba escapar la excepción con un
-                // `when (ex is not ProtectedTargetException)`, y eso solo funcionaba en la ruta resiliente
-                // (TweakCatalog.cs:156 concatena ValidatePolicy); en la ruta ESTRICTA no hay quien la recoja,
-                // asi que el loader lanzaba ProtectedTargetException en vez de CatalogValidationException y
-                // ademas el mensaje se perdia.
-                try { actions.Create(action); }
-                catch (ProtectedTargetException ex) { errors.Add($"{definition.Id}: {ex.Message}"); }
-                catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
-                if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
-                {
-                    var service = ImpactSimulator.ExtractServiceName(action);
-                    if (string.IsNullOrWhiteSpace(service)) errors.Add($"{definition.Id}: acción Service sin nombre legible.");
-                    else if (!tiers.IsApplicable(service!))
-                        errors.Add($"{definition.Id}: el servicio '{service}' es {tiers.TierOf(service!)} en service-tiers.json; solo se permite T1/T2.");
-                }
-                if (action.Kind.Equals("PowerShell", StringComparison.OrdinalIgnoreCase) || action.Kind.Equals("Bcdedit", StringComparison.OrdinalIgnoreCase))
-                    if (definition.Risk is not (RiskLevel.Advanced or RiskLevel.Experimental)) errors.Add($"{definition.Id}: {action.Kind} requiere riesgo Advanced/Experimental");
-            }
+            // Reglas de la definición: la MISMA implementación que usa la ruta resiliente.
+            errors.AddRange(ValidateSingle(definition));
+            // Política: aquí sí, porque esta ruta no concatena ValidatePolicy después.
+            errors.AddRange(ValidatePolicy(definition));
         }
         foreach (var definition in definitions)
         {
@@ -77,6 +59,7 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
         }
         return errors;
     }
+
     /// <summary>
     /// Reglas de UNA definición, sin mirar las demás (Capa 10.4). Es la parte del validador que puede
     /// atribuirse a una entrada concreta: textos, acciones, condiciones, perfiles, membresía de tiers.
@@ -100,7 +83,14 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
         foreach (var condition in definition.Conditions) { try { conditions.Create(condition); } catch (Exception ex) { errors.Add($"{definition.Id}: condición inválida: {ex.Message}"); } }
         foreach (var action in definition.Actions)
         {
-            try { actions.Create(action); } catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
+            // Un destino PROTEGIDO no es una acción mal formada: es politica, y lo reporta ValidatePolicy con
+            // su propio mensaje. Aqui se deja pasar a proposito, porque si se capturara como "accion invalida"
+            // la MISMA definicion saldria DOS veces en el informe de rechazos (una por cada funcion), que es
+            // lo que se veia como "ext.debugger duplicado". Las dos rutas que usan ValidateSingle -la estricta
+            // via ValidateCatalog y la resiliente (TweakCatalog.cs)- llaman a ValidatePolicy a continuacion,
+            // asi que la excepcion siempre tiene quien la recoja.
+            try { actions.Create(action); }
+            catch (Exception ex) when (ex is not ProtectedTargetException) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
             if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
             {
                 var service = ImpactSimulator.ExtractServiceName(action);
