@@ -103,6 +103,110 @@ public sealed class IntegrityTests
         Assert.Contains(revert.Errors, e => e.Contains("íntegro", StringComparison.OrdinalIgnoreCase) || e.Contains("DefinitionSha256", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// C1: para CADA definición del catálogo REAL, el hash que se guarda en el snapshot sobrevive a
+    /// escribirlo a disco y releerlo.
+    ///
+    /// Es la prueba que faltaba: la ronda 5 añadió campos a TweakDefinition (profiles, sessionEligible,
+    /// restartsNetworkLink, anticheatNote) y el hash se calcula serializando la definición. Si un campo
+    /// nuevo se serializara de forma distinta al releer (por ejemplo, un valor por defecto que aparece al
+    /// escribir y desaparece al leer), el revert rechazaría snapshots LEGÍTIMOS y el usuario perdería la
+    /// vuelta atrás. Se comprueba con las 32 definiciones reales, no con una de mentira.
+    /// </summary>
+    [Fact]
+    public async Task EveryRealDefinition_KeepsItsHash_AfterAGuardarYReleerEnDisco()
+    {
+        using var directory = new TempDirectory();
+        var paths = new FragForgePaths(directory.Path);
+        paths.EnsureCreated();
+        var store = new FileSnapshotStore(paths);
+        var catalog = await new FragForge.Tweaks.JsonTweakCatalogLoader(RealValidator()).LoadEmbeddedAsync();
+
+        var tweaks = catalog.Definitions.Select(d => new TweakSnapshot
+        {
+            TweakId = d.Id,
+            DefinitionSha256 = catalog.GetDefinitionHash(d.Id),
+            Definition = d,
+            Actions = [new CapturedAction(0, d.Actions[0].Kind, new InspectionActionState())]
+        }).ToArray();
+
+        var snapshot = new SystemSnapshot { Id = "snap-c1", Tweaks = tweaks };
+        await store.SaveAsync(snapshot);
+        var releido = await store.GetAsync("snap-c1");
+
+        // El mismo numero de tweaks y los mismos ids, en el mismo orden.
+        Assert.Equal(tweaks.Length, releido.Tweaks.Count);
+        Assert.Equal(tweaks.Select(t => t.TweakId), releido.Tweaks.Select(t => t.TweakId));
+
+        // Y el hash guardado coincide con el recalculado sobre la definicion RELEIDA.
+        foreach (var guardado in releido.Tweaks)
+        {
+            var recalculado = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+                JsonSerializer.Serialize(guardado.Definition, JsonDefaults.Create(false))))).ToLowerInvariant();
+            Assert.Equal(guardado.DefinitionSha256, recalculado);
+        }
+    }
+
+    /// <summary>
+    /// C1 (segundo): un snapshot guardado SIN los campos que se añadieron despues (profiles, sessionEligible,
+    /// restartsNetworkLink, anticheatNote) sigue verificando.
+    ///
+    /// El hash se calcula serializando la definicion, y JsonDefaults.Create(false) + WhenWritingNull hacen que
+    /// los defaults NO se escriban: un JSON historico sin esos campos deserializa a los mismos valores por
+    /// defecto y vuelve a serializarse igual. Si algun dia se pusiera un valor por defecto distinto, o
+    /// [JsonIgnore] cambiara, este test lo delata.
+    /// </summary>
+    [Fact]
+    public async Task ASnapshotWithoutTheNewFields_StillVerifies()
+    {
+        using var directory = new TempDirectory();
+        var paths = new FragForgePaths(directory.Path);
+        paths.EnsureCreated();
+        var store = new FileSnapshotStore(paths);
+
+        // Una definicion minima sin NINGUNO de los cuatro campos nuevos.
+        const string jsonViejo = """
+            {"id":"old.one","category":"Cpu","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\Software\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
+            """;
+        var definicion = JsonSerializer.Deserialize<TweakDefinition>(jsonViejo, JsonDefaults.Options)!;
+        var hashViejo = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(definicion, JsonDefaults.Create(false))))).ToLowerInvariant();
+
+        await store.SaveAsync(new SystemSnapshot
+        {
+            Id = "snap-viejo",
+            Tweaks = [new TweakSnapshot { TweakId = "old.one", DefinitionSha256 = hashViejo, Definition = definicion, Actions = [new CapturedAction(0, "Registry", new InspectionActionState())] }]
+        });
+
+        var releido = await store.GetAsync("snap-viejo");
+        var guardado = releido.Tweaks.Single();
+
+        var recalculado = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            JsonSerializer.Serialize(guardado.Definition, JsonDefaults.Create(false))))).ToLowerInvariant();
+
+        Assert.Equal(guardado.DefinitionSha256, recalculado);
+        // Y los cuatro campos siguen en sus valores por defecto: el JSON historico no inventa datos.
+        Assert.Null(guardado.Definition.Profiles);
+        Assert.False(guardado.Definition.SessionEligible);
+        Assert.False(guardado.Definition.RestartsNetworkLink);
+        Assert.Null(guardado.Definition.AnticheatNote);
+    }
+
+    /// <summary>Validador como el de produccion pero con dobles: el catalogo real EMBEBIDO valida contra si mismo.</summary>
+    private static FragForge.Tweaks.Validation.TweakCatalogValidator RealValidator()
+    {
+        var registry = new FakeRegistry();
+        var policy = FragForge.Core.Persistence.ProtectionPolicy.CreateDefault();
+        var factory = new FragForge.Actions.DependencyInjection.TweakActionFactory(
+            registry, policy, new FakeServiceController(), new FakeScheduledTaskStore(),
+            new FakeNetworkAdapterController(), new FakeProcessRunner(),
+            FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
+        return new FragForge.Tweaks.Validation.TweakCatalogValidator(
+            new FragForge.Tweaks.Validation.JsonSchemaValidator(FragForge.Tweaks.JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new FragForge.Core.Conditions.ConditionFactory(), factory, FragForge.Core.Tiers.ServiceTierCatalog.LoadEmbedded());
+    }
+
     /// <summary>Un snapshot íntegro SÍ se revierte: la comprobación no bloquea el camino normal.</summary>
     [Fact]
     public async Task Revert_StillWorks_OnAnUntouchedSnapshot()
