@@ -31,6 +31,8 @@ public partial class App : Application
             viewModel.SecurityPostureService = _host.Services.GetRequiredService<FragForge.Core.Abstractions.ISecurityPostureService>();
             // Capa 11.3: lista de operaciones para revertir UNA concreta. Tambien por propiedad, mismo criterio.
             viewModel.Snapshots = _host.Services.GetRequiredService<FragForge.Core.Abstractions.ISnapshotStore>();
+            // Solo para la marca Reverted de la lista de operaciones (evento SnapshotReverted del journal).
+            viewModel.Journal = _host.Services.GetRequiredService<FragForge.Core.Abstractions.IJournal>();
             // Capa 9.3: recuperacion al arrancar. Si quedo un marcador de una caida y CS2 no corre, se
             // revierte y se limpia; si el juego sigue abierto, no se toca nada.
             try

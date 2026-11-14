@@ -26,6 +26,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly SynchronizationContext? _uiContext;
     private readonly UiLogSink _sink;
     private readonly Dictionary<string, TweakStatus> _statuses = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Acknowledegements vacios para el dry-run. Se declara como HashSet y no con <c>[]</c> porque una
+    /// expresion de coleccion vacia no puede construir <c>IReadOnlySet&lt;string&gt;</c> (CS9174: es una
+    /// interfaz).
+    /// </summary>
+    private static readonly IReadOnlySet<string> EmptyAcknowledgements = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private Localizer _localizer;
     private CancellationTokenSource? _operation;
     /// <summary>
@@ -91,6 +98,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// en null (tests, diseñador), la lista de operaciones simplemente está vacía.
     /// </summary>
     public ISnapshotStore? Snapshots { get; set; }
+
+    /// <summary>
+    /// Journal, SOLO para saber que snapshots ya fueron revertidos (<c>SnapshotListItem.Reverted</c>). Es
+    /// opcional: sin journal la lista de operaciones funciona igual, solo que sin esa marca. Se asigna por
+    /// propiedad por el mismo motivo que <see cref="Snapshots"/>.
+    /// </summary>
+    public IJournal? Journal { get; set; }
 
     /// <summary>¿Hay algo en la vista previa? Controla la visibilidad del panel.</summary>
     public bool HasPreview => PlannedChanges.Count > 0;
@@ -288,7 +302,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         var selected = Tweaks.Where(t => t.IsSelected).ToArray();
         if (selected.Length == 0) { StatusMessage = "Selecciona al menos un tweak para previsualizar."; return; }
-        var options = BuildApplyOptions(dryRun: true, acknowledgements: []);
+        var options = BuildApplyOptions(dryRun: true, EmptyAcknowledgements);
         await RunAsync(async (token, progress) =>
         {
             var report = await _engine.ApplyAsync(selected.Select(t => t.Id), options, token, progress);
@@ -330,9 +344,28 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (Snapshots is null) return;
         try
         {
+            // ListAsync devuelve SystemSnapshot. La conversion a SnapshotListItem la hace el CLI a mano
+            // (Program.cs, verbo "snapshot list"): aqui se replica igual, incluido el campo Reverted, que
+            // sale del journal (eventos SnapshotReverted), no del snapshot.
+            var reverted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (Journal is not null)
+            {
+                var entries = await Journal.ReadAllAsync(cancellationToken);
+                foreach (var entry in entries)
+                    if (entry.EventType == JournalEventType.SnapshotReverted && entry.SnapshotId is not null)
+                        reverted.Add(entry.SnapshotId);
+            }
+
             var items = await Snapshots.ListAsync(cancellationToken);
             Operations.Clear();
-            foreach (var item in items.OrderByDescending(s => s.CreatedAt)) Operations.Add(item);
+            foreach (var snapshot in items.OrderByDescending(s => s.CreatedAt))
+                Operations.Add(new SnapshotListItem(
+                    snapshot.Id,
+                    snapshot.Label,
+                    snapshot.CreatedAt,
+                    snapshot.Tweaks.Count,
+                    snapshot.RestorePointSequence,
+                    reverted.Contains(snapshot.Id)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { StatusMessage = "No se pudieron listar las operaciones: " + ex.Message; }
     }
