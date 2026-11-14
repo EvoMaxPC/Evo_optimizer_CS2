@@ -423,3 +423,57 @@ demuestra la forja (`IntegrityTests.TheJournal_IsTamperEvident_ButNotAuthenticat
 **Descartado.** No hay fuente que lo respalde y los requisitos cambian sin aviso. Los textos dicen lo que la
 app hace y remiten al proveedor. Hay un test sobre el catálogo real que prohíbe "seguro con",
 "compatible con", "safe with" y "allowed by" en `anticheatNote`.
+
+---
+
+# Capa 11 — UI, instalador, firma y E2E
+
+## Auto-update
+
+**Descartado.** El enunciado lo prohíbe y además no tendría sentido: un actualizador automático es una
+descarga remota, y el proyecto entero se apoya en "todo offline, nada se descarga". Se documenta aquí para que
+nadie lo proponga como mejora: el `.iss` lleva `DisableAutoUpdating=yes` a propósito.
+
+## Telemetría
+
+**Descartada**, también por enunciado y por coherencia. No hay ningún punto del código que envíe nada a
+ninguna parte. Lo único que sale del equipo es lo que el usuario exporta a mano con `export-report`.
+
+## `asInvoker` con elevación bajo demanda
+
+**Descartado.** Analizado en `docs/elevacion.md`. El motivo corto: la postura de seguridad lee `Win32_Tpm` en
+`root\CIMV2\Security\MicrosoftTpm` (`HardwareProfiler.cs:28`), que exige elevación; sin ella el TPM saldría
+`Unknown` siempre. Además aplicar no es "una llamada" sino un motor con snapshot y journal, así que partir el
+proceso obligaría a serializar el plan y a resolver `TargetUserSid` en el segundo proceso. Coste alto para
+evitar un UAC.
+
+## `highestAvailable`
+
+**Descartado.** En una cuenta estándar se comporta como `asInvoker` (falla igual) y en una de administrador
+funciona igual que `requireAdministrator`. No aporta nada y hace que el usuario no sepa en qué modo está.
+
+## Firmar en CI
+
+**Descartado.** Necesitaría el certificado y su contraseña como secretos de GitHub. El enunciado lo prohíbe de
+forma explícita ("PROHIBIDO commitear certificados, contraseñas o tokens") y un certificado de firma de código
+en un CI público es un objetivo de ataque. La firma es un paso local y documentado en `docs/firma.md`.
+
+## `-warnaserror` global en el job de Windows
+
+**Descartado por ahora.** La solución incluye App (WPF) y CLI, que nunca se compilaron en el entorno donde se
+escribió la Capa 11. Poner el flag global convertiría un aviso preexistente de WPF en un build rojo que no
+tiene nada que ver con el código nuevo. Core sí rompe con warnings (`Directory.Build.props`), y el job de Linux
+usa `-warnaserror` sobre la cadena completa que compila. El siguiente paso, cuando se haya compilado una vez en
+Windows, es extenderlo.
+
+## Pestañas con la lógica dentro
+
+**Descartado.** Las pestañas de la Capa 11.3 solo enlazan a comandos y colecciones que ya existían en
+`MainViewModel`. Meter lógica nueva en el XAML habría dejado esa lógica sin tests y fuera de `FragForge.UI.Core`,
+que es exactamente el problema que la Capa 11.2 acaba de resolver.
+
+## Sustituir el desinstalador de Inno por uno propio
+
+**Descartado.** El riesgo del desinstalador no era que Inno lo generara, sino qué hace al ejecutarse. Se
+resuelve en `CurUninstallStepChanged` (dos confirmaciones explícitas, en `usUninstall`, antes de borrar nada) y
+no reescribiendo el instalador.

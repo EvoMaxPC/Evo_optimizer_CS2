@@ -1,8 +1,22 @@
-# FragForge — Capa 0 (fundaciones)
+# FragForge
 
-Optimizador **reversible** para Windows 11 orientado a Counter-Strike 2 (FPS, estabilidad de frametime, latencia de entrada y de red). Esta es la **Capa 0**: no promete milagros, sino un motor de cambios *transaccional* con captura exacta del estado previo, verificación, reversión automática y una bitácora a prueba de manipulación.
+Optimizador **reversible** para Windows 11 orientado a Counter-Strike 2 (estabilidad de frametime, latencia de
+entrada y de red). No promete milagros: es un motor de cambios *transaccional* con captura exacta del estado
+previo, verificación, reversión y una bitácora a prueba de manipulación.
 
-> Estado actual: solución completa y compilable (Core, Actions, Tweaks, Composition, Cli, App, Tests). La capa de medición A/B pertenece a la Capa 1, pero el motor ya expone los ganchos.
+> **Estado: v0.1.0, funcionalmente completa (capas 0–11).** La solución compila en el CI, pero **nada de esto se
+> ha ejecutado en un equipo real con Windows**: el entorno donde se escribió no tiene compilador. El instalador y
+> la firma nunca se han ejecutado. Antes de usar esto en un equipo que te importe, lee
+> [`docs/handoff/e2e-manual.md`](docs/handoff/e2e-manual.md) y hazlo en una máquina que puedas reinstalar.
+
+## Qué hace y qué no
+
+| Sí | No |
+|---|---|
+| Cambios declarativos con snapshot previo y verificación posterior | No promete FPS: cada tweak declara `evidence` honesta |
+| Reversión por snapshot, por tweak o por operación | No toca Defender, Firewall, Update, Secure Boot/TPM, VBS/HVCI |
+| Journal append-only con cadena SHA-256 | No descarga nada ni envía telemetría |
+| es-MX y en-US de serie | No mata procesos sin confirmación (ni Steam, ni CS2, ni anticheat) |
 
 ## 1. Decisiones de arquitectura
 
@@ -32,54 +46,58 @@ preflight → dependencias/conflictos → condiciones → perfil/riesgo → ¿ya
 Evo_optimizer_CS2/
 ├─ FragForge.sln
 ├─ Directory.Build.props / Directory.Packages.props / global.json / NuGet.config
-├─ .github/workflows/ci.yml
+├─ .github/workflows/ci.yml          # ubuntu (logica) + windows-latest (solucion y publish en tags)
 ├─ docs/
-│  └─ manual-revert.md
+│  ├─ elevacion.md                   # por que requireAdministrator (capa 11.4)
+│  ├─ firma.md                       # signtool, variables de entorno, SmartScreen (capa 11.6)
+│  ├─ seguridad.md                   # postura de seguridad y limites
+│  ├─ descartados.md                 # lo que se decidio NO hacer y por que (todas las capas)
+│  ├─ manual-revert.md               # reversion de emergencia sin el programa
+│  └─ handoff/                       # informes por capa + e2e-manual.md
+├─ installer/FragForge.iss           # Inno Setup (capa 11.5)
+├─ scripts/publish.ps1               # publish self-contained win-x64
+├─ scripts/sign.ps1                  # firma con signtool (certificado por entorno)
 ├─ src/
-│  ├─ FragForge.Core/                 # motor puro, sin dependencias de Windows
-│  │  ├─ Abstractions/               # IRegistry, IProcessRunner, ITweakAction, contratos…
-│  │  ├─ Conditions/                 # ConditionFactory (windows, hybridCpu, gpuVendor, cs2…)
-│  │  ├─ Engine/                     # TweakEngine, DependencyResolver, ProfileSelector…
-│  │  ├─ Localization/               # Localizer, UiLogSink
-│  │  ├─ Logging/                    # JsonDefaults, UiLoggerProvider
-│  │  ├─ Models/                     # enums, resultados, snapshot/journal, HardwareProfile
-│  │  ├─ Persistence/                # FragForgePaths, FileSnapshotStore, FileJournal, política…
-│  │  ├─ Policy/denylist.json        # denylist embebida
-│  │  └─ Preflight/
-│  ├─ FragForge.Actions/             # implementaciones reales (Windows) + fakes hostiles
-│  │  ├─ Bcd/  Diagnostics/  Files/  Network/  Platform/  Power/  Registry/  Scripting/  Services/  Tasks/
-│  │  └─ DependencyInjection/
-│  ├─ FragForge.Tweaks/              # catálogo JSON embebido, esquema, validador, i18n
-│  │  ├─ Catalog/{Cpu,Power,Network,Gpu,Latency,Cs2,Debloat,Memory,Diagnostics}/
-│  │  ├─ Localization/{es-MX,en-US}.json
-│  │  ├─ Schema/tweak.schema.json
-│  │  └─ Validation/
-│  ├─ FragForge.Composition/         # CompositionRoot + ReportService (HTML/JSON)
-│  ├─ FragForge.Cli/                 # fragforge.exe
-│  └─ FragForge.App/                 # FragForge.exe (WPF MVVM, tema oscuro)
-└─ tests/FragForge.Tests/            # xUnit 2.9.3: fakes de registro/proceso/servicio/tarea/red
+│  ├─ FragForge.Core/                # motor puro, net10.0, sin dependencias de Windows
+│  ├─ FragForge.Actions/             # acciones concretas (registro, servicios, BCD, red, ...)
+│  ├─ FragForge.Tweaks/              # catalogo JSON embebido + validador + localizacion
+│  ├─ FragForge.Composition/         # CompositionRoot (DI) y CompositionOverrides para tests
+│  ├─ FragForge.UI.Core/             # ViewModels, net10.0 SIN WPF: testeable (capa 11.2)
+│  ├─ FragForge.App/                 # WPF: vistas, binding y dialogos. net10.0-windows
+│  └─ FragForge.Cli/                 # fragforge.exe
+└─ tests/FragForge.Tests/            # xUnit; los tests Windows llevan Trait Category=Windows
 ```
 
-## 3. Compilar, probar y publicar
+## 3. Compilar, probar, empaquetar y firmar
+
+Requisitos: .NET SDK 10.0.400+ y **Windows** para compilar la App (WPF). El motor, la lógica y los tests
+también compilan en Linux.
 
 ```powershell
-# Requisitos: .NET SDK 10.0.400+ y Windows 11 para ejecutar (compilar la App requiere Windows).
 dotnet restore FragForge.sln
 dotnet build   FragForge.sln -c Release
 dotnet test    tests/FragForge.Tests/FragForge.Tests.csproj -c Release
-
-# Cli autocontenido de un solo archivo (win-x64)
-dotnet publish src/FragForge.Cli/FragForge.Cli.csproj -c Release -r win-x64 --self-contained true -o publish/cli
-
-# App WPF autocontenida (manifiesto requireAdministrator)
-dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --self-contained true -o publish/app
 ```
 
-En un entorno sin acceso a nuget.org, usa el modo offline (carpeta de paquetes local):
+En un entorno sin acceso a nuget.org, usa el modo offline:
 
 ```powershell
 dotnet restore FragForge.sln --configfile .\NuGet.offline.config
 ```
+
+Publicar e instalar:
+
+```powershell
+./scripts/publish.ps1                 # app + CLI self-contained win-x64 en artifacts/publish
+./scripts/sign.ps1 -Path artifacts/publish   # opcional; sin certificado avisa de SmartScreen
+iscc /DMyAppVersion=0.1.0 installer\FragForge.iss
+```
+
+La versión vive en **un solo sitio**: `Directory.Build.props` (`<Version>`). El assembly, el instalador y el
+nombre del artefacto la leen de ahí.
+
+Sin certificado, Windows **SmartScreen** avisará la primera vez. Eso no es un fallo: ver
+[`docs/firma.md`](docs/firma.md) y [`docs/elevacion.md`](docs/elevacion.md).
 
 ## 4. Uso del CLI
 
@@ -177,6 +195,22 @@ Ver [`docs/manual-revert.md`](docs/manual-revert.md). Resumen:
 2. `fragforge revert --snapshot <id>` es la vía normal.
 3. Si el CLI no arranca: importa `artifacts\registry-before.reg` (doble clic / `reg import`), `powercfg /setactive <GUID previo>` usando el snapshot, `bcdedit /import artifacts\bcd-*.bcd` para BCD y restaura los archivos de `artifacts\` con sus rutas y fechas.
 
-## 8. Capa 0 vs Capa 1
+## 8. Estado por capas
 
-La Capa 0 **no mide**; deja ganchos para medir: `IExperimentHook` (`BeforeApply` fatal, `AfterApply`/`AfterRevert` con advertencia), `InspectOnly` como línea base de diagnóstico y `export-report` con JSON/HTML listos para PresentMon, frametimes, 1% lows, DPC/ISR y temperaturas.
+| Capa | Contenido | Estado |
+|---|---|---|
+| 0 | Motor transaccional, journal, snapshot, denylist | Cerrada |
+| 1 | Medición A/B con PresentMon (`probe`, `mouse-test`, `tools verify`) | Cerrada |
+| 2–4 | Perfiles, riesgo, rollback, idempotencia, deriva | Cerrada |
+| 5 | Red: enlace, TCP, DPC | Cerrada |
+| 6–7 | Latencia de entrada e iGPU | Cerrada |
+| 8 | CS2: resolución, prioridad, configuración | Cerrada |
+| 9 | Modo sesión y recuperación tras corte | Cerrada |
+| 10 | Seguridad: postura, preflight, journal tamper-evident | Cerrada |
+| 11 | UI testeable, instalador, firma, CI y E2E | Cerrada |
+
+**Lo que no está verificado**: la compilación, el instalador, la firma y la UI **nunca se han ejecutado** en un
+equipo Windows desde este repositorio. Los informes de cada capa en `docs/handoff/` lo dicen capa por capa, y
+[`docs/handoff/FragForge-Capa11-Informe.md`](docs/handoff/FragForge-Capa11-Informe.md) lo resume.
+
+Reversión de emergencia sin el programa: [`docs/manual-revert.md`](docs/manual-revert.md).
