@@ -18,6 +18,14 @@ public sealed partial class TweakItemViewModel : ObservableObject
     public bool RequiresReboot => Definition.RequiresReboot;
 
     /// <summary>
+    /// Aviso VISIBLE de que el tweak pide reinicio (Capa 11.3). Antes el dato existía pero no se veía en la
+    /// tabla: una columna de "True/False" no dice nada y estaba colapsada. Aquí se muestra texto.
+    /// </summary>
+    public string RebootDisplay => RequiresReboot
+        ? (_culture.StartsWith("en", StringComparison.OrdinalIgnoreCase) ? "Restart" : "Reinicio")
+        : "";
+
+    /// <summary>
     /// Aviso anticheat (Capa 10.2): lo que define el catálogo o, si no define nada, el contrato común. Se muestra
     /// siempre, para que el usuario no tenga que suponer qué hace el tweak con el juego.
     /// </summary>
@@ -44,5 +52,6 @@ public sealed partial class TweakItemViewModel : ObservableObject
         OnPropertyChanged(nameof(Notes));
         OnPropertyChanged(nameof(WhenNotToApply));
         OnPropertyChanged(nameof(AnticheatNote));
+        OnPropertyChanged(nameof(RebootDisplay));
     }
 }

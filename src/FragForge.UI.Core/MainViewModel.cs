@@ -76,6 +76,30 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _ => profile.ToString()
     };
 
+    /// <summary>
+    /// Vista previa ANTES de aplicar (Capa 11.3): los cambios que el motor planea, tal cual los devuelve el
+    /// dry-run. Se llena con <see cref="PreviewCommand"/> y es la lista que el usuario tiene que aprobar.
+    /// </summary>
+    public ObservableCollection<DryRunChange> PlannedChanges { get; } = [];
+
+    /// <summary>Operaciones aplicadas, para poder revertir UNA concreta (Capa 11.3).</summary>
+    public ObservableCollection<SnapshotListItem> Operations { get; } = [];
+
+    /// <summary>
+    /// Almacén de snapshots para listar operaciones. Se asigna por PROPIEDAD, no por constructor: el
+    /// constructor de este ViewModel ya tiene diez dependencias y la Capa 11.1 fijó que no se toca. Si queda
+    /// en null (tests, diseñador), la lista de operaciones simplemente está vacía.
+    /// </summary>
+    public ISnapshotStore? Snapshots { get; set; }
+
+    /// <summary>¿Hay algo en la vista previa? Controla la visibilidad del panel.</summary>
+    public bool HasPreview => PlannedChanges.Count > 0;
+
+    /// <summary>Texto del panel de vista previa: cuántos cambios y de qué tweaks.</summary>
+    public string PreviewSummary => PlannedChanges.Count == 0
+        ? "Sin vista previa. Pulsa Vista previa (dry-run) para ver qué cambiaría."
+        : $"{PlannedChanges.Count} cambios planificados en {PlannedChanges.Select(c => c.TweakId).Distinct(StringComparer.OrdinalIgnoreCase).Count()} tweaks. No se ha modificado nada todavía.";
+
     [ObservableProperty] private string hardwareSummary = "Ejecuta Escanear para detectar el equipo.";
     [ObservableProperty] private string statusMessage = "Listo";
     [ObservableProperty] private double progressValue;
@@ -235,7 +259,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool CanOperate() => !IsBusy;
     partial void OnIsBusyChanged(bool value)
     {
-        ScanCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); DryRunCommand.NotifyCanExecuteChanged(); RevertCommand.NotifyCanExecuteChanged(); SnapshotCommand.NotifyCanExecuteChanged(); ExportCommand.NotifyCanExecuteChanged(); DoctorCommand.NotifyCanExecuteChanged(); BrowseCs2Command.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged();
+        ScanCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); DryRunCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged(); RevertOperationCommand.NotifyCanExecuteChanged(); RefreshOperationsCommand.NotifyCanExecuteChanged(); RevertCommand.NotifyCanExecuteChanged(); SnapshotCommand.NotifyCanExecuteChanged(); ExportCommand.NotifyCanExecuteChanged(); DoctorCommand.NotifyCanExecuteChanged(); BrowseCs2Command.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged();
     }
     partial void OnSelectedProfileChanged(TweakProfile value) => RebuildTweaks();
     partial void OnCultureChanged(string value) => _ = ChangeCultureAsync(value);
@@ -255,10 +279,85 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             StatusMessage = _lastScanStatus;
         });
     }
+    /// <summary>
+    /// Vista previa: ejecuta el DRY-RUN y deja los cambios planificados en <see cref="PlannedChanges"/> para que
+    /// el usuario los vea antes de confirmar. No escribe nada (el motor no toca el sistema en DryRun).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanOperate))]
+    private async Task PreviewAsync()
+    {
+        var selected = Tweaks.Where(t => t.IsSelected).ToArray();
+        if (selected.Length == 0) { StatusMessage = "Selecciona al menos un tweak para previsualizar."; return; }
+        var options = BuildApplyOptions(dryRun: true, acknowledgements: []);
+        await RunAsync(async (token, progress) =>
+        {
+            var report = await _engine.ApplyAsync(selected.Select(t => t.Id), options, token, progress);
+            PlannedChanges.Clear();
+            foreach (var change in report.Results.SelectMany(r => r.PlannedChanges)) PlannedChanges.Add(change);
+            OnPropertyChanged(nameof(HasPreview));
+            OnPropertyChanged(nameof(PreviewSummary));
+            StatusMessage = report.Success
+                ? PreviewSummary
+                : "La vista previa no se pudo completar: " + string.Join(" ", report.Errors);
+        });
+    }
+
+    /// <summary>
+    /// Revertir UNA operación concreta (Capa 11.3). Se identifica por el snapshot, que es lo que el motor usa
+    /// para saber qué capturó. El motor sigue exigiendo journal íntegro y verifica el revert.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanOperate))]
+    private async Task RevertOperationAsync(SnapshotListItem? operation)
+    {
+        if (operation is null) { StatusMessage = "Selecciona una operación para revertir."; return; }
+        if (!_confirmation.Confirm($"¿Revertir la operación '{operation.Label}' ({operation.Id})? Solo se restauran los tweaks que ESA operación aplicó.", _localizer["nav.revert"])) return;
+        await RunAsync(async (token, progress) =>
+        {
+            var report = await _engine.RevertAsync(new RevertRequest { SnapshotId = operation.Id, Options = new RevertOptions { Force = Force, Cs2ExecutableOverride = string.IsNullOrWhiteSpace(Cs2Path) ? null : Cs2Path } }, token, progress);
+            foreach (var result in report.Results) _statuses[result.Id] = new TweakStatus(result.Id, result.State, result.Message, [], []);
+            RebuildTweaks();
+            StatusMessage = report.Success ? "Operación revertida." : string.Join(" ", report.Errors);
+            await RefreshOperationsAsync(token);
+        });
+    }
+
+    /// <summary>Recarga la lista de operaciones desde el almacén de snapshots. Solo lectura.</summary>
+    [RelayCommand(CanExecute = nameof(CanOperate))]
+    private async Task RefreshOperationsAsync() => await RefreshOperationsAsync(CancellationToken.None);
+
+    private async Task RefreshOperationsAsync(CancellationToken cancellationToken)
+    {
+        if (Snapshots is null) return;
+        try
+        {
+            var items = await Snapshots.ListAsync(cancellationToken);
+            Operations.Clear();
+            foreach (var item in items.OrderByDescending(s => s.CreatedAt)) Operations.Add(item);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { StatusMessage = "No se pudieron listar las operaciones: " + ex.Message; }
+    }
+
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private Task ApplyAsync() => ApplyCoreAsync(false);
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private Task DryRunAsync() => ApplyCoreAsync(true);
+    /// <summary>
+    /// Opciones de aplicación en un solo sitio: las usa el dry-run de la vista previa y el apply real, para que
+    /// no puedan divergir (una vista previa que no refleja lo que se aplica no sirve de nada).
+    /// </summary>
+    private ApplyOptions BuildApplyOptions(bool dryRun, IReadOnlySet<string> acknowledgements) => new()
+    {
+        DryRun = dryRun,
+        Force = Force,
+        CreateRestorePoint = CreateRestorePoint,
+        EnableSystemProtection = EnableSystemProtection,
+        Profile = SelectedProfile,
+        RiskAcknowledgements = acknowledgements,
+        AdvancedRiskPhrase = RiskPhrase,
+        Cs2ExecutableOverride = string.IsNullOrWhiteSpace(Cs2Path) ? null : Cs2Path,
+        AllowPowerShellActions = AllowPowerShell
+    };
+
     private async Task ApplyCoreAsync(bool dryRun)
     {
         var selected = Tweaks.Where(t => t.IsSelected).ToArray();
@@ -281,7 +380,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 if (!_confirmation.ConfirmRisk(_localizer["risk.first"] + "\n" + message, "No lo apliques durante una partida.", _localizer["risk.title"])) { StatusMessage = "Confirmación cancelada."; return; }
             }
         }
-        var options = new ApplyOptions { DryRun = dryRun, Force = Force, CreateRestorePoint = CreateRestorePoint, EnableSystemProtection = EnableSystemProtection, Profile = SelectedProfile, RiskAcknowledgements = acknowledgements, AdvancedRiskPhrase = RiskPhrase, Cs2ExecutableOverride = string.IsNullOrWhiteSpace(Cs2Path) ? null : Cs2Path, AllowPowerShellActions = AllowPowerShell };
+        var options = BuildApplyOptions(dryRun, acknowledgements);
         await RunAsync(async (token, progress) =>
         {
             var report = await _engine.ApplyAsync(selected.Select(t => t.Id), options, token, progress);

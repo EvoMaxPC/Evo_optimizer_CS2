@@ -29,6 +29,8 @@ public partial class App : Application
             // Capa 10.1: panel de postura de seguridad. Se inyecta por propiedad, igual que Sessions, para no
             // tocar el constructor del ViewModel. Es solo lectura.
             viewModel.SecurityPostureService = _host.Services.GetRequiredService<FragForge.Core.Abstractions.ISecurityPostureService>();
+            // Capa 11.3: lista de operaciones para revertir UNA concreta. Tambien por propiedad, mismo criterio.
+            viewModel.Snapshots = _host.Services.GetRequiredService<FragForge.Core.Abstractions.ISnapshotStore>();
             // Capa 9.3: recuperacion al arrancar. Si quedo un marcador de una caida y CS2 no corre, se
             // revierte y se limpia; si el juego sigue abierto, no se toca nada.
             try
