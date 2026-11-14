@@ -89,7 +89,11 @@ public sealed class IntegrityTests
         var path = Path.Combine(harness.Paths.Snapshots, snapshotId, "snapshot.json");
         var json = await File.ReadAllTextAsync(path);
         // Se cambia la definición guardada, que es de donde el revert saca los parámetros.
-        var tampered = json.Replace("\"kind\":\"Fake\"", "\"kind\":\"Registry\"", StringComparison.OrdinalIgnoreCase);
+        // OJO con el espaciado: el snapshot se serializa con JsonDefaults.Options, que tiene WriteIndented=true
+        // (src/FragForge.Core/Logging/JsonDefaults.cs:9-11), así que el JSON real dice  "kind": "Fake"  CON un
+        // espacio tras los dos puntos. Se buscaba "kind":"Fake" sin espacio, el Replace no cambiaba nada y el
+        // test fallaba en el Assert.NotEqual de abajo con "los hashes coinciden" (en realidad, "no se tocó nada").
+        var tampered = json.Replace("\"kind\": \"Fake\"", "\"kind\": \"Registry\"", StringComparison.OrdinalIgnoreCase);
         Assert.NotEqual(json, tampered);
         await File.WriteAllTextAsync(path, tampered);
 
