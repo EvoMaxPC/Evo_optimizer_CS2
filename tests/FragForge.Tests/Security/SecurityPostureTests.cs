@@ -283,6 +283,7 @@ public sealed class SelectiveFailingRegistry(string failingKey) : IRegistry
     public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
     public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
     public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
+    public Task DeleteEmptySubKeyAsync(string parentKey, string childName, CancellationToken cancellationToken = default) => _inner.DeleteEmptySubKeyAsync(parentKey, childName, cancellationToken);
 }
 
 /// <summary>Registro cuya PRIMERA lectura se cancela.</summary>
@@ -297,6 +298,7 @@ public sealed class CancellingRegistry : IRegistry
     public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
     public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
     public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
+    public Task DeleteEmptySubKeyAsync(string parentKey, string childName, CancellationToken cancellationToken = default) => _inner.DeleteEmptySubKeyAsync(parentKey, childName, cancellationToken);
 }
 
 /// <summary>WMI con una fila fija, o que falla si se le pide.</summary>
