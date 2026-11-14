@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using FragForge.Core.Abstractions;
 using FragForge.Core.Localization;
 using FragForge.Core.Models;
 using FragForge.Tests.Core;
