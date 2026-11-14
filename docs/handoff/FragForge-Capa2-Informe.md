@@ -459,6 +459,65 @@ Si la categoría **no** fuera `ObjectNotFound`, la tarea se reportaría como err
 "No aplicable": se vería en el mensaje del lote, no se adivinaría. Es el fallo seguro.
 
 
+### Ronda 5c: el script no era PowerShell válido (y los tests no podían verlo)
+
+**El bug.** La ronda 5b acertó la semántica y rompió la sintaxis. `BuildGetScript` armaba una plantilla
+(raw string de varias líneas) y la aplanaba con un `Replace` de los saltos de línea por espacios. Ese
+aplanado eliminó los separadores de sentencia. El script que llegaba a `powershell.exe -Command` era:
+
+```powershell
+$ErrorActionPreference='Stop' [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new() try { $t=@(...) if ($t.Count -eq 0) {...} [pscustomobject]@{...} | ConvertTo-Json ... } catch { ... }
+```
+
+Cuatro fronteras sin separador: `'Stop' [Console]`, `) if (`, `} [pscustomobject]`, `true} | Convert`.
+No es PowerShell válido, así que **cualquier** tarea del catálogo habría fallado con
+`ProcessFailedException` — y con el mensaje "no se pudo consultar", no "no existe".
+
+**Por qué ningún test lo vio.** Los 9 tests de la ronda 5b inyectan un `IProcessRunner` falso: prueban
+qué hace el código con una salida dada, no que el script sea ejecutable. El script nunca se parseó ni se
+ejecutó.
+
+**Causa raíz, archivo:línea.** `src/FragForge.Actions/Tasks/WindowsScheduledTaskStore.cs`,
+`BuildGetScript`: construía un script concatenando líneas y luego lo "reflowaba" con `Replace`. Tratar un
+script como texto con formato es el error de fondo: los saltos de línea **son** separadores en
+PowerShell.
+
+**Qué cambió.** El script se compone como `List<string>` de sentencias y se unen con `string.Join(' ',
+…)`. Los separadores son explícitos, uno por sentencia, y no dependen de ningún reformateo posterior:
+
+| Frontera | Separador | Por qué |
+|---|---|---|
+| `$ErrorActionPreference='Stop'` → `[Console]::…` | `;` | Asignación seguida de sentencia en la misma línea |
+| `[Console]::OutputEncoding=…` → `try {` | `;` | Idem; el cuerpo del `try` ya va tras `{` |
+| `$t=@(… -ErrorAction Stop)` → `if (…)` | `;` | El `)` de `@(...)` **no** cierra sentencia |
+| `if (…) { … exit 3 }` → `[pscustomobject]…` | `;` | El `}` de un bloque no basta en la misma línea |
+| `}` → `catch {` / `}` → `else` | **ninguno** | Un `;` ahí rompería la construcción |
+
+Se conserva el contrato completo de 5b: `-ErrorAction Stop`, `try/catch`, `{"exists":false}` **solo** con
+`$_.CategoryInfo.Category -eq 'ObjectNotFound'`, cualquier otro fallo ⇒ stderr + `exit 2`, 0 resultados sin
+excepción ⇒ stderr + `exit 3`, y el saneado de `Literal()` (dobla comillas simples, rechaza caracteres de
+control y el marcador `__TASK`).
+
+**Tests nuevos — `tests/FragForge.Tests/Core/ScheduledTaskScriptParsesTests.cs`:**
+
+| Test | Qué prueba | Línea |
+|---|---|---|
+| `GeneratedScript_ParsesWithTheRealPowerShellParser` | **Parseo REAL** del script generado con `[System.Management.Automation.Language.Parser]::ParseInput`. Es el test que habría atrapado el bug. | `:57` |
+| `EveryGeneratedScript_Parses` | Lo mismo, también con una ruta hostil (`O'Brien`). | `:96` |
+| `Script_HasNoLineBreaksAndKeepsTheContract` | Contrato portable: sin `\n`/`\r`, con `-ErrorAction Stop`, sin `SilentlyContinue`, con `ObjectNotFound`. | `:126` |
+| `Script_HasExplicitStatementSeparators` | Fija `'Stop';`, `-ErrorAction Stop);`, `exit 3 };`, `} catch {`, y que **no** reaparezca `'Stop' [Console]`. | `:142` |
+| `MissingTask_RealPowerShell_ReturnsExistsFalse_WithoutThrowing` | **Ejecución REAL** (solo lectura) con `ProcessRunner` real sobre `\FragForgeNoExiste\Tarea` ⇒ `Exists == false` sin excepción. | `:186` |
+
+`ProcessRequest` **no** tiene variables de entorno (`src/FragForge.Core/Abstractions/IProcessRunner.cs:7-14`:
+`FileName`, `Arguments`, `WorkingDirectory`, `StandardInput`, `Timeout`), así que el script va por archivo
+temporal y se lee con `Get-Content -Raw`; se borra en `finally`.
+
+**No verificado.** El entorno del agente es Linux, sin `dotnet` y sin PowerShell: **los dos tests reales no
+se han ejecutado**. Son la sonda pendiente. Tampoco se ejecutó el test de parseo sobre el script viejo para
+verlo fallar (red-first): se comprobó a mano, con una simulación del `Replace`, que producía las cuatro
+fronteras rotas.
+
+
 ### Auditoría de identificadores externos (ronda 5b)
 
 Sin compilador, la alternativa fue citar la definición real de **cada** identificador externo que usan

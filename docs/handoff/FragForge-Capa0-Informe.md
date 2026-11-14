@@ -11,6 +11,8 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 0. **[Hotfix PARTE B / ronda 3](#hotfix-parte-b-ronda-3--los-4-tests-que-fallaban-en-la-pc-real-y-el-aviso-de-red)** — los 4 tests rojos, el aviso de `MSFT_NetAdapter` y los warnings
 0. **[Ronda 4: combos](#ronda-4-combos)** — texto oscuro sobre el cromo claro; qué se cambió y qué queda sin verificar
 0. **[Ronda 5](#ronda-5-el-dry-run-se-cortaba-si-una-tarea-del-catálogo-no-existe)** — objeto inexistente = No aplicable, no error de lote
+0. **[Ronda 5c](#ronda-5c--el-script-de-la-tarea-no-era-powershell-válido)** — el script aplanado no era PowerShell válido; parseo real
+0. **[Ronda 6](#ronda-6--el-texto-del-contador-no-se-refrescaba-al-cambiar-de-perfil)** — el contador de la barra de estado se quedaba en el perfil anterior
 0. [Briefing compacto para otra sesión de Claude](#0-briefing-compacto-para-otra-sesión-de-claude-copiarpegar)
 1. [Arquitectura y decisiones](#1-arquitectura-y-decisiones)
 2. [Árbol de carpetas](#2-árbol-de-carpetas)
@@ -430,6 +432,85 @@ confirma con una sonda que corre el usuario** (el comando está en el informe de
 
 **No verificado:** sin `dotnet` no se compiló ni se ejecutó; solo tree-sitter (que no es compilar). No
 se sabe si faltan más tareas del catálogo en esa PC: solo `Appraiser` está medido.
+
+## Ronda 5c — el script de la tarea no era PowerShell válido
+
+La ronda 5b arregló la *semántica*
+(`-ErrorAction Stop` + categoría `ObjectNotFound`) pero dejó el script **sintácticamente roto**. El
+código armaba una plantilla de varias líneas y la "aplanaba" con un `Replace` de saltos de línea por
+espacios. Ese aplanado se comió los separadores de sentencia, y el script que llegaba a `-Command` era:
+
+```powershell
+$ErrorActionPreference='Stop' [Console]::OutputEncoding=... ) if ($t.Count -eq 0) {...} } [pscustomobject]@{...}
+```
+
+Cuatro fronteras sin separador (`'Stop' [Console]`, `) if (`, `} [pscustomobject]`, `true} | Convert`).
+Con ese script **toda** tarea programada habría fallado con `ProcessFailedException`. No lo vio ningún
+test porque el runner era falso: **el script nunca se parseó**.
+
+*Causa raíz* (`src/FragForge.Actions/Tasks/WindowsScheduledTaskStore.cs`, `BuildGetScript`): tratar un
+script como texto para reflow, en vez de como una lista de sentencias.
+
+*Qué cambió:* el script se compone como `List<string>` de sentencias unidas con **un espacio**, y cada
+sentencia lleva su separador donde hace falta: `;` tras las asignaciones, `;` tras el `)` de `@(...)`,
+`;` tras el `}` que cierra el `if` de "0 resultados", y **sin** `;` entre `}` y `catch`/`else`. Se
+mantiene todo el contrato de 5b (`-ErrorAction Stop`, `try/catch`, `exists:false` **solo** con
+`CategoryInfo.Category -eq 'ObjectNotFound'`, otro fallo ⇒ stderr + `exit 2`, 0 resultados sin excepción
+⇒ stderr + `exit 3`, saneado de comillas).
+
+*Qué se añadió para que no vuelva a pasar:* un test de **parseo real** que pasa el script generado por
+`[System.Management.Automation.Language.Parser]::ParseInput`, y un test de **ejecución real** que
+consulta una tarea inexistente (`\FragForgeNoExiste\Tarea`) con el `ProcessRunner` real y exige
+`Exists == false` sin excepción. Como `ProcessRequest` no tiene variables de entorno
+(`IProcessRunner.cs:7-14`), el script va por archivo temporal y se lee con `Get-Content -Raw`.
+
+**No verificado:** no hay Windows ni PowerShell en el entorno del agente, así que **los dos tests reales
+no se han ejecutado**. Quedan como la sonda que corre el usuario.
+
+## Ronda 6 — el texto del contador no se refrescaba al cambiar de perfil
+
+Medido en la PC real: pasar de
+`Safe` a `Balanced`/`Competitive`/`Advanced` cambiaba la tabla (7/9/12 filas) pero el texto seguía
+diciendo "Mostrando 3 de 30 tweaks en el perfil Safe.". Cambiar el idioma sí lo refrescaba.
+
+*Traza.* La hipótesis era que la propiedad solo se notificaba al cambiar de idioma. **No era eso**: en
+`src/FragForge.App/ViewModels/MainViewModel.cs`, `RebuildTweaks` ya hacía
+`OnPropertyChanged(nameof(TweakCountText))` (línea 209 en el código con el bug; 222 tras el arreglo) y el
+`TextBlock` de la ventana está enlazado a `TweakCountText` (`MainWindow.xaml:21`). El texto que se quedaba clavado era el de **otra
+copia**: `ScanAsync` (`MainViewModel.cs:112` en el código con el bug; 125 tras el arreglo) formaba el
+mensaje de la barra de estado interpolando el contador **una sola vez**:
+
+```csharp
+StatusMessage = $"Escaneo completado: {scan.Tweaks.Count} evaluados; {TweakCountText}";
+```
+
+Eso es texto ya formado: guarda una copia congelada de "perfil Safe". El cambio de perfil reconstruía la
+lista y notificaba el contador, pero no volvía a formar ese mensaje. El idioma sí funcionaba porque
+`ChangeCultureAsync` (`MainViewModel.cs:220` en el código con el bug; 245 tras el arreglo) **sobrescribe**
+`StatusMessage` con el texto `ready`
+traducido — no porque refrescara el contador.
+
+*Qué cambió* (mínimo, sin tocar combos, XAML, catálogo ni firmas): `RebuildTweaks` recuerda el conteo y
+el texto del último mensaje de escaneo, y **rehace ese mensaje** con el perfil actual. Solo lo hace si el
+mensaje actual sigue siendo exactamente el del escaneo (igualdad ordinal): no pisa "Aplicación
+completada. Snapshot: …", un error, "Listo" ni el resultado de aplicar.
+
+*Dónde vive la regla:* en funciones **puras** de Core, para poder probarlas sin WPF (los tests son
+`net10.0` y no pueden referenciar la App):
+`src/FragForge.Core/Localization/TweakCountFormatter.cs` (`Format(perfil, mostrados, total)`) y
+`src/FragForge.Core/Localization/ScanStatusText.cs` (`Format` e `IsStillTheScanMessage`).
+`MainViewModel.TweakCountText` delega en el formateador; la salida es idéntica a la de antes.
+
+*Tests* (`tests/FragForge.Tests/Core/TweakCountTextTests.cs`): el texto cambia con el perfil y no depende
+de la cultura; conteo negativo ⇒ `ArgumentOutOfRangeException`; el mensaje de escaneo se reconoce solo
+mientras está intacto; **flujo del bug de punta a punta** (escanear en Safe, pasar a Balanced ⇒ "perfil
+Balanced" y "7 de 30", sin "perfil Safe"); **control negativo** (si el mensaje ya no es el del escaneo, no
+se reescribe); y con el **catálogo real** (R-N, solo relaciones) el conteo no decrece
+`Safe ≤ Balanced ≤ Competitive ≤ Advanced` y `Safe < Advanced`.
+
+**No verificado:** sin WPF en el entorno del agente **no se ha visto la UI ni ejecutado el test**; no se
+comprobó que el usuario vea el texto en la barra de estado y no en otro sitio, ni que el refresco no
+parpadee. Esa es la sonda pendiente.
 
 ---
 
