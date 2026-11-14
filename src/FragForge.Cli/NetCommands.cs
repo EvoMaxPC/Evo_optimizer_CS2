@@ -29,30 +29,24 @@ public static class NetCommands
             throw new ArgumentException($"net requiere un verbo de la lista cerrada: {string.Join(" | ", Verbs)}.");
 
         // Misma guarda que usan los demás comandos de medición del CLI (mouse-test): se pregunta por la
-        // plataforma en el comando, en vez de marcar la clase entera como Windows-only.
-        if (!OperatingSystem.IsWindows())
-        {
-            Console.Error.WriteLine("net requiere Windows (MSFT_NetAdapter y la clase de red del registro).");
-            return ExitCodes.MeasurementInvalid;
-        }
+        // plataforma en el comando, en vez de marcar la clase entera como Windows-only. Atajo temprano: el
+        // mensaje y el codigo de salida son los de NotWindows().
+        if (!OperatingSystem.IsWindows()) return NotWindows();
 
-        var ping = services.GetService<IPingProbe>() ?? new SystemPingProbe();
-        // El lector de propiedades se pasa para poder informar del estado EEE actual (5.5). Es opcional en el
-        // ctor del probe: si faltara, el diagnóstico sigue funcionando y EEE sale NA.
-        var probe = new NetworkProbe(
-            services.GetRequiredService<Core.Abstractions.INetworkAdapterResolver>(),
-            ping,
-            services.GetService<NetworkAdvancedPropertyReader>());
-
+        // CA1416: NetworkProbe esta marcada Windows-only. El analizador NO ve una guarda que este en OTRO
+        // metodo, asi que DiagnoseAsync/ProbeAsync comprueban la plataforma ellos mismos antes de construirlo,
+        // igual que hace FootprintAsync (InventoryCommands.cs:195).
         return verb switch
         {
-            "diagnose" => await DiagnoseAsync(probe, parsed, cancellationToken),
-            _ => await ProbeAsync(probe, parsed, cancellationToken)
+            "diagnose" => await DiagnoseAsync(services, parsed, cancellationToken),
+            _ => await ProbeAsync(services, parsed, cancellationToken)
         };
     }
 
-    private static async Task<int> DiagnoseAsync(NetworkProbe probe, ParsedArgs parsed, CancellationToken cancellationToken)
+    private static async Task<int> DiagnoseAsync(IServiceProvider services, ParsedArgs parsed, CancellationToken cancellationToken)
     {
+        if (!OperatingSystem.IsWindows()) return NotWindows();
+        var probe = CreateProbe(services);
         var diagnosis = await probe.DiagnoseAdapterAsync(cancellationToken);
         if (parsed.Has("json"))
         {
@@ -85,8 +79,10 @@ public static class NetCommands
         return ExitCodes.Success;
     }
 
-    private static async Task<int> ProbeAsync(NetworkProbe probe, ParsedArgs parsed, CancellationToken cancellationToken)
+    private static async Task<int> ProbeAsync(IServiceProvider services, ParsedArgs parsed, CancellationToken cancellationToken)
     {
+        if (!OperatingSystem.IsWindows()) return NotWindows();
+        var probe = CreateProbe(services);
         var host = parsed.Value("host");
         if (string.IsNullOrWhiteSpace(host))
         {
@@ -97,6 +93,7 @@ public static class NetCommands
         var count = ParseCount(parsed.Value("count"));
         if (count is null)
         {
+            // MaxCount es Windows-only: aqui ya se paso la guarda de arriba, mismo metodo.
             Console.Error.WriteLine($"--count debe ser un entero entre 1 y {NetworkProbe.MaxCount}.");
             return ExitCodes.Usage;
         }
@@ -126,8 +123,34 @@ public static class NetCommands
         return ExitCodes.Success;
     }
 
+    /// <summary>
+    /// Construye el probe. Solo se llama DESPUES de comprobar la plataforma, en el mismo metodo que lo usa,
+    /// para que CA1416 lo vea. Centralizado para no repetir las tres dependencias en dos sitios.
+    /// </summary>
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static NetworkProbe CreateProbe(IServiceProvider services)
+    {
+        var ping = services.GetService<IPingProbe>() ?? new SystemPingProbe();
+        // El lector de propiedades es opcional en el ctor del probe: si falta, el diagnostico sigue
+        // funcionando y EEE sale NA.
+        return new NetworkProbe(
+            services.GetRequiredService<Core.Abstractions.INetworkAdapterResolver>(),
+            ping,
+            services.GetService<NetworkAdvancedPropertyReader>());
+    }
+
+    /// <summary>Mismo mensaje y mismo codigo de salida que la guarda de RunAsync, sin duplicar el texto.</summary>
+    private static int NotWindows()
+    {
+        Console.Error.WriteLine("net requiere Windows (MSFT_NetAdapter y la clase de red del registro).");
+        return ExitCodes.MeasurementInvalid;
+    }
+
     private static int? ParseCount(string? raw)
     {
+        // NetworkProbe.DefaultCount y NetworkProbe.MaxCount son Windows-only por estar en la clase marcada:
+        // la guarda va AQUI, en el mismo metodo, o CA1416 no la ve.
+        if (!OperatingSystem.IsWindows()) return null;
         if (string.IsNullOrWhiteSpace(raw)) return NetworkProbe.DefaultCount;
         if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)) return null;
         return value is >= 1 and <= NetworkProbe.MaxCount ? value : null;
