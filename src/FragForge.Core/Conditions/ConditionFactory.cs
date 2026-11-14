@@ -60,9 +60,30 @@ internal sealed class WindowsCondition(WindowsParameters p) : ITweakCondition
     {
         if (profile.IsUnsupportedPlatform || profile.Os.Build == 0) return ConditionResult.Unknown("No se detectó una build de Windows.");
         if (profile.Os.Build < p.MinBuild || profile.Os.Build > p.MaxBuild) return ConditionResult.Unmet($"Build {profile.Os.Build}; rango compatible {p.MinBuild}–{p.MaxBuild}.");
-        if (!string.Equals(profile.Os.Architecture, p.Architecture, StringComparison.OrdinalIgnoreCase)) return ConditionResult.Unmet($"Arquitectura {profile.Os.Architecture}; se requiere {p.Architecture}.");
+
+        // Arquitectura: se compara por VALOR DE ENUM, nunca por texto localizado de WMI.
+        // Hotfix Capa 0: OSArchitecture devuelve "64 bits" en es-MX y "X64"!= "64 bits" marcaba
+        // como No aplicable TODO el catálogo en un equipo x64.
+        var detected = ArchitectureInterpreter.Parse(profile.Os.Architecture);
+        if (detected == OsArchitectureKind.Unknown)
+            return ConditionResult.Unknown($"arquitectura desconocida (valor '{profile.Os.Architecture}'); se requiere {p.Architecture}.");
+
+        if (!DetectedMatches(detected, p.Architecture))
+            return ConditionResult.Unmet($"Arquitectura {ArchitectureInterpreter.ToWireValue(detected)}; se requiere {p.Architecture}.");
+
         if (p.Edition is not null && !profile.Os.Edition.Contains(p.Edition, StringComparison.OrdinalIgnoreCase)) return ConditionResult.Unmet($"Edición {profile.Os.Edition}; se requiere {p.Edition}.");
-        return ConditionResult.Met($"Windows build {profile.Os.Build} {profile.Os.Edition} {profile.Os.Architecture}.");
+        return ConditionResult.Met($"Windows build {profile.Os.Build} {profile.Os.Edition} {ArchitectureInterpreter.ToWireValue(detected)}.");
+    }
+
+    /// <summary>
+    /// ¿La arquitectura detectada satisface el requisito del catálogo? El requisito llega como texto
+    /// ("X64"); se interpreta con las MISMAS reglas que el valor detectado. Un requisito no
+    /// reconocido no puede satisfacerse (R-L: no se adivina).
+    /// </summary>
+    private static bool DetectedMatches(OsArchitectureKind detected, string required)
+    {
+        var requiredKind = ArchitectureInterpreter.Parse(required);
+        return requiredKind != OsArchitectureKind.Unknown && requiredKind == detected;
     }
 }
 internal sealed class HybridCpuCondition(ExpectedBoolParameters p) : ITweakCondition

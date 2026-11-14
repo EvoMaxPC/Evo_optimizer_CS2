@@ -96,8 +96,9 @@ public sealed class TweakEngine(
                 var condition = EvaluateConditions(definition, hardware);
                 if (!condition.IsMet)
                 {
+                    // Mismo criterio que en el scan: condición desconocida != condición incumplida.
                     skipped.Add(definition.Id);
-                    results.Add(Skipped(definition.Id, TweakState.NotApplicable, condition.Reason));
+                    results.Add(Skipped(definition.Id, condition.IsKnown ? TweakState.NotApplicable : TweakState.Unknown, condition.Reason));
                     continue;
                 }
                 if (!options.DryRun) ProfileSelector.EnsureRiskAccepted(definition, options);
@@ -327,7 +328,14 @@ public sealed class TweakEngine(
     private async Task<TweakStatus> EvaluateAsync(TweakDefinition definition, HardwareProfile hardware, IReadOnlySet<string> owned, CancellationToken cancellationToken)
     {
         var condition = EvaluateConditions(definition, hardware);
-        if (!condition.IsMet) return new(definition.Id, TweakState.NotApplicable, condition.Reason, [], []);
+        if (!condition.IsMet)
+        {
+            // R-L: una condición DESCONOCIDA no es lo mismo que una condición incumplida. Se
+            // distingue en el estado para no afirmar "No aplicable" sobre algo que no se pudo medir
+            // (hotfix Capa 0: con "arquitectura desconocida" todo el catálogo salía No aplicable).
+            var state = condition.IsKnown ? TweakState.NotApplicable : TweakState.Unknown;
+            return new(definition.Id, state, condition.Reason, [], []);
+        }
         try
         {
             var context = CreateContext("scan", hardware, null, hardware.InteractiveUserSid, false);
