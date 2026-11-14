@@ -1,4 +1,5 @@
 using FragForge.Actions.DependencyInjection;
+using FragForge.Actions.Measurement;
 using FragForge.Actions.Files;
 using FragForge.Actions.Network;
 using FragForge.Actions.Platform;
@@ -7,6 +8,7 @@ using FragForge.Actions.Tasks;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Conditions;
 using FragForge.Core.Engine;
+using FragForge.Core.Experiments;
 using FragForge.Core.Localization;
 using FragForge.Core.Logging;
 using FragForge.Core.Persistence;
@@ -75,7 +77,6 @@ public static class CompositionRoot
             builder.Services.AddSingleton<IHardwareProfiler, UnsupportedHardwareProfiler>();
         }
         builder.Services.AddFragForgeActions();
-        builder.Services.AddSingleton<IProtectionPolicy>(policy);
         builder.Services.AddSingleton<ITweakConditionFactory, ConditionFactory>();
         builder.Services.AddSingleton<JsonSchemaValidator>(_ => new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()));
         builder.Services.AddSingleton<TweakCatalogValidator>();
@@ -85,9 +86,9 @@ public static class CompositionRoot
         builder.Services.AddSingleton<IJournal, FileJournal>();
         builder.Services.AddSingleton<IExecutionGate, FileExecutionGate>();
         builder.Services.AddSingleton<IPreflightService, PreflightService>();
-        builder.Services.AddSingleton<IEnumerable<IExperimentHook>>([]);
         builder.Services.AddSingleton<ITweakEngine, TweakEngine>();
         builder.Services.AddSingleton<IReportService, ReportService>();
+        builder.Services.AddLayer1Diagnostics();
         options.ConfigureServices?.Invoke(builder.Services);
         return builder.Build();
     }
