@@ -1,0 +1,119 @@
+using FragForge.Core.Cs2Profile;
+using Xunit;
+
+namespace FragForge.Tests.Cs2Profile;
+
+public sealed class Cs2ProfileSerializerTests
+{
+    private static readonly Cs2OptionCatalog Catalog = Cs2OptionCatalog.LoadEmbedded();
+    private static readonly DateTimeOffset FixedDate = new(2026, 11, 13, 9, 30, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void RoundTrip_ExportImportRegenerate_IsIdentical()
+    {
+        var original = new Cs2ProfilePreferences
+        {
+            Objective = Cs2ProfileObjective.FrametimeEstable,
+            FpsCap = FpsCap.DerivedFromRefresh(0.5),
+            MeasuredRefreshHz = 165,
+            VSync = true,
+            SleepWhenUnfocused = false,
+            IncludeUnverified = true,
+            Options = [new SelectedOption { Id = "-novid" }, new SelectedOption { Id = "r_low_latency", Value = "1" }]
+        };
+
+        var json = Cs2ProfileSerializer.Serialize(original);
+        var imported = Cs2ProfileSerializer.Deserialize(json);
+        var regenerated = Cs2ProfileGenerator.Generate(imported, Catalog, FixedDate, "0.1.0");
+
+        // Ida y vuelta REAL: generar con el original y con el importado debe dar el mismo texto byte a byte.
+        var first = Cs2ProfileGenerator.Generate(original, Catalog, FixedDate, "0.1.0");
+        Assert.Equal(first.CfgText, regenerated.CfgText);
+        Assert.Equal(first.LaunchOptions, regenerated.LaunchOptions);
+        Assert.Equal(original, imported);
+    }
+
+    [Fact]
+    public void Json_UsesEnumMemberNames_NotNumbers()
+    {
+        var json = Cs2ProfileSerializer.Serialize(new Cs2ProfilePreferences
+        {
+            Objective = Cs2ProfileObjective.LatenciaMinima,
+            FpsCap = FpsCap.DerivedFromRefresh(1.0),
+            MeasuredRefreshHz = 144
+        });
+
+        // R-N: los enums viajan por NOMBRE. Un número rompería la lectura del perfil a mano.
+        Assert.Contains("\"Objective\": \"LatenciaMinima\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"Mode\": \"DerivadoDelRefresco\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"Objective\": 0", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EmptyJson_IsRejectedWithAClearMessage()
+    {
+        Assert.Contains("vacío", Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize("")).Message, StringComparison.Ordinal);
+        Assert.Contains("vacío", Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize("   ")).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WrongVersion_IsRejected_NotSilentlyUpgraded()
+    {
+        const string json = """{ "FormatVersion": 99 }""";
+
+        var error = Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize(json));
+        Assert.Contains("Versión de perfil 99", error.Message, StringComparison.Ordinal);
+        Assert.Contains("no soportada", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnknownField_IsRejected_StrictProfile()
+    {
+        const string json = """{ "FormatVersion": 1, "CampoQueNoExiste": 1 }""";
+
+        var error = Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize(json));
+        Assert.Contains("no es un perfil de FragForge válido", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FixedCapWithoutValue_IsRejected()
+    {
+        const string json = """{ "FormatVersion": 1, "FpsCap": { "Mode": "Fijo", "FixedFps": null } }""";
+
+        Assert.Contains("no tiene un valor mayor que 0",
+            Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize(json)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DuplicateOption_IsRejected()
+    {
+        const string json = """
+        { "FormatVersion": 1, "Options": [ { "Id": "fps_max", "Value": "60" }, { "Id": "FPS_MAX", "Value": "120" } ] }
+        """;
+
+        Assert.Contains("aparece más de una vez",
+            Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize(json)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NegativeRefresh_IsRejected_BecauseNullIsTheWayToSayUnknown()
+    {
+        const string json = """{ "FormatVersion": 1, "MeasuredRefreshHz": -1 }""";
+
+        Assert.Contains("mayor que 0", Assert.Throws<Cs2ProfileImportException>(() => Cs2ProfileSerializer.Deserialize(json)).Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Defaults_AreApplied_WhenFieldsAreMissing_Additive()
+    {
+        // Un perfil mínimo solo con la versión: todo lo demás toma su valor por defecto (campos aditivos).
+        var imported = Cs2ProfileSerializer.Deserialize("""{ "FormatVersion": 1 }""");
+
+        Assert.Equal(Cs2ProfileObjective.Equilibrado, imported.Objective);
+        Assert.Equal(FpsCapMode.SinTope, imported.FpsCap.Mode);
+        Assert.False(imported.IncludeUnverified);
+        Assert.Null(imported.VSync);
+        Assert.Null(imported.MeasuredRefreshHz);
+        Assert.Empty(imported.Options);
+    }
+}
