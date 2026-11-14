@@ -7,6 +7,7 @@
 Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y están versionados (122 archivos versionados).
 
 ## Índice
+0. **[Hotfix de la PARTE A (posterior a esta entrega)](#hotfix-parte-a--correcciones-sobre-la-pc-real)** — qué se rompía en la PC real y qué se cambió
 0. [Briefing compacto para otra sesión de Claude](#0-briefing-compacto-para-otra-sesión-de-claude-copiarpegar)
 1. [Arquitectura y decisiones](#1-arquitectura-y-decisiones)
 2. [Árbol de carpetas](#2-árbol-de-carpetas)
@@ -15,6 +16,113 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 4. [Comandos exactos](#4-comandos-exactos-de-restorebuildtestpublish)
 5. [Supuestos y limitaciones](#5-supuestos-y-limitaciones-honestas-verificables)
 6. [Contrato para la Capa 1](#6-contrato-para-la-capa-1-medición-ab-y-diagnóstico-extendido)
+
+---
+
+## Hotfix PARTE A — correcciones sobre la PC real
+
+> **Qué es esta sección.** El informe de abajo es la entrega original de la Capa 0 (commit `a2c5429`)
+> y **no se reescribe**: describe el árbol de ese commit. Esta sección documenta encima los cambios
+> posteriores, hechos tras ejecutar `dotnet run` de la App WPF en la PC objetivo (Windows 11 Pro
+> 26200, es-MX, elevada). Nada de este hotfix se verificó ejecutando código: **no hay `dotnet` en el
+> entorno de trabajo**, así que lo compila y lo prueba el usuario.
+
+### Síntomas observados
+
+| # | Síntoma | Causa real |
+|---|---|---|
+| 1 | Los 3 tweaks de perfil Safe salían **"No aplicable"** con motivo *"Arquitectura 64 bits; se requiere X64."* en un equipo x64 | `Win32_OperatingSystem.OSArchitecture` devuelve **texto localizado** ("64 bits" en es-MX) y se comparaba contra el literal `"X64"` del catálogo |
+| 2 | `TPM=NotPresent` + aviso *"Win32_Tpm: Espacio de nombres no válido"* | Namespace **inexistente** (`root\Microsoft\Windows\TPM`) y, además, la excepción se convertía en lista vacía ⇒ `NotPresent` |
+| 3 | Aviso *"MSFT_NetAdapter: Consulta no válida"* | El namespace **ya era correcto**; lo que fallaba era pedir 9 propiedades de golpe: una inexistente tumba la consulta entera |
+| 4 | Combos "Perfil" e "Idioma" sin selección; contador decía 30 y la tabla mostraba 3 | El valor por defecto del idioma podía no existir en la lista; el contador contaba el catálogo, no lo filtrado. **Los 3 de 30 no eran un bug**: es el filtro por perfil (`Safe=3`, `Balanced=7`, `Competitive=9`, `Advanced=12`) |
+| 5 | Encabezado de la tabla ilegible | No existía **ningún** estilo de `DataGridColumnHeader`: WPF usaba su chrome claro con el texto claro heredado |
+
+### Archivos tocados y qué cambió
+
+| Archivo | Cambio |
+|---|---|
+| `src/FragForge.Core/Models/ArchitectureInterpreter.cs` | **nuevo** — `OsArchitectureKind` (`Unknown/X86/Arm/X64/Arm64`); mapea el número de `Win32_Processor.Architecture` (0/5/9/12), `RuntimeInformation.OSArchitecture`, y `Parse` acepta el enum y el texto de WMI por compatibilidad |
+| `src/FragForge.Core/Conditions/ConditionFactory.cs` | `WindowsCondition.Evaluate` compara **por enum**; si no reconoce → `Unknown` con "arquitectura desconocida". El motivo nombra el valor de enum |
+| `src/FragForge.Core/Engine/TweakEngine.cs` | **cambio no pedido, ver abajo** — condición desconocida ⇒ `TweakState.Unknown`, no `NotApplicable` |
+| `src/FragForge.Actions/Platform/HardwareProfiler.cs` | pide `Architecture` (numérico) en `Win32_Processor` y deja de pedir `OSArchitecture`; `TpmScope = root\CIMV2\Security\MicrosoftTpm`; `QueryOrFail` que distingue **fallo** de **lista vacía**; `ResolveTpmState`; red en dos pasos (`ReadNetAdapterRowsAsync`) |
+| `src/FragForge.Core/Localization/CultureDefaults.cs` | **nuevo** — la cultura inicial siempre existe en la lista de opciones; `null` si no hay ninguna |
+| `src/FragForge.App/ViewModels/MainViewModel.cs` | `TweakCountText` ("Mostrando N de M tweaks en el perfil X"), `Profiles` como opciones con etiqueta, `SelectedProfileOption` por valor, cultura inicial desde `CultureDefaults` |
+| `src/FragForge.App/MainWindow.xaml` | combo de perfil por valor + contador visible |
+| `src/FragForge.App/App.xaml` | estilos de `DataGridColumnHeader` y `DataGridCell` acordes al tema oscuro |
+
+### El cambio NO pedido: `TweakEngine` y `TweakState.Unknown`
+
+**Qué se cambió.** En dos puntos de `src/FragForge.Core/Engine/TweakEngine.cs`:
+
+* **`EvaluateAsync`, línea 336** (scan):
+  ```csharp
+  var state = condition.IsKnown ? TweakState.NotApplicable : TweakState.Unknown;
+  return new(definition.Id, state, condition.Reason, [], []);
+  ```
+* **`ApplyCoreAsync`, línea 101** (apply):
+  ```csharp
+  results.Add(Skipped(definition.Id, condition.IsKnown ? TweakState.NotApplicable : TweakState.Unknown, condition.Reason));
+  ```
+
+**Por qué se hizo.** Es la otra mitad del bug de arquitectura. Al arreglar solo `ConditionFactory`, la
+condición ya devuelve `IsKnown = false` para una arquitectura irreconocible, pero el motor seguía
+convirtiendo *cualquier* `!IsMet` en **"No aplicable"**. Es decir: la UI habría seguido afirmando "esto
+no aplica en tu equipo" sobre algo que **no se pudo medir**. R-L dice Unknown antes que adivinar; si el
+estado mostrado dice "No aplicable", la app está adivinando. Sin este cambio, el arreglo de la Etapa 1
+queda a medias: se detecta bien y se comunica mal.
+
+**¿La UI lo trata bien?** Sí, verificado leyendo el código:
+
+* `TweakItemViewModel.Update` (`src/FragForge.App/ViewModels/TweakItemViewModel.cs:34`) resuelve el
+  texto con `localizer["state." + status.State]`. La clave **ya existe en los dos idiomas**:
+  `state.Unknown` = `"Desconocido"` (`es-MX.json:18`) y `"Unknown"` (`en-US.json:18`). No hay clave
+  faltante, no se muestra una clave cruda.
+* El campo `TweakState state` de ese ViewModel **ya arrancaba en `TweakState.Unknown`**
+  (`TweakItemViewModel.cs:20`), así que el estado no es nuevo para la UI.
+* No hay ningún `switch` exhaustivo sobre `TweakState` que pudiera quedarse sin rama.
+
+**¿El apply path lo trata bien?** Sí, y esto importa porque *empeora* deliberadamente un caso:
+
+* `ExperimentRunner.EnsureArmStateAsync` (`src/FragForge.Core/Experiments/ExperimentRunner.cs:199-200`)
+  acepta para el brazo base `NotApplied`, `NotApplicable` o `Inspected`, y para el candidato
+  `Applied`, `AppliedExternally` o `Inspected`. **`Unknown` no está en ninguna lista**, así que una
+  condición desconocida **invalida la medición** con "Estado inesperado tras preparar el brazo".
+* Eso es **intencional y correcto**: antes, con `NotApplicable`, el brazo base se daba por bueno y el
+  experimento seguía adelante sobre un estado que nadie había podido determinar. Un A/B montado sobre
+  un "no sé" produce números que parecen evidencia. Fallar cerrado es lo honesto.
+* El coste: un equipo con arquitectura irreconocible **no podrá correr experimentos** hasta que se
+  resuelva la arquitectura. Es el mismo criterio que ya aplica `CapabilityGate` a otras
+  precondiciones, y es preferible a un veredicto inventado.
+* `DriftService` (`src/FragForge.Core/Drift/DriftService.cs:77`) solo compara contra
+  `Applied`/`AppliedExternally`, así que `Unknown` cae en la rama de "deriva perdida" igual que antes;
+  no hay cambio de comportamiento ahí.
+
+**Por qué no se revierte.** Revertirlo dejaría el arreglo de la Etapa 1 a medias (detección correcta,
+mensaje incorrecto). Si se prefiere el comportamiento anterior, basta con cambiar las dos líneas
+citadas; quedan aisladas y comentadas precisamente para que se puedan discutir.
+
+### Lo que NO se verificó en la PARTE A
+
+1. **Nada se ejecutó.** Sin `dotnet` no hubo compilación ni un solo test corrido. El único chequeo
+   automático fue tree-sitter sobre los archivos tocados (sintaxis), que **no es compilar**.
+2. **Los combos vacíos no se reprodujeron en código.** El binding era correcto y había valor por
+   defecto. Lo corregido es la causa *posible* (valor inicial fuera de la lista) y el chrome claro.
+   **Si tras `dotnet run` siguen vacíos, la causa es otra** y hay que reportarlo.
+3. **La propiedad exacta de `MSFT_NetAdapter` que fallaba no se identificó.** La solución es
+   defensiva (pide solo las que el sistema acepta), no un diagnóstico.
+4. **No hay test de UI.** `FragForge.Tests` apunta a `net10.0` y la App a `net10.0-windows`: el
+   proyecto de tests no puede referenciar la App sin retargetear la suite. Se testea la lógica pura.
+5. **El chrome claro sigue afectando a `ComboBox`, `CheckBox` y `ScrollBar`** (sin plantilla propia).
+   Solo se arregló lo pedido: el encabezado de la tabla. Anotado en `docs/descartados.md`.
+
+### Tests añadidos por el hotfix
+
+| Archivo | Qué fija |
+|---|---|
+| `tests/FragForge.Tests/Core/ArchitectureHotfixTests.cs` | "64 bits" ⇒ Aplicable; `9` ⇒ Aplicable; `12` ⇒ no aplica y nombra `Arm64`; desconocido ⇒ `IsKnown=false` + "arquitectura desconocida"; 1/2/3/4/8/99/null no se pliegan a x64 |
+| `tests/FragForge.Tests/Core/TpmAndNetworkHotfixTests.cs` | consulta que **lanza** ⇒ `Unknown` (antes `NotPresent`); 0 instancias ⇒ `NotPresent`; 1 instancia ⇒ `Enabled`/`Disabled`; namespaces fijados; perfil completo sobrevive a fallos de TPM y red |
+| `tests/FragForge.Tests/Catalog/RealCatalogArchitectureTests.cs` | catálogo **real embebido** contra el perfil PN64 en memoria: 30 tweaks, 3 en Safe, los 3 Aplicables, `cpu.epp-performance` cumple su condición `windows` |
+| `tests/FragForge.Tests/Core/CultureDefaultsTests.cs` | la cultura inicial siempre existe en la lista de opciones |
 
 ---
 
