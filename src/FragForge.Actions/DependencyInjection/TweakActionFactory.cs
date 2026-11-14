@@ -51,8 +51,12 @@ public sealed class TweakActionFactory(IRegistry registry, IProtectionPolicy pol
     // Parametros descartados a proposito. Sin estas lineas, un CS9113 por cada uno: el compilador solo mira
     // si el parametro se LEE, y estos dos no intervienen en la construccion de ninguna accion (el porque,
     // en <remarks>). No se quitan del ctor porque forman parte de la firma que usan el contenedor y los tests.
-    private readonly IWmiQuery? _ = wmi;
-    private readonly INetworkAdapterController _ = network;
+    //
+    // Nombres propios y NO "_": en C# el descarte "_" solo se puede repetir en deconstrucciones, en "out _"
+    // y en "_ = expr" de asignacion. Como campo, dos declaraciones con el mismo nombre dan CS0102
+    // ("already contains a definition for '_'"), que es lo que paso al anadir el segundo.
+    private readonly IWmiQuery? _unusedWmi = wmi;
+    private readonly INetworkAdapterController _unusedNetwork = network;
     public IReadOnlySet<string> SupportedKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Registry", "IfeoPerfOptions", "Service", "ScheduledTask", "PowerPlan", "Bcdedit", "NetAdapterProperty", "FileEdit", "PowerShell", "InspectOnly" };
     public ITweakAction Create(ActionSpec specification)
     {
