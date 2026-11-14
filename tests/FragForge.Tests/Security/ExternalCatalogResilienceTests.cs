@@ -163,9 +163,13 @@ public sealed class ExternalCatalogResilienceTests
     }
 
     /// <summary>
-    /// C2: un externo NO puede declarar los campos que deciden comportamiento. Se rechaza (no se ignora),
-    /// con motivo, y sin llevarse por delante el resto del catálogo.
+    /// C2 + D4d: un externo NO puede declarar los campos que deciden comportamiento. Se rechaza por
+    /// PRESENCIA, con motivo, y sin llevarse por delante el resto del catálogo.
     /// </summary>
+    /// <remarks>
+    /// El valor del campo se pone distinto del default en cada caso, pero el rechazo NO depende de eso: hay
+    /// un caso explicito con el default (<see cref="DeclaringAReservedFieldIsRejectedEvenWithTheDefaultValue"/>).
+    /// </remarks>
     [Theory]
     [InlineData("sessionEligible", true)]
     [InlineData("restartsNetworkLink", true)]
@@ -187,6 +191,46 @@ public sealed class ExternalCatalogResilienceTests
         Assert.DoesNotContain(catalog.Definitions, d => d.Id == "ext.bruto");
         Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.bruto" && r.Reason.Contains(field, StringComparison.Ordinal));
         // Y el resto del catálogo carga: el rechazo es por ENTRADA, no global.
+        Assert.Contains(catalog.Definitions, d => d.Id == "ext.bueno");
+    }
+
+    /// <summary>
+    /// D4c: el nombre del archivo NO decide el origen. Antes bastaba llamarse "FragForge.Tweaks.Catalog.x.json"
+    /// para que el StartsWith lo diera por embebido y se saltara el rechazo. Ahora el origen se decide con los
+    /// recursos reales del ensamblado, que un archivo del usuario no puede imitar.
+    /// </summary>
+    [Fact]
+    public void AnExternalFileNamedLikeAnEmbeddedResource_IsStillExternal()
+    {
+        var loader = Loader();
+        var impostor = RegistryTweak("ext.impostor", @"HKLM\Software\FragForgeTests", "X");
+        var marcado = impostor.TrimEnd('}', ',', ' ', '\n', '\r') + ", \"sessionEligible\": true }";
+
+        // El nombre EXACTO con el prefijo que el StartsWith miraba.
+        var catalog = loader.LoadDocumentsResilient([("FragForge.Tweaks.Catalog.x.json", marcado)]);
+
+        Assert.DoesNotContain(catalog.Definitions, d => d.Id == "ext.impostor");
+        Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.impostor");
+    }
+
+    /// <summary>
+    /// D4d: se rechaza por PRESENCIA, no por valor. `sessionEligible: false` es el default y no cambia nada
+    /// en tiempo de ejecucion, pero el autor esta declarando una marca que no le toca: si se aceptara, la
+    /// regla dependeria de un valor que el autor puede poner a su gusto.
+    /// </summary>
+    [Fact]
+    public void DeclaringAReservedFieldIsRejectedEvenWithTheDefaultValue()
+    {
+        var loader = Loader();
+        var good = RegistryTweak("ext.bueno", @"HKLM\Software\FragForgeTests", "V");
+        var conDefault = RegistryTweak("ext.default", @"HKLM\Software\FragForgeTests", "Y");
+        var marcado = conDefault.TrimEnd('}', ',', ' ', '\n', '\r') + ", \"sessionEligible\": false }";
+
+        var catalog = loader.LoadDocumentsResilient([("default.json", marcado), ("bueno.json", good)]);
+
+        Assert.DoesNotContain(catalog.Definitions, d => d.Id == "ext.default");
+        Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.default" && r.Reason.Contains("sessionEligible", StringComparison.Ordinal));
+        // Y el valido del mismo lote sigue cargando: el rechazo es por entrada.
         Assert.Contains(catalog.Definitions, d => d.Id == "ext.bueno");
     }
 
