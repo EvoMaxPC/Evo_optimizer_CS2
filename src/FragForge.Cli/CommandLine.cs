@@ -11,8 +11,8 @@ public sealed class ParsedArgs
 }
 public static class CommandLineParser
 {
-    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply", "exclude-pauses" };
-    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count", "warmup-seconds" };
+    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply", "exclude-pauses", "include-unverified", "yes", "overwrite" };
+    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count", "warmup-seconds", "dest", "objective", "fps-cap" };
     /// <summary>
     /// Opciones que toman VARIOS valores seguidos (<c>--versus b1.csv b2.csv</c>). El parser las ACEPTA y las
     /// marca como presentes, pero NO consume ningún valor. Si estuvieran en <c>ValueOptions</c> se tomaría

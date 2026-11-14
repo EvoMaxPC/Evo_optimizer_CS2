@@ -131,6 +131,10 @@ public static class Program
                 case "maintenance":
                     return await MaintenanceCommands.RunAsync(host.Services, parsed);
                 case "cs2":
+                    // export/import/restore-autoexec (Ronda P) van por Cs2ProfileCommands; `inspect` sigue en
+                    // Cs2Commands. Se comprueba el verbo antes para no cambiar el comportamiento de inspect.
+                    if (parsed.Positionals.Count > 0 && Cs2ProfileCommands.Verbs.Contains(parsed.Positionals[0].ToLowerInvariant()))
+                        return await Cs2ProfileCommands.RunAsync(host.Services, parsed, cancellation.Token);
                     return await Cs2Commands.RunAsync(host.Services, parsed, cancellation.Token);
                 case "session":
                     return await SessionCommands.RunAsync(host.Services, parsed, cancellation.Token);
@@ -224,6 +228,13 @@ Mantenimiento (lista cerrada de verbos; requiere --confirm VERBO):
 
 Seguridad (solo lectura):
   fragforge security status [--json]
+
+  CS2 — perfil de arranque exportable (sin admin; no toca Steam salvo el cfg del juego):
+  fragforge cs2 inspect
+  fragforge cs2 export [--dest carpeta:<ruta>|juego-nuevo|juego-autoexec] [--objective ...]
+                       [--fps-cap sin-tope|N|refresco[:factor]] [--include-unverified] [--yes]
+  fragforge cs2 import <perfil.json>
+  fragforge cs2 restore-autoexec [--yes]
 
 Opciones globales: --data-root RUTA --culture es-MX|en-US
 Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico; 6 medición inválida.
