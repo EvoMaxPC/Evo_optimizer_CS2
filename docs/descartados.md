@@ -226,8 +226,7 @@ locator intacto.
 
 **Descartado.** La condición de la ronda era justificar que CS2 use la tarea `Tasks\Games` de MMCSS. **No se
 pudo justificar**: haría falta leer el estado de MMCSS en el equipo real mientras corre el juego, y este entorno
-no tiene Windows. Además CS2 gestiona sus propios hilos (`-threads`) y no depende de MMCSS para su hilo
-principal. Aplicarlo "porque hay un tweak famoso que lo hace" es folclore, y la ronda lo prohíbe sin fuente.
+no tiene Windows. Aplicarlo "porque hay un tweak famoso que lo hace" es folclore, y la ronda lo prohíbe sin fuente.
 
 Se reabriría si alguien midiera el reparto de CPU de `cs2.exe` con y sin la tarea `Games` en la misma escena.
 
@@ -409,7 +408,9 @@ proyecto no contempla—, y (b) un mecanismo de verificación post-reinicio que 
 la denylist y no existe acción de firmware. Tocar Secure Boot o el TPM no es un tweak de rendimiento, es
 bajar la postura de seguridad del equipo.
 
-## Journal "firmado" con clave
+## Journal firmado con clave (no implementado)
+
+> El journal es una **cadena SHA-256 tamper-evident, no firmado/autenticado**. El título de esta sección usa "firmado" para nombrar lo que se descartó, no lo que hay.
 
 **Descartado en esta ronda.** El journal es **tamper-evident** (cadena SHA-256 encadenada por
 `PreviousHash`), no **autenticado**: no hay clave, así que quien pueda escribir el archivo puede recalcular
@@ -477,3 +478,21 @@ que es exactamente el problema que la Capa 11.2 acaba de resolver.
 **Descartado.** El riesgo del desinstalador no era que Inno lo generara, sino qué hace al ejecutarse. Se
 resuelve en `CurUninstallStepChanged` (dos confirmaciones explícitas, en `usUninstall`, antes de borrar nada) y
 no reescribiendo el instalador.
+
+### Límite conocido: `Abort` en `CurUninstallStepChanged(usUninstall)` puede no cancelar
+
+`installer/FragForge.iss:148` usa `Abort` cuando el usuario responde que NO a «¿continuar con la
+desinstalación?». En Inno Setup, **`Abort` dentro de `CurUninstallStepChanged` no está documentado como
+cancelación fiable** del desinstalador: la cancelación de verdad se hace en eventos anteriores
+(`InitializeUninstall` / `CurUninstallStepChanged` con `usAppMutexCheck`, devolviendo `False` desde
+`InitializeUninstall`), no abortando a mitad del `usUninstall`, donde el desinstalador ya empezó a
+trabajar.
+
+**Consecuencia:** el usuario podría responder «NO» y que la desinstalación continuara de todos modos.
+Lo que sí protege en la práctica es que **los dos avisos se muestran antes de borrar nada**: el journal
+y las instantáneas viven en `%ProgramData%\FragForge` y el borrado de esa carpeta tiene su propia
+pregunta (`installer/FragForge.iss:154-160`). Pero «me preguntó y siguió» es peor que no preguntar.
+
+**No se toca el `.iss` en esta ronda** (la ronda 9 no incluye cambios del instalador). Queda para la
+ronda 10 mover la cancelación a `InitializeUninstall`, que es el punto donde `Abort` sí detiene el
+desinstalador, y comprobarlo ejecutando el desinstalador (aquí no hay Windows ni Inno Setup).

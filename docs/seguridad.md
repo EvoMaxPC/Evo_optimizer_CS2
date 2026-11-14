@@ -70,6 +70,18 @@ La amenaza más probable y la única que se puede atacar de verdad.
 - **Revert verificado**: cada acción tiene `VerifyRevertAsync`; si no coincide, el resultado es
   `RollbackFailed`, no "hecho".
 - **Journal encadenado**: cada entrada lleva el hash de la anterior. Verificar detecta una línea cambiada.
+- **Snapshot con hash de definición, pero NO obligatorio al leer.** El motor calcula
+  `DefinitionSha256` al capturar (`TweakEngine.cs:469`) y al revertir lo compara con la definición
+  guardada; si no coincide, no revierte (`TweakEngine.cs:656-660`). Ahora bien: un snapshot
+  **sin** ese campo —de una versión anterior— **se acepta** y se revierte igual, porque
+  `TweakEngine.cs:656` hace `if (string.IsNullOrWhiteSpace(...)) continue;`.
+  - *Consecuencia*: la integridad protege contra un snapshot manipulado **a partir de la versión que
+    empezó a escribir el hash**. Un snapshot viejo (o uno editado a mano para borrar el campo) se
+    revierte sin esa comprobación. Se acepta a propósito: rechazarlo rompería la recuperación de
+    datos históricos, que es justo cuando más falta hace (`TweakEngine.cs:648-649`).
+  - `DefinitionSha256` es `required` en C# (`Snapshot.cs:8`), pero eso solo obliga a quien construye
+    el objeto en código: un JSON que no trae el campo deserializa con `null` y pasa por la rama
+    `continue`. No confundir "required de compilación" con "obligatorio al leer".
 - **Perfil por defecto conservador**: lo agresivo es opt-in, por id y con confirmación escrita.
 
 ### B. El usuario aplica algo que no entiende
