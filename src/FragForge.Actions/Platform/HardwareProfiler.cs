@@ -41,7 +41,11 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new EngineProgress("hardware", null, 0, $"Consultando {className}."));
             try { return await wmi.QueryAsync(scope, className, properties, where, cancellationToken); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add($"{className}: {ex.Message}"); return []; }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                warnings.Add(DescribeQueryFailure(scope, className, properties, ex));
+                return [];
+            }
         }
 
         // Igual que Query, pero informando si la consulta FALLÓ. Necesario para no convertir una
@@ -53,7 +57,7 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             try { return (await wmi.QueryAsync(scope, className, properties, where, cancellationToken), false); }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                warnings.Add($"{className}: {ex.Message}");
+                warnings.Add(DescribeQueryFailure(scope, className, properties, ex));
                 return ([], true);
             }
         }
@@ -123,7 +127,22 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         // propiedades que trae cualquier build, y solo después las opcionales. Si el núcleo falla,
         // se degrada con aviso y el perfil sigue siendo válido (lista vacía + Unknown), sin romperlo.
         var adapterRows = await ReadNetAdapterRowsAsync(QueryOrFail);
-        var adapters = adapterRows.Select(r => new NetworkAdapterInfo { Name = WmiValues.String(r, "Name") ?? "Unknown", Description = WmiValues.String(r, "InterfaceDescription") ?? "Unknown", Kind = WmiValues.Int32(r, "MediaType") switch { 1 => NetworkKind.Ethernet, 2 => NetworkKind.WiFi, _ => (WmiValues.String(r, "InterfaceDescription") ?? "").Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase) ? NetworkKind.WiFi : NetworkKind.Ethernet }, DriverVersion = WmiValues.String(r, "DriverVersion"), DriverProvider = WmiValues.String(r, "DriverProvider"), LinkSpeedBitsPerSecond = WmiValues.UInt64(r, "LinkSpeed"), IsPhysical = WmiValues.Bool(r, "HardwareInterface") == true && WmiValues.Bool(r, "Virtual") != true, State = WmiValues.String(r, "State") ?? "Unknown" }).ToArray();
+        // Kind sale SOLO de NdisPhysicalMedium; si el valor no es uno de los documentados, Unknown.
+        // Antes se hacía un switch por MediaType (inexistente) y, como último recurso, se adivinaba
+        // Ethernet por defecto: convertir "no sé" en "Ethernet" es justo lo que R-L prohíbe.
+        var adapters = adapterRows.Select(r => new NetworkAdapterInfo
+        {
+            Name = WmiValues.String(r, "Name") ?? "Unknown",
+            Description = WmiValues.String(r, "InterfaceDescription") ?? "Unknown",
+            Kind = MapPhysicalMedium(WmiValues.Int32(r, "NdisPhysicalMedium")),
+            DriverVersion = WmiValues.String(r, "DriverVersionString"),
+            DriverProvider = WmiValues.String(r, "DriverProvider"),
+            // Speed es la velocidad negociada actual; ReceiveLinkSpeed/TransmitLinkSpeed son por
+            // dirección y pueden no estar presentes en enlaces dúplex. Se prefiere Speed.
+            LinkSpeedBitsPerSecond = WmiValues.UInt64(r, "Speed"),
+            IsPhysical = WmiValues.Bool(r, "HardwareInterface") == true && WmiValues.Bool(r, "Virtual") != true,
+            State = WmiValues.String(r, "State") ?? "Unknown"
+        }).ToArray();
         if (adapters.Length == 0)
         {
             var fallback = await Query(@"root\cimv2", "Win32_NetworkAdapter", ["Name", "NetConnectionID", "AdapterTypeId", "Speed", "PhysicalAdapter", "NetConnectionStatus"]);
@@ -149,6 +168,20 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         var interactiveSid = ResolveSid(interactiveName, processSid, warnings);
         return new HardwareProfile { MachineName = Environment.MachineName, InteractiveUserName = interactiveName, InteractiveUserSid = interactiveSid, ProcessUserSid = processSid, Os = os, Cpu = cpu, Memory = memory, Gpus = gpus, Disks = disks, NetworkAdapters = adapters, Monitors = monitors, Security = security, Power = power, FormFactor = form, Playbooks = playbooks, DeviceErrors = errors, Games = gameInfo, Maintenance = maintenance, Observations = observations, ProbeWarnings = warnings };
     }
+    /// <summary>
+    /// Texto del aviso cuando una consulta WMI falla.
+    ///
+    /// Nombra el SCOPE, la CLASE y las PROPIEDADES pedidas. Antes solo decía el mensaje de la
+    /// excepción ("Consulta no válida"), que no permite saber qué se intentó: con 9 propiedades de
+    /// golpe, cualquiera inexistente produce el mismo texto. Saber la lista es lo que permitió
+    /// encontrar que DriverVersion, MediaType y LinkSpeed no existen en MSFT_NetAdapter.
+    /// </summary>
+    public static string DescribeQueryFailure(string scope, string className, IReadOnlyList<string> properties, Exception exception)
+    {
+        var props = properties.Count == 0 ? "*" : string.Join(",", properties);
+        return $"{scope}:{className} ({props}): {exception.Message}";
+    }
+
     /// <summary>
     /// Arquitectura del SO a partir del valor NUMÉRICO de <c>Win32_Processor.Architecture</c>.
     ///
@@ -198,41 +231,66 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             : FeatureState.Disabled;
     }
 
-    /// <summary>Propiedades de <c>MSFT_NetAdapter</c> que existen en cualquier build soportada.</summary>
-    private static readonly string[] NetAdapterCoreProperties = ["Name", "InterfaceDescription"];
-
-    /// <summary>Propiedades opcionales: si no están, el adaptador queda con valores Unknown.</summary>
-    private static readonly string[] NetAdapterOptionalProperties = ["DriverVersion", "DriverProvider", "MediaType", "LinkSpeed", "State", "HardwareInterface", "Virtual"];
+    /// <summary>
+    /// Propiedades que se piden a <c>MSFT_NetAdapter</c>.
+    ///
+    /// VERIFICADO en la PC objetivo (root\StandardCimv2:MSFT_NetAdapter, 2 instancias): estas 8
+    /// existen y responden. Las tres que se pedían antes NO existen y hacían fallar la consulta con
+    /// <c>InvalidQuery</c> ("Consulta no válida"), que es lo que salía 3 veces en los avisos:
+    /// <list type="bullet">
+    /// <item><c>DriverVersion</c>   → no existe; la real es <c>DriverVersionString</c>.</item>
+    /// <item><c>MediaType</c>       → no existe; el concepto es <c>NdisPhysicalMedium</c>.</item>
+    /// <item><c>LinkSpeed</c>       → no existe; las reales son <c>Speed</c>, <c>ReceiveLinkSpeed</c>,
+    /// <c>TransmitLinkSpeed</c> (<c>MaxSpeed</c> en versiones más nuevas).</item>
+    /// </list>
+    /// El test <c>NetAdapterPropertiesTests</c> comprueba que TODA propiedad listada aquí pertenece a
+    /// la lista real de la clase, para que no vuelva a pedirse algo inventado.
+    /// </summary>
+    public static readonly string[] NetAdapterProperties =
+    [
+        "Name",
+        "InterfaceDescription",
+        "InterfaceGuid",
+        "DriverProvider",
+        "DriverVersionString",   // antes: DriverVersion (inexistente)
+        "State",
+        "NdisPhysicalMedium",    // antes: MediaType (inexistente)
+        "Speed",                 // antes: LinkSpeed (inexistente)
+        "HardwareInterface",
+        "Virtual"
+    ];
 
     /// <summary>
-    /// Lee <c>MSFT_NetAdapter</c> en dos pasos para que una propiedad inexistente no tumbe la consulta
-    /// entera (síntoma observado: "MSFT_NetAdapter: Consulta no válida" y cero adaptadores).
+    /// Mapea <c>NdisPhysicalMedium</c> a <see cref="NetworkKind"/>.
     ///
-    /// <list type="number">
-    /// <item>Núcleo (Name, InterfaceDescription). Si falla, se devuelve lista vacía y queda el aviso.</item>
-    /// <item>Opcionales, una a una y solo las que la consulta acepte. Las que fallen se omiten.</item>
-    /// </list>
-    /// Si el paso de opcionales falla por completo, se devuelven las filas del núcleo: se pierde detalle,
-    /// nunca la lista entera.
+    /// Solo los valores documentados en NDIS_PHYSICAL_MEDIUM:
+    /// <c>14 = NdisPhysicalMedium802_3</c> (Ethernet), <c>9 = NdisPhysicalMediumNative802_11</c> (Wi-Fi).
+    /// Cualquier otro valor (0 = Unspecified, 15 = 802.3, etc.) devuelve
+    /// <see cref="NetworkKind.Unknown"/>: R-L, no se adivina el tipo de medio.
+    ///
+    /// NO VERIFICADO en hardware real: el valor que devuelve esta clase en la I225-V y la AX210 no se
+    /// midió. El mapeo anterior (1 = Ethernet, 2 = Wi-Fi) era incorrecto además de ilegible: esos
+    /// números no corresponden a NDIS_PHYSICAL_MEDIUM.
+    /// </summary>
+    public static NetworkKind MapPhysicalMedium(int? ndisPhysicalMedium) => ndisPhysicalMedium switch
+    {
+        14 => NetworkKind.Ethernet,  // NdisPhysicalMedium802_3
+        9 => NetworkKind.WiFi,       // NdisPhysicalMediumNative802_11
+        _ => NetworkKind.Unknown
+    };
+
+    /// <summary>
+    /// Lee <c>MSFT_NetAdapter</c> con la lista verificada de propiedades.
+    ///
+    /// Ya no hace falta la consulta en dos pasos: las propiedades que se piden existen todas en la
+    /// clase (verificado en la PC objetivo). Aun así se mantiene el comportamiento defensivo: si la
+    /// consulta falla, lista vacía + aviso, sin romper el perfil.
     /// </summary>
     private static async Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> ReadNetAdapterRowsAsync(
         Func<string, string, string[], string?, Task<(IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows, bool Failed)>> queryOrFail)
     {
-        var (coreRows, coreFailed) = await queryOrFail(NetAdapterScope, NetAdapterClass, NetAdapterCoreProperties, null);
-        if (coreFailed) return [];
-        if (coreRows.Count == 0) return coreRows;
-
-        var extraProps = new List<string>(NetAdapterCoreProperties);
-        foreach (var property in NetAdapterOptionalProperties)
-        {
-            var (_, failed) = await queryOrFail(NetAdapterScope, NetAdapterClass, new[] { property }, null);
-            if (!failed) extraProps.Add(property);
-        }
-        if (extraProps.Count == NetAdapterCoreProperties.Length) return coreRows;
-
-        // Segunda pasada con todas las propiedades aceptadas. Si vuelve a fallar, se quedan las del núcleo.
-        var (rich, richFailed) = await queryOrFail(NetAdapterScope, NetAdapterClass, [.. extraProps], null);
-        return richFailed ? coreRows : rich;
+        var (rows, failed) = await queryOrFail(NetAdapterScope, NetAdapterClass, NetAdapterProperties, null);
+        return failed ? [] : rows;
     }
 
     private async Task<SecurityInfo> ReadSecurityAsync(Func<string, string, string[], string?, Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>>> query, Func<string, string, string[], string?, Task<(IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows, bool Failed)>> queryOrFail, CancellationToken cancellationToken)

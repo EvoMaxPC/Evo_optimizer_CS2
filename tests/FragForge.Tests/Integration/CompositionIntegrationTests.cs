@@ -58,7 +58,14 @@ public sealed class CompositionIntegrationTests
         Assert.Equal(catalog.Definitions.Count, scan.Tweaks.Count);
         if (!OperatingSystem.IsWindows()) Assert.True(scan.Hardware.IsUnsupportedPlatform);
         var report = await engine.ApplyAsync(scan.Tweaks.Select(t => t.Id), new ApplyOptions { DryRun = true, Profile = TweakProfile.Advanced, CreateRestorePoint = true, TargetUserSid = "S-1-5-21-1-2-3-1001" });
-        Assert.True(report.DryRun);
+        // Diagnóstico: DryRun=false aquí NO significa que el dry-run se haya ignorado, sino que
+        // ApplyAsync salió por el catch final (TweakEngine.cs:226-234), cuyo BatchReport no fija
+        // DryRun. Los Errors dicen por qué se cortó (p. ej. una lectura WMI que lanza).
+        Assert.True(
+            report.DryRun,
+            $"DryRun={report.DryRun}, Success={report.Success}, Cancelled={report.Cancelled}, " +
+            $"HasCriticalFailure={report.HasCriticalFailure}, Results={report.Results.Count}, " +
+            $"Errors=[{string.Join(" | ", report.Errors)}], Warnings=[{string.Join(" | ", report.Warnings)}]");
         Assert.Null(report.SnapshotId);
     }
 
