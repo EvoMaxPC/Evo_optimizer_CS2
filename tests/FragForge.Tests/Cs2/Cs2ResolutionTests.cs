@@ -100,9 +100,27 @@ public sealed class Cs2ResolutionTests : IDisposable
     [InlineData(@"C:/Steam", @"C:\Steam")]
     [InlineData(@"C:\\Steam\\\\Library", @"C:\Steam\Library")]
     [InlineData(@"C:\Program Files (x86)\Steam\", @"C:\Program Files (x86)\Steam")]
+    // Barras normales + dobles + final, todo a la vez.
+    [InlineData("C:/a//b/", @"C:\a\b")]
+    // Raiz de unidad: CONSERVA su barra. "C:" no es una carpeta, es la unidad.
+    [InlineData(@"C:\", @"C:\")]
+    // Raiz UNC: se queda en \\server\share y NO se reduce a \\server (que ya no seria el recurso).
+    [InlineData(@"\\server\share\", @"\\server\share")]
     public void NormalizeDirectory_CollapsesSeparators(string raw, string expected)
     {
         Assert.Equal(expected, SteamCs2Resolver.NormalizeDirectory(raw));
+    }
+
+    /// <summary>
+    /// Entradas sin ninguna carpeta utilizable: null, no "" ni la cadena original.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\"\"")]
+    public void NormalizeDirectory_WithNothingUsable_ReturnsNull(string raw)
+    {
+        Assert.Null(SteamCs2Resolver.NormalizeDirectory(raw));
     }
 
     // ---------------------------------------------------------------- resolucion real sobre disco temporal
