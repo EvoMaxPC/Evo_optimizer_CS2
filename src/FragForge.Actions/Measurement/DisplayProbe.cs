@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using FragForge.Core.Abstractions;
+using FragForge.Core.Experiments;
 using FragForge.Core.Models;
 
 namespace FragForge.Actions.Measurement;
