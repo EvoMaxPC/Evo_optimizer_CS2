@@ -36,6 +36,37 @@ public sealed class Cs2OptionCatalogTests
     }
 
     [Fact]
+    public void SleepSemantics_IsNotPresentedAsVerified_ButTheObservedValueIsKept()
+    {
+        // El catálogo no tiene NINGUNA fuente citable (cero URLs), así que la semántica de
+        // engine_no_focus_sleep no puede afirmarse como hecho. Este test FIJA que se diga claramente que no
+        // está verificada, en los dos idiomas y en el source, y que no se pierda lo único observado.
+        var option = Assert.Single(Catalog.Options, o => o.Id == "engine_no_focus_sleep");
+
+        // Sigue siendo lo que es: una observación, no una verificación con fuente.
+        Assert.Equal(Cs2Evidence.Observed, option.Evidence);
+
+        // La descripción ya NO afirma el comportamiento en presente como si estuviera comprobado.
+        Assert.DoesNotContain("Con 0 el juego no se duerme", option.Description.EsMx, StringComparison.Ordinal);
+        Assert.DoesNotContain("With 0 the game does not sleep", option.Description.EnUs, StringComparison.Ordinal);
+        // Y dice explícitamente que no está verificado, en el idioma que toca.
+        Assert.Contains("NO esta verificado", option.Description.EsMx, StringComparison.Ordinal);
+        Assert.Contains("NOT verified", option.Description.EnUs, StringComparison.Ordinal);
+        // Es una EXPECTATIVA, no un hecho.
+        Assert.Contains("Se espera", option.Description.EsMx, StringComparison.Ordinal);
+        Assert.Contains("expected", option.Description.EnUs, StringComparison.Ordinal);
+
+        // El source separa lo observado (el valor 20) de lo NO verificado (la semántica) y conserva el 20.
+        Assert.Contains("20", option.Source, StringComparison.Ordinal);
+        Assert.Contains("no esta verificado", option.Source, StringComparison.Ordinal);
+        Assert.Contains("VALOR", option.Source, StringComparison.Ordinal);
+        // El source ANTES decía solo «observado en la configuracion real del usuario (solo lectura)», que se
+        // lee como si la SEMÁNTICA estuviera observada. Ahora esa frase sigue (es cierta para el VALOR) pero
+        // va acompañada de la aclaración; lo que no puede faltar es la aclaración misma.
+        Assert.Contains("no la semantica", option.Source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Ids_AreUnique()
     {
         var ids = Catalog.Options.Select(o => o.Id).ToArray();

@@ -44,15 +44,15 @@
       "valueType": "Int",
       "defaultValue": null,
       "description": {
-        "esMx": "Controla cuantos milisegundos duerme el motor del juego cuando la ventana pierde el foco. Con 0 el juego no se duerme al pasar a otra ventana. Afecta al comportamiento en segundo plano, no a la partida en primer plano.",
-        "enUs": "Controls how many milliseconds the game engine sleeps when the window loses focus. With 0 the game does not sleep when you switch to another window. It affects background behavior, not the foreground match."
+        "esMx": "Controla cuantos milisegundos duerme el motor del juego cuando la ventana pierde el foco. Se espera que con 0 el juego no se duerma al pasar a otra ventana, segun el comportamiento documentado de la convar; NO esta verificado en esta instalacion. Afecta al comportamiento en segundo plano, no a la partida en primer plano.",
+        "enUs": "Controls how many milliseconds the game engine sleeps when the window loses focus. 0 is expected to mean the game does not sleep when you switch to another window, per the documented behavior of the convar; this is NOT verified on this installation. It affects background behavior, not the foreground match."
       },
       "expectedEffect": {
         "esMx": "Cambia si el juego sigue trabajando al perder el foco.",
         "enUs": "Changes whether the game keeps working when it loses focus."
       },
       "evidence": "Observed",
-      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "source": "Valor 20 observado en la configuracion real del usuario (solo lectura). Eso es el VALOR, no la semantica: que 0 signifique 'no dormir' no esta verificado en esta instalacion.",
       "conflictsWith": []
     },
     {

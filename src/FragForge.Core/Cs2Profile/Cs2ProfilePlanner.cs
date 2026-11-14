@@ -34,8 +34,14 @@ public static class Cs2ProfilePlanner
 
     /// <summary>
     /// Valor de <c>engine_no_focus_sleep</c> cuando se quiere que el motor NO duerma al perder el foco.
-    /// Es el 0 documentado en la descripción de la opción: dormir 0 ms es no dormir.
+    /// Es 0 porque la convar cuenta MILISEGUNDOS de espera: dormir 0 ms es no dormir.
     /// </summary>
+    /// <remarks>
+    /// NO está verificado en esta instalación (no hay fuente citable): es el comportamiento esperado según
+    /// la semántica de la convar. Lo único OBSERVADO en la configuración real del usuario es el valor 20,
+    /// que es el valor, no la semántica. Si esto resultara falso, este valor y la descripción del catálogo
+    /// estarían al revés.
+    /// </remarks>
     public const string SleepDisabledValue = "0";
 
     /// <summary>
@@ -71,8 +77,9 @@ public static class Cs2ProfilePlanner
             selected[matVsync.Id] = vsync ? "1" : "0";
         if (preferences.SleepWhenUnfocused is { } sleep && catalog.Find("engine_no_focus_sleep") is { } sleepOption)
         {
-            // La convar es de MILISEGUNDOS y 0 significa "no dormir" (ver su descripción en el catálogo).
-            // Por eso la correspondencia es directa: pedir que duerma -> valor > 0; pedir que no duerma -> 0.
+            // La convar es de MILISEGUNDOS y se ESPERA que 0 signifique "no dormir" (comportamiento no
+            // verificado en esta instalación; ver el catálogo). Por eso la correspondencia es directa:
+            // pedir que duerma -> valor > 0; pedir que no duerma -> 0.
             // Invertirlo ponía el juego a dormir justo cuando el usuario pedía lo contrario.
             selected[sleepOption.Id] = sleep ? SleepEnabledValue : SleepDisabledValue;
         }
