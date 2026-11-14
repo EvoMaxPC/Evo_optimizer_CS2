@@ -35,3 +35,15 @@ public sealed class WindowsOnlyFactAttribute : FactAttribute
         if (!OperatingSystem.IsWindows()) Skip = Reason;
     }
 }
+
+/// <summary>
+/// Igual que <see cref="WindowsOnlyFactAttribute"/> pero para un <c>[Theory]</c>: fuera de Windows se
+/// omiten TODOS sus casos, con el mismo motivo, en vez de pasar por un <c>return</c> temprano.
+/// </summary>
+public sealed class WindowsOnlyTheoryAttribute : TheoryAttribute
+{
+    public WindowsOnlyTheoryAttribute()
+    {
+        if (!OperatingSystem.IsWindows()) Skip = WindowsOnlyFactAttribute.Reason;
+    }
+}

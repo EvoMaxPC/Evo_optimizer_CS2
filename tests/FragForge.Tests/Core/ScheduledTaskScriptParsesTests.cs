@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using FragForge.Actions.Platform;
 using FragForge.Actions.Tasks;
 using FragForge.Core.Abstractions;
+using FragForge.Tests.Fakes;
 using Xunit;
 
 namespace FragForge.Tests.Core;
@@ -53,10 +54,9 @@ public sealed class ScheduledTaskScriptParsesTests
     /// <summary>
     /// Test de PARSEO REAL. Es el que habría atrapado el bug de la ronda 5b.
     /// </summary>
-    [Fact]
+    [WindowsOnlyFact]
     public async Task GeneratedScript_ParsesWithTheRealPowerShellParser()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         var script = WindowsScheduledTaskStore.BuildGetScript(TaskFolder, TaskName);
         var temp = Path.GetTempFileName();
@@ -90,12 +90,11 @@ public sealed class ScheduledTaskScriptParsesTests
     /// El script que realmente usa el store también tiene que parsear (no solo uno de ejemplo):
     /// se genera con la ruta del catálogo real y con una ruta hostil con comillas simples.
     /// </summary>
-    [Theory]
+    [WindowsOnlyTheory]
     [InlineData(@"\Microsoft\Windows\Application Experience\", "Appraiser")]
     [InlineData(@"\X\", "O'Brien")]
     public async Task EveryGeneratedScript_Parses(string folder, string name)
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         var script = WindowsScheduledTaskStore.BuildGetScript(folder, name);
         var temp = Path.GetTempFileName();
@@ -182,10 +181,9 @@ public sealed class ScheduledTaskStoreRealExecutionTests
 {
     private const string MissingTask = @"\FragForgeNoExiste\Tarea";
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task MissingTask_RealPowerShell_ReturnsExistsFalse_WithoutThrowing()
     {
-        if (!OperatingSystem.IsWindows()) return;
 
         var store = new WindowsScheduledTaskStore(new FragForge.Actions.Platform.ProcessRunner());
 
