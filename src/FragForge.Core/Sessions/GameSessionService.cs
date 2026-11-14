@@ -53,7 +53,9 @@ public sealed class GameSessionService
     /// </summary>
     public IReadOnlyList<string> EligibleIds(TweakProfile profile) =>
         Engine.ProfileSelector.Select(_catalog.Definitions, profile)
-            .Where(d => d.SessionEligible && !d.RequiresReboot)
+            // Capa 5.3: un tweak que reinicia el enlace de red NUNCA entra en una sesión. Aunque alguien
+            // marque sessionEligible por error, cortar la conexión en mitad de una partida no es admisible.
+            .Where(d => d.SessionEligible && !d.RequiresReboot && !d.RestartsNetworkLink)
             .Select(d => d.Id)
             .ToArray();
 

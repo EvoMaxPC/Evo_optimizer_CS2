@@ -99,6 +99,8 @@ public static class CompositionRoot
         builder.Services.AddSingleton<ISnapshotStore, FileSnapshotStore>();
         builder.Services.AddSingleton<IJournal, FileJournal>();
         builder.Services.AddSingleton<IExecutionGate, FileExecutionGate>();
+        // Capa 5.3 (R-J): preflight de BitLocker de SOLO LECTURA para cambios que reinician el enlace.
+        builder.Services.AddSingleton<NetworkChangePreflight>();
         builder.Services.AddSingleton<IPreflightService, PreflightService>();
         builder.Services.AddSingleton<ITweakEngine, TweakEngine>();
         builder.Services.AddSingleton<IReportService, ReportService>();

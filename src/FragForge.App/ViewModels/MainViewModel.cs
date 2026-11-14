@@ -225,6 +225,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 acknowledgements.Add(item.Id);
             }
             if (acknowledgements.Count > 0 && RiskPhrase != _localizer["risk.phrase"]) { StatusMessage = "Escribe la frase exacta de confirmación de riesgo."; return; }
+            // Capa 5.3: el aviso del corte de red va ANTES de aplicar, no en el resultado. Se pregunta una vez
+            // por todos los tweaks que reinician el enlace, no una vez por tweak.
+            var linkRestarts = selected.Where(t => t.Definition.RestartsNetworkLink).Select(t => t.Title).ToArray();
+            if (linkRestarts.Length > 0)
+            {
+                var message = "Estos cambios reinician el adaptador de red y la conexión se cortará unos segundos:\n\n" + string.Join("\n", linkRestarts) + "\n\n¿Continuar?";
+                if (!_confirmation.ConfirmRisk(_localizer["risk.first"] + "\n" + message, "No lo apliques durante una partida.", _localizer["risk.title"])) { StatusMessage = "Confirmación cancelada."; return; }
+            }
         }
         var options = new ApplyOptions { DryRun = dryRun, Force = Force, CreateRestorePoint = CreateRestorePoint, EnableSystemProtection = EnableSystemProtection, Profile = SelectedProfile, RiskAcknowledgements = acknowledgements, AdvancedRiskPhrase = RiskPhrase, Cs2ExecutableOverride = string.IsNullOrWhiteSpace(Cs2Path) ? null : Cs2Path, AllowPowerShellActions = AllowPowerShell };
         await RunAsync(async (token, progress) =>
@@ -232,7 +240,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             var report = await _engine.ApplyAsync(selected.Select(t => t.Id), options, token, progress);
             foreach (var result in report.Results) _statuses[result.Id] = new TweakStatus(result.Id, result.State, result.Message, [], []);
             RebuildTweaks();
-            StatusMessage = report.Success ? (dryRun ? "Dry-run completado sin cambios." : $"Aplicación completada. Snapshot: {report.SnapshotId}") : string.Join(" ", report.Errors);
+            // Las advertencias del motor (entre ellas la del corte de red) no se pierden: se muestran junto al
+            // resultado, porque el usuario tiene que poder ver que la conexión puede caerse.
+            var warnings = report.Warnings.Count > 0 ? " Avisos: " + string.Join(" | ", report.Warnings) : "";
+            StatusMessage = (report.Success ? (dryRun ? "Dry-run completado sin cambios." : $"Aplicación completada. Snapshot: {report.SnapshotId}") : string.Join(" ", report.Errors)) + warnings;
         });
     }
     [RelayCommand(CanExecute = nameof(CanOperate))]

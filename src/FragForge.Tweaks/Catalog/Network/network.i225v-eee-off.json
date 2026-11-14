@@ -6,10 +6,10 @@
     "en-US": "Disable EEE on Intel I225-V"
   },
   "description": {
-    "es-MX": "Desactiva la propiedad avanzada Energy Efficient Ethernet (*EEE) si el controlador la expone exactamente.",
-    "en-US": "Disables the Energy Efficient Ethernet (*EEE) advanced property if the driver exposes it exactly."
+    "es-MX": "Desactiva Energy Efficient Ethernet en el Intel I225-V escribiendo la propiedad avanzada «*EEE» por su RegistryKeyword. Solo se aplica si el adaptador enumera el valor; si no lo expone, el tweak es No aplicable. El adaptador puede reiniciarse y la conexión se corta unos segundos.",
+    "en-US": "Disables Energy Efficient Ethernet on the Intel I225-V by writing the «*EEE» advanced property through its RegistryKeyword. It only applies if the adapter enumerates the value; if the adapter does not expose it, the tweak is Not applicable. The adapter may restart and the connection drops for a few seconds."
   },
-  "evidence": "Medium",
+  "evidence": "Low",
   "risk": "Moderate",
   "requiresReboot": false,
   "requiresAdmin": true,
@@ -25,7 +25,7 @@
     {
       "type": "adapter",
       "parameters": {
-        "descriptionContains": "I225-V",
+        "hardwareIdContains": "DEV_15F3",
         "physicalOnly": true
       }
     }
@@ -34,7 +34,7 @@
     {
       "kind": "NetAdapterProperty",
       "parameters": {
-        "adapterName": "{AdapterDescription:I225-V}",
+        "hardwareIdContains": "DEV_15F3",
         "properties": [
           {
             "keyword": "*EEE",
@@ -61,7 +61,7 @@
     "fps": "None",
     "1%lows": "None",
     "inputLatency": "None",
-    "network": "Posible reducción de latencia de salida de baja potencia; no aumenta FPS",
+    "network": "Local al enlace: EEE puede añadir latencia de salida de baja potencia. No reduce el ping a Internet ni aumenta FPS. El corte de unos segundos al aplicar es real y esperado.",
     "boot": "None",
     "thermals": "None"
   },
@@ -70,11 +70,12 @@
     "https://learn.microsoft.com/en-us/windows-hardware/drivers/network/energy-efficient-ethernet"
   ],
   "notes": {
-    "es-MX": "Solo I225-V; no toca Wi-Fi ni otros adaptadores. Puede renegociar el enlace y causar una interrupción breve. Si la palabra clave no existe, el tweak es NotApplicable.",
-    "en-US": "I225-V only; Wi-Fi and other adapters are untouched. It may renegotiate the link and cause a brief interruption. If the keyword is absent, the tweak is NotApplicable."
+    "es-MX": "Solo el I225-V (se identifica por hardware ID DEV_15F3, no por la descripción ni por el nombre de la conexión). Al escribir la propiedad el controlador puede reiniciar el adaptador: la conexión se corta unos segundos y la partida en curso se pierde. El valor se escribe solo si el adaptador lo enumera en ValidRegistryValues. La propiedad se lee por RegistryKeyword (*EEE), nunca por su nombre visible, así que funciona igual en es-MX y en en-US. El revert restaura el valor capturado.",
+    "en-US": "I225-V only (identified by hardware ID DEV_15F3, not by the description or the connection name). Writing the property may make the driver restart the adapter: the connection drops for a few seconds and the match in progress is lost. The value is only written if the adapter enumerates it in ValidRegistryValues. The property is read by RegistryKeyword (*EEE), never by its visible name, so it behaves the same in es-MX and en-US. Revert restores the captured value."
   },
   "whenNotToApply": {
-    "es-MX": "No aplicar durante una partida o si el enlace es inestable. No esperar menor ping a Internet; el efecto es local al enlace.",
-    "en-US": "Do not apply during a match or if the link is unstable. Do not expect lower Internet ping; the effect is local to the link."
-  }
+    "es-MX": "No aplicar con una partida en curso ni con el modo sesión activo: el enlace se reinicia y la conexión se corta. No aplicar si la red no es estable o si el adaptador no expone *EEE. No esperar menor ping a Internet: el efecto es local al enlace.",
+    "en-US": "Do not apply during a match or with session mode active: the link restarts and the connection drops. Do not apply if the network is unstable or if the adapter does not expose *EEE. Do not expect lower Internet ping: the effect is local to the link."
+  },
+  "restartsNetworkLink": true
 }

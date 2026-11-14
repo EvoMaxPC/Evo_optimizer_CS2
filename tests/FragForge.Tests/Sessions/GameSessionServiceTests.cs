@@ -29,7 +29,9 @@ public sealed class GameSessionServiceTests : IDisposable
     [
         Tweak.Create("session.eligible", Spec.Action("Fake", new { id = "e1" })) with { SessionEligible = true },
         Tweak.Create("session.not-eligible", Spec.Action("Fake", new { id = "n1" })),
-        Tweak.Create("session.needs-reboot", Spec.Action("Fake", new { id = "r1" }), requiresReboot: true) with { SessionEligible = true }
+        Tweak.Create("session.needs-reboot", Spec.Action("Fake", new { id = "r1" }), requiresReboot: true) with { SessionEligible = true },
+        // Capa 5.3: elegible y sin reinicio, pero REINICIA EL ENLACE. Debe quedar fuera igual.
+        Tweak.Create("session.network", Spec.Action("Fake", new { id = "w1" })) with { SessionEligible = true, RestartsNetworkLink = true }
     ];
 
     private GameSessionService CreateService()
@@ -48,6 +50,8 @@ public sealed class GameSessionServiceTests : IDisposable
         var ids = service.EligibleIds(TweakProfile.Advanced);
 
         // "session.needs-reboot" esta marcado pero requiere reinicio: queda FUERA.
+        // "session.network" esta marcado y no requiere reinicio, pero reinicia el enlace: tambien FUERA,
+        // porque cortar la red en mitad de una partida no es admisible (5.3).
         Assert.Equal(["session.eligible"], ids);
     }
 

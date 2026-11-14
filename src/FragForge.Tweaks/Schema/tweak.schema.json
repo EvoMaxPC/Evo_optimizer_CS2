@@ -33,6 +33,7 @@
       "uniqueItems": true
     },
     "sessionEligible": { "type": "boolean" },
+    "restartsNetworkLink": { "type": "boolean" },
     "notes": { "$ref": "#/$defs/localizedText" },
     "whenNotToApply": { "$ref": "#/$defs/localizedText" }
   },

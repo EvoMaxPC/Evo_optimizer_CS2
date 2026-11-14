@@ -53,9 +53,11 @@ public sealed class RealCatalogArchitectureTests
 
         var safe = ProfileSelector.Select(catalog.Definitions, TweakProfile.Safe).ToArray();
 
-        // El catálogo real tiene 30 tweaks; el perfil Safe muestra 3. Eso NO era el bug.
-        Assert.Equal(30, catalog.Definitions.Count);
+        // El catálogo real tiene tweaks; el perfil Safe muestra un subconjunto pequeño. No se afirma el
+        // tamaño exacto del catálogo (R-N): crece con cada capa y un número fijo solo añade ruido al diff.
+        Assert.NotEmpty(catalog.Definitions);
         Assert.Equal(3, safe.Length);
+        Assert.True(safe.Length < catalog.Definitions.Count);
 
         // El bug era que los 3 salían "No aplicable" por la arquitectura.
         foreach (var definition in safe)
@@ -142,8 +144,11 @@ public sealed class RealCatalogArchitectureTests
 
         Assert.Equal(TweakProfile.Safe, counts.OrderBy(c => c.Count).First().Profile);
         Assert.Equal(3, counts.Single(c => c.Profile == TweakProfile.Safe).Count);
-        Assert.Equal(catalog.Definitions.Count, 30);
+        // Relación, no tamaño exacto del catálogo (R-N).
         Assert.True(counts.Single(c => c.Profile == TweakProfile.Safe).Count < catalog.Definitions.Count);
+        // Y los cuatro perfiles no son decrecientes: Safe ⊆ Balanced ⊆ Competitive ⊆ Advanced.
+        var ordered = counts.Select(c => c.Count).ToArray();
+        Assert.True(ordered.Zip(ordered.Skip(1)).All(pair => pair.Second >= pair.First));
     }
 
     [Fact]

@@ -70,6 +70,38 @@ public sealed class EngineTests
         Assert.Contains("revert:fake.a", harness.Factory.Trace);
     }
 
+    /// <summary>
+    /// Capa 5.3: si un tweak reinicia el enlace, el aviso aparece ANTES de aplicar. Es lo que la UI y el CLI
+    /// muestran al usuario, y tiene que estar aunque el tweak se aplique bien.
+    /// </summary>
+    [Fact]
+    public async Task NetworkLinkRestart_ProducesAWarning_BeforeApplying()
+    {
+        using var harness = new EngineTestHarness();
+        harness.WithCatalog(Tweak.Create("tweak.net", Spec.Action("Fake", new { id = "net" })) with { RestartsNetworkLink = true });
+        var engine = harness.CreateEngine();
+
+        var report = await engine.ApplyAsync(["tweak.net"], harness.Options());
+
+        Assert.True(report.Success, string.Join("; ", report.Errors.Concat(report.Warnings)));
+        var warning = Assert.Single(report.Warnings, w => w.Contains("reinicia el adaptador", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("tweak.net", warning, StringComparison.Ordinal);
+        Assert.Contains("cortará", warning, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Un tweak que NO reinicia el enlace no genera ese aviso: no se avisa de lo que no pasa.</summary>
+    [Fact]
+    public async Task WithoutNetworkLinkRestart_ThereIsNoSuchWarning()
+    {
+        using var harness = new EngineTestHarness();
+        harness.WithCatalog(Tweak.Create("tweak.plain", Spec.Action("Fake", new { id = "plain" })));
+        var engine = harness.CreateEngine();
+
+        var report = await engine.ApplyAsync(["tweak.plain"], harness.Options());
+
+        Assert.DoesNotContain(report.Warnings, w => w.Contains("reinicia el adaptador", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task Dependencies_AreOrderedBeforeDependents()
     {

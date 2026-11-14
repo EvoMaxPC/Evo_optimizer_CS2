@@ -44,6 +44,15 @@ public sealed record TweakDefinition
     /// </summary>
     public bool SessionEligible { get; init; }
 
+    /// <summary>
+    /// ¿Aplicar este tweak reinicia el enlace de red y corta la conexión unos segundos? (Capa 5.3)
+    ///
+    /// Campo ADITIVO y opcional (R-N): ausente = <c>false</c>. Lo usan las acciones sobre el adaptador, que
+    /// pueden provocar que el driver reinicie el dispositivo. El motor lo convierte en un aviso ANTES de
+    /// aplicar, y el modo sesión lo usa para rechazar el tweak: no se corta la red en mitad de una partida.
+    /// </summary>
+    public bool RestartsNetworkLink { get; init; }
+
     public bool ReadOnly => Actions.Count > 0 && Actions.All(a => a.Kind.Equals("InspectOnly", StringComparison.OrdinalIgnoreCase));
 }
 

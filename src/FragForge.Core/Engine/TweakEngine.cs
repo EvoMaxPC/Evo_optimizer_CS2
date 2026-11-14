@@ -127,6 +127,11 @@ public sealed class TweakEngine(
                 warnings.Add("No hay tweaks aplicables; no se creó snapshot ni punto de restauración.");
                 return await FinishAsync(new BatchReport { OperationId = operationId, Success = true, Results = results, Warnings = warnings }, true, cancellationToken);
             }
+            // Capa 5.3 (R-J): si algo de lo que se va a aplicar reinicia el enlace, el aviso va ANTES de tocar
+            // nada, no después. Es lo que la UI y el CLI muestran al usuario: la conexión se corta unos segundos.
+            var linkRestarts = plans.Where(p => p.Definition.RestartsNetworkLink && !p.Definition.ReadOnly).Select(p => p.Definition.Id).ToArray();
+            if (linkRestarts.Length > 0)
+                warnings.Add("AVISO: " + string.Join(", ", linkRestarts) + " reinicia el adaptador de red; la conexión se cortará unos segundos. No lo apliques durante una partida.");
             var needsRestore = options.CreateRestorePoint && plans.Any(p => !p.Definition.ReadOnly);
             var effectiveOptions = options with { CreateRestorePoint = needsRestore };
             var preflightReport = await preflight.CheckAsync(effectiveOptions, hardware, cancellationToken);
