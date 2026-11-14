@@ -232,7 +232,10 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
                 continue;
             }
 
-            var problems = validator.ValidateSingle(definition).Concat(validator.ValidatePolicy(definition)).ToArray();
+            // reportForms: false -> ValidateSingle es la dueña de las excepciones de forma; ValidatePolicy
+            // solo aporta las de política. Si no, un factory que revienta saldría DOS veces.
+            var problems = validator.ValidateSingle(definition)
+                .Concat(validator.ValidatePolicy(definition, reportForms: false)).ToArray();
             if (problems.Length > 0)
             {
                 rejected.AddRange(problems.Select(e => new CatalogRejection(name, definition.Id, e)));

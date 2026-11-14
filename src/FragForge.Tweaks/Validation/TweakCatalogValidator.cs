@@ -43,8 +43,9 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             if (!ids.Add(definition.Id)) errors.Add($"ID duplicado: {definition.Id}");
             // Reglas de la definición: la MISMA implementación que usa la ruta resiliente.
             errors.AddRange(ValidateSingle(definition));
-            // Política: aquí sí, porque esta ruta no concatena ValidatePolicy después.
-            errors.AddRange(ValidatePolicy(definition));
+            // Política: aquí sí, porque esta ruta no concatena ValidatePolicy después. reportForms: false
+            // porque ValidateSingle (justo arriba) ya es la dueña de las excepciones de forma.
+            errors.AddRange(ValidatePolicy(definition, reportForms: false));
         }
         foreach (var definition in definitions)
         {
@@ -128,7 +129,23 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
     /// cancelar no es un dato: lo pidió quien llama.
     /// </para>
     /// </summary>
-    public IReadOnlyList<string> ValidatePolicy(TweakDefinition definition)
+    public IReadOnlyList<string> ValidatePolicy(TweakDefinition definition) => ValidatePolicy(definition, reportForms: true);
+
+    /// <summary>
+    /// Igual que la sobrecarga pública, pero decide si las excepciones de FORMA se reportan aquí.
+    /// </summary>
+    /// <param name="reportForms">
+    /// <c>true</c> (sobrecarga pública): reporta TODO lo que atrapa, incluidas las de forma, para que quien
+    /// llame solo a esta función no se pierda ningún fallo.
+    /// <c>false</c>: las de forma se descartan porque el llamador ya ejecutó <see cref="ValidateSingle"/>,
+    /// que es su dueña. Lo usan las dos rutas combinadas (<see cref="ValidateCatalog"/>, línea 47, y
+    /// <c>JsonTweakCatalogLoader.LoadDocumentsResilient</c>, TweakCatalog.cs:235), que concatenan ambas.
+    /// Sin esta bandera, cada fallo de forma saldría DOS veces: una por ValidateSingle y otra por aquí.
+    ///
+    /// Es <c>internal</c> a propósito: es un detail de implementación entre miembros de este ensamblado,
+    /// no parte del contrato. No cambia ninguna firma pública (R-A).
+    /// </param>
+    internal IReadOnlyList<string> ValidatePolicy(TweakDefinition definition, bool reportForms)
     {
         var errors = new List<string>();
         foreach (var action in definition.Actions)
@@ -147,7 +164,8 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             // y llegaría al llamador, que es justo lo que la Capa 10.4 prohíbe: un catálogo externo no
             // puede tumbar la app. Antes había un filtro por tipo
             // (`CatalogValidationException or ArgumentException`) que dejaba escapar el resto.
-            catch (Exception) { /* ya reportado por ValidateSingle */ }
+            catch (Exception ex) when (reportForms) { errors.Add($"{definition.Id}: {ex.Message}"); }
+            catch (Exception) { /* forma: su dueña es ValidateSingle, que ya la anotó */ }
         }
         return errors;
     }
