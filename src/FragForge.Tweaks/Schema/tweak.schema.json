@@ -32,6 +32,7 @@
       "items": { "type": "string", "enum": ["Safe", "Balanced", "Competitive", "Advanced"] },
       "uniqueItems": true
     },
+    "sessionEligible": { "type": "boolean" },
     "notes": { "$ref": "#/$defs/localizedText" },
     "whenNotToApply": { "$ref": "#/$defs/localizedText" }
   },

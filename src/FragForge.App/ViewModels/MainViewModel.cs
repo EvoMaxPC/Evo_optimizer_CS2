@@ -8,6 +8,7 @@ using FragForge.Core.Abstractions;
 using FragForge.Core.Engine;
 using FragForge.Core.Localization;
 using FragForge.Core.Models;
+using FragForge.Core.Sessions;
 using FragForge.Tweaks.Localization;
 
 namespace FragForge.App.ViewModels;
@@ -102,6 +103,88 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         foreach (var line in _sink.History) Logs.Add(line);
         RebuildTweaks();
     }
+    /// <summary>
+    /// Modo sesión (Capa 9). Se asigna desde <c>App.xaml.cs</c> en vez de por el constructor: el constructor de
+    /// este ViewModel es una lista larga de dependencias y no se toca en esta ronda. Si queda en <c>null</c>
+    /// (tests, diseño), el interruptor se muestra deshabilitado con su texto, sin romper nada.
+    /// </summary>
+    public GameSessionService? Sessions { get; set; }
+
+    /// <summary>Texto del interruptor según el estado. Lo resuelve el localizador.</summary>
+    public string SessionStateText => _localizer[SessionStateKey];
+
+    private string SessionStateKey => SessionState switch
+    {
+        GameSessionState.Active => "session.state.active",
+        GameSessionState.WaitingForGame => "session.state.waiting",
+        GameSessionState.Reverting => "session.state.reverting",
+        _ => "session.state.inactive"
+    };
+
+    [ObservableProperty] private GameSessionState sessionState = GameSessionState.Inactive;
+
+    partial void OnSessionStateChanged(GameSessionState value) => OnPropertyChanged(nameof(SessionStateText));
+
+    /// <summary>
+    /// Interruptor de la UI: enciende o apaga la sesión. Al encender se aplica y se empieza a vigilar; al
+    /// apagar se revierte. No hay bucle propio aquí: <see cref="GameSessionService.WatchAsync"/> ya trae su
+    /// token, y se cancela al apagar o al cerrar la ventana.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleSessionAsync()
+    {
+        if (Sessions is null) { StatusMessage = _localizer["session.unavailable"]; return; }
+        if (_sessionWatch is not null)
+        {
+            await StopSessionAsync();
+            return;
+        }
+
+        try
+        {
+            var start = await Sessions.StartAsync(SelectedProfile);
+            foreach (var message in start.Messages) Logs.Add(message);
+            if (!start.Started) { StatusMessage = string.Join(" ", start.Messages); return; }
+
+            SessionState = GameSessionState.WaitingForGame;
+            StatusMessage = _localizer[SessionStateKey];
+            _sessionWatch = new CancellationTokenSource();
+            var token = _sessionWatch.Token;
+            // La vigilancia corre en segundo plano y actualiza el estado en el hilo de UI con PostToUi.
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    PostToUi(() => SessionState = GameSessionState.Active);
+                    await Sessions.WatchAsync(delay: Task.Delay, cancellationToken: token);
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { PostToUi(() => StatusMessage = ex.Message); }
+                finally { PostToUi(() => SessionState = GameSessionState.Inactive); }
+            }, CancellationToken.None);
+        }
+        catch (Exception ex) { StatusMessage = ex.Message; }
+    }
+
+    private async Task StopSessionAsync()
+    {
+        SessionState = GameSessionState.Reverting;
+        try
+        {
+            _sessionWatch?.Cancel();
+            _sessionWatch?.Dispose();
+            _sessionWatch = null;
+            if (Sessions is null) return;
+            var stop = await Sessions.StopAsync();
+            foreach (var error in stop.Errors) Logs.Add("[Sesión] " + error);
+            StatusMessage = stop.Reverted || stop.AlreadyReverted ? _localizer["session.stopped"] : string.Join(" ", stop.Errors);
+        }
+        catch (Exception ex) { StatusMessage = ex.Message; }
+        finally { SessionState = GameSessionState.Inactive; }
+    }
+
+    private CancellationTokenSource? _sessionWatch;
+
     private bool CanOperate() => !IsBusy;
     partial void OnIsBusyChanged(bool value)
     {
@@ -267,7 +350,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         return builder.ToString().TrimEnd();
     }
     private void OnLogMessage(object? sender, string line) => PostToUi(() => { Logs.Add(line); while (Logs.Count > 500) Logs.RemoveAt(0); });
-    public void Dispose() { _sink.MessageWritten -= OnLogMessage; _operation?.Cancel(); _operation?.Dispose(); }
+    public void Dispose() { _sink.MessageWritten -= OnLogMessage; _operation?.Cancel(); _operation?.Dispose(); _sessionWatch?.Cancel(); _sessionWatch?.Dispose(); }
 }
 
 /// <summary>Opción del combo de perfiles: el enum (valor) y un texto para mostrar.</summary>

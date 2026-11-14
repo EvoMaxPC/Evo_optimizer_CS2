@@ -13,6 +13,7 @@ using FragForge.Core.Localization;
 using FragForge.Core.Logging;
 using FragForge.Core.Persistence;
 using FragForge.Core.Preflight;
+using FragForge.Core.Sessions;
 using FragForge.Core.Tiers;
 using FragForge.Tweaks;
 using FragForge.Tweaks.Localization;
@@ -68,6 +69,8 @@ public static class CompositionRoot
             builder.Services.AddSingleton<ICs2Resolver, SteamCs2Resolver>();
             // Capa 8.6: inspector de SOLO LECTURA de la configuracion de CS2.
             builder.Services.AddSingleton<Cs2Inspector>();
+            // Capa 9: modo sesion. Vive en Core y solo depende del motor y del catalogo.
+            builder.Services.AddSingleton<GameSessionService>();
             builder.Services.AddSingleton<IHardwareProfiler, WindowsHardwareProfiler>();
         }
         else

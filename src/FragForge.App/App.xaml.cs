@@ -2,6 +2,7 @@ using System.Windows;
 using FragForge.App.Services;
 using FragForge.App.ViewModels;
 using FragForge.Composition;
+using FragForge.Core.Sessions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -23,6 +24,16 @@ public partial class App : Application
             });
             _host = await CompositionRoot.BuildAsync(options);
             var viewModel = _host.Services.GetRequiredService<MainViewModel>();
+            // Capa 9: el modo sesion se inyecta por propiedad para no tocar el constructor del ViewModel.
+            viewModel.Sessions = _host.Services.GetRequiredService<GameSessionService>();
+            // Capa 9.3: recuperacion al arrancar. Si quedo un marcador de una caida y CS2 no corre, se
+            // revierte y se limpia; si el juego sigue abierto, no se toca nada.
+            try
+            {
+                var recovery = await viewModel.Sessions.RecoverAsync();
+                foreach (var error in recovery.Errors) viewModel.Logs.Add("[Sesion] " + error);
+            }
+            catch (Exception ex) { viewModel.Logs.Add("[Sesion] No se pudo recuperar la sesion anterior: " + ex.Message); }
             var window = new MainWindow { DataContext = viewModel };
             MainWindow = window;
             window.Show();

@@ -48,5 +48,12 @@
   "tier.T1": "T1 · safe",
   "tier.T2": "T2 · optional",
   "tier.T3": "T3 · measure only",
-  "tier.T4": "T4 · inspect only"
+  "tier.T4": "T4 · inspect only",
+  "session.state.inactive": "Session mode: off",
+  "session.state.waiting": "Session mode: waiting for CS2",
+  "session.state.active": "Session mode: active",
+  "session.state.reverting": "Session mode: reverting",
+  "session.stopped": "Session reverted.",
+  "session.unavailable": "Session mode is not available in this instance.",
+  "session.tooltip": "Applies immediate-effect tweaks while you play and reverts them when CS2 closes, even if the app is closed."
 }

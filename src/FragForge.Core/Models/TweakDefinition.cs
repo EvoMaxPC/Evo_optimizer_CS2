@@ -33,6 +33,17 @@ public sealed record TweakDefinition
     /// perfil (decisión del usuario): el motor no rechaza por este campo.
     /// </summary>
     public IReadOnlyList<string>? Profiles { get; init; }
+
+    /// <summary>
+    /// ¿Este tweak puede formar parte de una sesión de juego (Capa 9)?
+    ///
+    /// Campo ADITIVO y opcional (R-N): ausente = <c>false</c>. Solo se marca lo que cumple las tres
+    /// condiciones a la vez: efecto INMEDIATO (sin reinicio), totalmente REVERSIBLE y sin riesgo de dejar el
+    /// equipo en un estado que necesite un reinicio para arreglarse. Un tweak con <c>requiresReboot</c> no
+    /// puede ser elegible, y el servicio de sesión lo rechaza además en tiempo de ejecución.
+    /// </summary>
+    public bool SessionEligible { get; init; }
+
     public bool ReadOnly => Actions.Count > 0 && Actions.All(a => a.Kind.Equals("InspectOnly", StringComparison.OrdinalIgnoreCase));
 }
 

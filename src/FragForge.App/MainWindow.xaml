@@ -29,6 +29,11 @@
         <Button Content="{Binding Localizer[nav.apply]}" Command="{Binding ApplyCommand}" Background="#1F5F8B"/>
         <Button Content="{Binding Localizer[nav.revert]}" Command="{Binding RevertCommand}"/>
         <Button Content="{Binding Localizer[cancel]}" Command="{Binding CancelCommand}"/>
+        <!-- Capa 9: interruptor del modo sesion. Texto y estado visibles; sin tocar los combos.
+             IsChecked se deja SIN enlazar a proposito: el estado real lo manda SessionStateText, y un
+             binding de ida y vuelta al enum necesitaria un converter que no existe en el repo. -->
+        <ToggleButton Content="{Binding SessionStateText}" Command="{Binding ToggleSessionCommand}"
+                      ToolTip="{Binding Localizer[session.tooltip]}" Margin="6,0,0,0"/>
       </StackPanel>
     </DockPanel>
     <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10">

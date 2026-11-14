@@ -53,6 +53,7 @@
   "profiles": [
     "Advanced"
   ],
+  "sessionEligible": true,
   "conflictsWith": [],
   "dependsOn": [
     "power.fragforge-performance"
