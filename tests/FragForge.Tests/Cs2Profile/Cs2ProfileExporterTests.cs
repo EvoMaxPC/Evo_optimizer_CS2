@@ -76,7 +76,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
         var writer = FailingOn(backupPath, new UnauthorizedAccessException("acceso denegado (test)"));
 
-        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, write: writer, CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
@@ -110,8 +110,10 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
 
         var result = await Cs2ProfileExporter.ExportAsync(
-            GameBlock(), verifyBackup: null, FailingOnTheTemporary(new UnauthorizedAccessException("acceso denegado (test)")),
-            CancellationToken.None);
+            GameBlock(),
+            verifyBackup: null,
+            write: FailingOnTheTemporary(new UnauthorizedAccessException("acceso denegado (test)")),
+            cancellationToken: CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
@@ -143,7 +145,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
             verifyBackup: null,
             write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
             move: (_, _) => throw new IOException("el movimiento final falló (test)"),
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
@@ -184,7 +186,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
             verifyBackup: null,
             write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
             move: (_, _) => throw new IOException("el movimiento final falló (test)"),
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         Assert.False(result.Written);
 
@@ -209,7 +211,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
             verifyBackup: null,
             write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
             move: (_, _) => throw new IOException("el movimiento final falló (test)"),
-            CancellationToken.None);
+            cancellationToken: CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
@@ -225,7 +227,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         await File.WriteAllTextAsync(autoexec, "// mio\n");
         var writer = FailingOnTheTemporary(new IOException("no hay espacio en el dispositivo (test)"));
 
-        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, write: writer, CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
@@ -251,7 +253,7 @@ public sealed class Cs2ProfileExporterTests : IDisposable
             Timestamp = FixedTime
         };
 
-        var result = await Cs2ProfileExporter.ExportAsync(request, verifyBackup: null, writer, CancellationToken.None);
+        var result = await Cs2ProfileExporter.ExportAsync(request, verifyBackup: null, write: writer, CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);

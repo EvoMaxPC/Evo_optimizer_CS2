@@ -139,11 +139,10 @@ public sealed class Cs2ExportCommandTests : IDisposable
         var start = prompt.Output.FindIndex(l => l.StartsWith("=== Vista previa del archivo .cfg", StringComparison.Ordinal));
         var end = prompt.Output.FindIndex(l => l.StartsWith("=== fin de la vista previa ===", StringComparison.Ordinal));
 
-        // Las líneas entre las dos marcas, unidas con '\n', SON el archivo: el generador termina en '\n',
-        // así que Split('
-') produce una última entrada vacía que se imprime como línea vacía y, al
-        // reconstruir, vuelve a ser el salto final. Comparación exacta, sin TrimEnd que disimule un baile
-        // de saltos de línea.
+        // Las líneas entre las dos marcas, unidas por un salto de línea, SON el archivo: el generador
+        // termina en salto de línea, así que dividir por salto deja una última entrada vacía que se imprime
+        // como línea vacía y, al reconstruir, vuelve a ser el salto final. Comparación exacta, sin TrimEnd
+        // que disimule un baile de saltos.
         var preview = string.Join('\n', prompt.Output.Skip(start + 1).Take(end - start - 1));
         var written = await File.ReadAllTextAsync(Path.Combine(_out, "fragforge-cs2.cfg"));
         Assert.Equal(written, preview);
