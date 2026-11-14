@@ -37,6 +37,15 @@ public sealed class HitchAnalyzerTests
         Assert.Equal(1000.0, HitchAnalyzer.PauseThresholdMs, 10);
         Assert.Equal(1, report.PauseCount);
         Assert.False(report.PausesExcluded);
+
+        // La DURACIÓN medida de la pausa, no solo la constante. Cuenta a mano: de los 11 frames, uno solo
+        // supera los 1000 ms y mide 5000 ms, luego la pausa más larga mide 5000 ms.
+        // Se afirma con LongestFrameMs: HitchReport NO tiene un campo "pausa más larga" ni "tiempo total en
+        // pausa". LongestFrameMs es el máximo de los frames ANALIZADOS (HitchReport.cs:123,135), así que aquí
+        // vale 5000 justamente porque este test NO excluye las pausas; con --exclude-pauses el frame de 5000
+        // se descarta y el campo valdría 10, no 5000. Si algún día se añade LongestPauseMs, esta línea debe
+        // pasar a usarlo, porque mediría la pausa aunque se excluyera del resto de métricas.
+        Assert.Equal(5000.0, report.LongestFrameMs!.Value, 10);
         // Mediana de 11 valores ordenados = índice 5 (base 0) = 10 ms. Umbral = 30 ms. Solo el de 5000 lo supera.
         Assert.Equal(1, report.HitchCount);
         Assert.Contains(report.Notes, n => n.Contains("INCLUIDAS", StringComparison.Ordinal));
