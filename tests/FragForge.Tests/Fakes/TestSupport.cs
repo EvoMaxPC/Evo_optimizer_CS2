@@ -45,9 +45,14 @@ public sealed record ScriptedActionOptions
     public Action<string>? OnRevert { get; init; }
 }
 
-public sealed class ScriptedAction(ScriptedActionOptions options, List<string> trace, string label) : ITweakAction
+public sealed class ScriptedAction(ScriptedActionOptions options, List<string> trace, string label, ISet<string>? applied = null) : ITweakAction
 {
-    private bool _applied;
+    // "Aplicado" es estado del MUNDO, no de este objeto. Antes era un campo de instancia, y el motor crea una
+    // instancia NUEVA al revertir (TweakEngine.cs:316: actionFactory.Create(...)): el revert preguntaba
+    // "¿aplicado?" a un objeto recien nacido, recibia "not applied yet (fake)" y abortaba con drift
+    // ("cambió desde la aplicación"). Un doble de test tiene que sobrevivir a que lo reconstruyan, igual que
+    // sobrevive el registro real. Si no se pasa registro (llamada suelta) se usa uno propio.
+    private readonly ISet<string> _applied = applied ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public string Kind => "Fake";
     public Task PreflightAsync(ActionExecutionContext context, CancellationToken cancellationToken = default) => Task.CompletedTask;
     public Task<ActionState> CaptureAsync(ActionExecutionContext context, CancellationToken cancellationToken = default) => Task.FromResult<ActionState>(new InspectionActionState());
@@ -55,21 +60,21 @@ public sealed class ScriptedAction(ScriptedActionOptions options, List<string> t
     {
         trace.Add("apply:" + label);
         if (options.FailApply) throw new VerificationFailedException("apply failed (fake)");
-        _applied = true;
+        _applied.Add(label);
         return Task.CompletedTask;
     }
     public Task<VerificationResult> VerifyAsync(ActionState before, ActionExecutionContext context, CancellationToken cancellationToken = default)
     {
         trace.Add("verify:" + label);
         if (options.FailVerify) return Task.FromResult(VerificationResult.Missing("verify failed (fake)"));
-        return Task.FromResult(_applied ? VerificationResult.Match("ok (fake)") : VerificationResult.Missing("not applied yet (fake)"));
+        return Task.FromResult(_applied.Contains(label) ? VerificationResult.Match("ok (fake)") : VerificationResult.Missing("not applied yet (fake)"));
     }
     public Task RevertAsync(ActionState before, ActionExecutionContext context, CancellationToken cancellationToken = default)
     {
         trace.Add("revert:" + label);
         options.OnRevert?.Invoke(label);
         if (options.FailRevert) throw new InvalidOperationException("revert failed (fake)");
-        _applied = false;
+        _applied.Remove(label);
         return Task.CompletedTask;
     }
     public Task<VerificationResult> VerifyRevertAsync(ActionState before, ActionExecutionContext context, CancellationToken cancellationToken = default) => Task.FromResult(VerificationResult.Match("reverted (fake)"));
@@ -79,13 +84,17 @@ public sealed class ScriptedAction(ScriptedActionOptions options, List<string> t
 public sealed class FakeActionFactory(IRegistry registry, IProtectionPolicy policy, Dictionary<string, ScriptedActionOptions>? scripts = null) : ITweakActionFactory
 {
     public List<string> Trace { get; } = [];
+
+    /// <summary>Qué acciones de mentira están aplicadas ahora mismo. Vive en el FACTORY, no en la acción, para
+    /// que sobreviva a que el motor reconstruya las acciones (apply y revert usan instancias distintas).</summary>
+    private readonly HashSet<string> _applied = new(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> SupportedKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Registry", "Fake" };
     public ITweakAction Create(ActionSpec specification)
     {
         if (specification.Kind.Equals("Registry", StringComparison.OrdinalIgnoreCase)) return new FragForge.Actions.Registry.RegistryAction(registry, policy, specification);
         var id = specification.Parameters.ValueKind == JsonValueKind.Undefined ? "fake" : specification.Parameters.GetProperty("id").GetString() ?? "fake";
         var options = scripts is not null && scripts.TryGetValue(id, out var scripted) ? scripted : new ScriptedActionOptions();
-        return new ScriptedAction(options, Trace, id);
+        return new ScriptedAction(options, Trace, id, _applied);
     }
 }
 
