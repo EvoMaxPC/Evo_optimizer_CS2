@@ -178,6 +178,11 @@ public sealed class CatalogTests
         ["debloat.task.queue-reporting"] = "",
         ["debloat.task.siuf-feedback"] = "",
         ["diagnostics.system-inspect"] = "Safe, Balanced, Competitive, Advanced",
+        // Capa 6 (commit 12bfa82) anadio estos dos tweaks de iGPU con "profiles": [] (ningun perfil: se
+        // aplican solo por id explicito). Se anadieron al catalogo sin tocar esta tabla, y el test los caza
+        // por la asercion 1. "" es el mismo convenio que usan los debloat de arriba.
+        ["gpu.hags-toggle"] = "",
+        ["gpu.intel-graphics-power-plan-max"] = "",
         ["latency.game-dvr-capture-off"] = "Balanced, Competitive, Advanced",
         ["latency.game-mode-on"] = "Safe, Balanced, Competitive, Advanced",
         ["latency.global-timer-resolution"] = "Balanced, Competitive, Advanced",
