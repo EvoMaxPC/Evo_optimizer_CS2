@@ -116,7 +116,7 @@ public sealed class NetworkAdapterResolverTests
     {
         var wmi = new RowWmi();
         // Una fila sin InterfaceGuid: no debe aparecer.
-        wmi.Rows.Add(Row((("InterfaceGuid", ""), ("Name", "Sin GUID"), ("InterfaceDescription", "x"))));
+        wmi.Rows.Add(Row(("InterfaceGuid", ""), ("Name", "Sin GUID"), ("InterfaceDescription", "x")));
         var resolver = new WindowsNetworkAdapterResolver(wmi, new FakeRegistry());
 
         Assert.Empty(await resolver.ListAsync());
