@@ -4,6 +4,7 @@ using System.Text.Json;
 using FragForge.Core.Logging;
 using FragForge.Core.Models;
 using FragForge.Core.Persistence;
+using FragForge.Core.Recovery;
 using FragForge.Tests.Core;
 using FragForge.Tests.Fakes;
 using Xunit;
