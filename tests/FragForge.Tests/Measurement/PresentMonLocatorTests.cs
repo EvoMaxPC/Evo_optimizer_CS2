@@ -87,6 +87,54 @@ public sealed class PresentMonLocatorTests
             "El mensaje debe indicar que el hash sigue pendiente: " + availability.Reason);
     }
 
+    // --- Versión leída de --help: VERIFICADO que sale por STDERR con exit code 1 -------------------
+
+    [Fact]
+    public void ParseVersionOutput_ReadsTheVersionFromStderr_NotOnlyStdout()
+    {
+        // RED-FIRST del bug real: antes se leía solo StandardOutput y esta llamada devolvía null.
+        // Formato verificado: la línea empieza por "PresentMon <versión>".
+        const string stderr =
+            "PresentMon 2.6.0\n" +
+            "Usage: PresentMon-2.6.0-x64.exe [options]\n";
+
+        var version = PresentMonLocator.ParseVersionOutput(string.Empty, stderr);
+
+        Assert.Equal("2.6.0", version);
+    }
+
+    [Fact]
+    public void ParseVersionOutput_StillReadsStdout_WhenThatIsWhereTheVersionIs()
+    {
+        var version = PresentMonLocator.ParseVersionOutput("PresentMon 2.6.0\n", null);
+
+        Assert.Equal("2.6.0", version);
+    }
+
+    [Theory]
+    [InlineData("", "")]
+    [InlineData(null, null)]
+    [InlineData("algo sin versión", "otra cosa\n\n")]
+    [InlineData("PresentMon beta", "PresentMon")]
+    public void ParseVersionOutput_ReturnsNull_WhenThereIsNoVersionLine(string? stdout, string? stderr)
+    {
+        Assert.Null(PresentMonLocator.ParseVersionOutput(stdout, stderr));
+    }
+
+    [Fact]
+    public void ParseVersionOutput_TakesTheFirstVersionLine_AndSkipsPreamble()
+    {
+        // El texto real de --help trae la versión en una línea y luego uso/flags. Nada de la cháchara
+        // posterior puede convertirse en la versión.
+        const string stderr =
+            "\n" +
+            "PresentMon 2.6.0\n" +
+            "Copyright (C) Intel Corporation\n" +
+            "--process_name  Nombre del proceso\n";
+
+        Assert.Equal("2.6.0", PresentMonLocator.ParseVersionOutput(null, stderr));
+    }
+
     private sealed class NoopLauncher : IToolProcessLauncher
     {
         public Task<ToolProcessResult> RunAsync(ToolProcessRequest request, CancellationToken cancellationToken = default) =>

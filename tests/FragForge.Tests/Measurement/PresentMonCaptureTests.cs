@@ -110,13 +110,14 @@ public sealed class PresentMonCaptureTests
         var (capture, launcher, tools) = Create();
         using var _ = tools;
         var request = Request();
-        // Exit code distinto de cero y stderr ruidoso, pero el CSV está completo:
-        // el éxito NO depende del exit code (no observado en PresentMon 2.6.0).
+        // Exit code distinto de cero y stderr ruidoso, pero el CSV está completo: el éxito NO depende
+        // del exit code. VERIFICADO: --help sale con 1, así que el código no puede ser criterio.
         launcher.Result = new ToolProcessResult(1, false, false, "", "warning: --no_console_stats added because stdout does not support statistics reporting.");
-        launcher.CsvToWrite = CsvParserTests.Real260;
+        launcher.CsvToWrite = PresentMonFixtures.TwoSwapChains;
 
         var series = await capture.CaptureAsync(request);
 
+        // 3 filas de la swapchain elegida (0x0), no 6: la captura tiene dos cadenas.
         Assert.Equal(3, series.FrameCount);
         Assert.False(series.IsPartial);
         if (Directory.Exists(request.OutputDirectory)) Directory.Delete(request.OutputDirectory, true);

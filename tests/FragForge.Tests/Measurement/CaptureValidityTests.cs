@@ -12,16 +12,23 @@ namespace FragForge.Tests.Measurement;
 /// </summary>
 public sealed class CaptureValidityTests
 {
-    private static FrameSeries FromReal260()
+    /// <summary>La captura real de referencia: DOS swapchains. No es un baseline válido.</summary>
+    private static FrameSeries TwoSwapChains()
     {
-        using var reader = new StringReader(CsvParserTests.Real260);
+        using var reader = new StringReader(PresentMonFixtures.TwoSwapChains);
+        return PresentMonCsvParser.Parse(reader);
+    }
+
+    private static FrameSeries OnlyZero()
+    {
+        using var reader = new StringReader(PresentMonFixtures.OnlyZero);
         return PresentMonCsvParser.Parse(reader);
     }
 
     [Fact]
     public void Real260Capture_IsSuspect_NotValid_NotInvalid()
     {
-        var report = CaptureValidityGate.Evaluate(FromReal260());
+        var report = CaptureValidityGate.Evaluate(TwoSwapChains());
 
         Assert.Equal(CaptureValidity.Suspect, report.Validity);
         Assert.True(report.IsSuspect);
@@ -30,14 +37,43 @@ public sealed class CaptureValidityTests
     }
 
     [Fact]
-    public void Real260Capture_ReportsTheConcreteReasons()
+    public void TwoSwapChainCapture_IsSuspectBecauseOfTheChains_NotBecauseOfDisplayOrGpu()
     {
-        var report = CaptureValidityGate.Evaluate(FromReal260());
+        // La cadena ELEGIDA es 0x0: tiene seguimiento de display y GPU real. Por eso los motivos NO
+        // pueden ser "sin seguimiento de display" ni "GPU no disponible": esos aplican a 0x167400D5A60,
+        // que es la DESCARTADA. Este test fija ese matiz.
+        var report = CaptureValidityGate.Evaluate(TwoSwapChains());
 
-        Assert.Contains(report.Reasons, reason => reason.Contains("PresentMode=Other", StringComparison.Ordinal));
+        Assert.Contains(report.Reasons, reason => reason.Contains("varias swapchains en el proceso", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Reasons, reason => reason.Contains("sin seguimiento de display", StringComparison.Ordinal));
+        Assert.DoesNotContain(report.Reasons, reason => reason.Contains("GPU no disponible", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DiscardedDxgiChain_WouldHaveBeenSuspectForDisplayAndGpu_ChosenOneIsNot()
+    {
+        // Prueba del contraste: la cadena DXGI por separado sí dispara "sin display" y "GPU no disponible".
+        using var reader = new StringReader(PresentMonFixtures.OnlyDxgi);
+        var dxgiOnly = PresentMonCsvParser.Parse(reader);
+        var report = CaptureValidityGate.Evaluate(dxgiOnly);
+
         Assert.Contains(report.Reasons, reason => reason.Contains("sin seguimiento de display", StringComparison.Ordinal));
         Assert.Contains(report.Reasons, reason => reason.Contains("GPU no disponible", StringComparison.Ordinal));
-        Assert.Contains(report.Reasons, reason => reason.Contains("mediana de FPS", StringComparison.Ordinal));
+        Assert.Contains(report.Reasons, reason => reason.Contains("PresentMode=Other", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NonStandardLayout_IsSuspect_WithItsOwnReason()
+    {
+        var csv = PresentMonFixtures.V1MetricsHeader + "\n" +
+                  "dwm.exe,100,0x1,DXGI,1,0,0,1.5,0.4,16.6,1,Hardware: Legacy Flip,1.0,16.7,16.8,0.5,1.0,2.0,NA\n";
+        using var reader = new StringReader(csv);
+        var series = PresentMonCsvParser.Parse(reader);
+
+        var report = CaptureValidityGate.Evaluate(series);
+
+        Assert.Equal(CaptureValidity.Suspect, report.Validity);
+        Assert.Contains(report.Reasons, reason => reason.Contains("formato de CSV no estándar", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -144,12 +180,16 @@ public sealed class CaptureValidityTests
             DisplayChangeMs = Enumerable.Repeat<double?>(5.0, 400).ToArray(),
             UntilDisplayedMs = Enumerable.Repeat<double?>(5.1, 400).ToArray(),
             GpuBusyMs = Enumerable.Repeat<double?>(2.0, 400).ToArray(),
-            Warnings = ["varias swapchains: 0xA=3, 0xB=1; se analiza 0xA"]
+            SwapChains =
+            [
+                new SwapChainSummary("0x0", 400, 5.0, true, Chosen: true),
+                new SwapChainSummary("0x167400D5A60", 3, 117.7, false, Chosen: false)
+            ]
         };
 
         var report = CaptureValidityGate.Evaluate(series);
 
         Assert.Equal(CaptureValidity.Suspect, report.Validity);
-        Assert.Contains(report.Reasons, reason => reason.Contains("swapchain", StringComparison.Ordinal));
+        Assert.Contains(report.Reasons, reason => reason.Contains("varias swapchains en el proceso", StringComparison.Ordinal));
     }
 }
