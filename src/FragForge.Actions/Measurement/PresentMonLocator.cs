@@ -19,8 +19,10 @@ public sealed record PresentMonLocation(string? Path, string? Version, string De
 /// <item>Error claro (nunca se busca en PATH).</item>
 /// </list>
 ///
-/// La versión se lee de la primera línea de <c>--help</c> (formato <c>PresentMon 2.6.0</c>). NO hay gate de
-/// versión: el contrato de columnas se valida en runtime con <see cref="PresentMonCsvParser"/>.
+/// La versión se lee de la salida de <c>--help</c> (formato <c>PresentMon 2.6.0</c>). VERIFICADO: ese texto
+/// sale por <b>STDERR</b> y el proceso termina con <b>exit code 1</b>, así que se leen ambos flujos y no se
+/// usa el código de salida. NO hay gate de versión: el contrato de columnas se valida en runtime con
+/// <see cref="PresentMonCsvParser"/>.
 /// </summary>
 public static partial class PresentMonLocator
 {
@@ -77,8 +79,12 @@ public static partial class PresentMonLocator
     }
 
     /// <summary>
-    /// Lee la versión de la primera línea de <c>--help</c>. Devuelve null si el proceso falla o el texto
-    /// no empieza por <c>PresentMon &lt;versión&gt;</c>. No lanza: la ausencia de versión no bloquea.
+    /// Lee la versión de la primera línea de la salida de <c>--help</c>.
+    ///
+    /// VERIFICADO en la PC objetivo: <c>--help</c> escribe por <b>STDERR</b> y termina con <b>exit code 1</b>.
+    /// Por eso se leen AMBOS flujos y el texto se concatena, y NO se comprueba el exit code: usarlo como
+    /// criterio haría imposible leer la versión. Devuelve null si el proceso falla o si el texto no
+    /// empieza por <c>PresentMon &lt;versión&gt;</c>. No lanza: la ausencia de versión no bloquea la captura.
     /// </summary>
     public static string? ReadVersion(string executablePath, TimeSpan? timeout = null)
     {
@@ -95,20 +101,51 @@ public static partial class PresentMonLocator
             start.ArgumentList.Add("--help");
             using var process = new Process { StartInfo = start };
             if (!process.Start()) return null;
-            var output = process.StandardOutput.ReadToEnd();
+
+            // Lectura asíncrona de ambos flujos para no bloquear si uno llena el búfer.
+            var stdout = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+            var stderr = process.StandardError.ReadToEndAsync(CancellationToken.None);
             if (!process.WaitForExit((int)(timeout ?? TimeSpan.FromSeconds(10)).TotalMilliseconds))
             {
                 try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { } catch (NotSupportedException) { }
                 return null;
             }
-            var firstLine = output.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
-            if (firstLine is null) return null;
-            var match = VersionLine().Match(firstLine);
-            return match.Success ? match.Groups[1].Value : null;
+
+            // WaitForExit(int) puede volver antes de que se vacíen los flujos redirigidos. La sobrecarga
+            // sin argumentos espera también a que terminen las lecturas asíncronas.
+            process.WaitForExit();
+
+            // --help va por STDERR y sale con código 1: el texto se toma de ambos flujos y no se
+            // filtra por exit code (ver ParseVersionOutput).
+            return ParseVersionOutput(stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// Extrae la versión de la salida de <c>--help</c> combinando stdout y stderr.
+    ///
+    /// VERIFICADO en la PC objetivo: el texto sale por <b>STDERR</b> con <b>exit code 1</b>. Si aquí se
+    /// mirase el exit code o solo stdout, la versión sería siempre null. El orden entre flujos no importa:
+    /// se devuelve la primera línea que empiece por <c>PresentMon &lt;versión&gt;</c>.
+    /// </summary>
+    public static string? ParseVersionOutput(string? standardOutput, string? standardError)
+    {
+        // stderr primero: es el flujo donde realmente aparece (verificado), así no depende del intercalado.
+        foreach (var text in new[] { standardError, standardOutput })
+        {
+            if (string.IsNullOrEmpty(text)) continue;
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0) continue;
+                var match = VersionLine().Match(trimmed);
+                if (match.Success) return match.Groups[1].Value;
+            }
+        }
+        return null;
     }
 }
