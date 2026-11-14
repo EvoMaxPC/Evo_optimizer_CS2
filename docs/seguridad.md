@@ -76,10 +76,19 @@ La amenaza más probable y la única que se puede atacar de verdad.
   dejar el equipo sin red o sin arranque: `restartsNetworkLink`, acciones sobre propiedades del
   adaptador de red (`NetAdapterProperty`), `Bcdedit`, y cualquier `Kind` de driver/dispositivo
   (`PreflightService.RecoveryCoverage`). Que un Blocking impide aplicar no es una suposición:
-  `PreflightReport.Passed` pone `CanApply=false` si hay alguno (`Results.cs:80`) y `TweakEngine`
-  lanza `PreflightFailedException` (`TweakEngine.cs:141`).
+  `PreflightReport.Passed` pone `CanApply=false` si hay alguno (`Results.cs:93`) y `TweakEngine`
+  lanza `PreflightFailedException` (`TweakEngine.cs:161`).
+  - **Matiz importante: quién ve esa excepción.** El motor la lanza *dentro* de `ApplyAsync`, pero el
+    `try` de ese método empieza en `TweakEngine.cs:83` y su `catch (Exception ex)` está en `:277`: la
+    excepción se recoge ahí, el mensaje pasa a `report.Errors` (`:280`) y el método **devuelve** un
+    `BatchReport` con `Success=false` (`:284`, `:289`). Así que quien llama a `ApplyAsync` **no** recibe
+    la excepción: recibe el informe con el motivo en `Errors`. Por eso la UI lo muestra en la barra de
+    estado (`MainViewModel.cs:425`) y el CLI imprime los `Errors` por stderr (`ConsoleOutput.cs:63`)
+    terminando con código 1 (`ExitCodes.Failure`). Los tests lo fijan así (`EngineTests.cs:258`).
+    `ScanAsync`, en cambio, **no** tiene ese `try`: su `throw` de `TweakEngine.cs:58` sí propaga al
+    llamador.
   - **Se juzga lo SELECCIONADO, no el catálogo.** El motor rellena `ApplyOptions.SelectedIds` con los
-    planes ya resueltos (`TweakEngine.cs:139-146`) y el preflight mira solo esos ids. Tener un tweak de
+    planes ya resueltos (`TweakEngine.cs:154-158`) y el preflight mira solo esos ids. Tener un tweak de
     red en el catálogo **no** impide aplicar otros: si no está entre los seleccionados, no bloquea.
   - **Sin ids no se bloquea.** `SelectedIds` vacío = «no consta qué se aplica» (llamada vieja, dry-run,
     informe). Bloquear ahí volvería a romper la app por algo que nadie pidió.
