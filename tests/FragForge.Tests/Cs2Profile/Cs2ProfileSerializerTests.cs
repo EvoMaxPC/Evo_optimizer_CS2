@@ -30,7 +30,27 @@ public sealed class Cs2ProfileSerializerTests
         var first = Cs2ProfileGenerator.Generate(original, Catalog, FixedDate, "0.1.0");
         Assert.Equal(first.CfgText, regenerated.CfgText);
         Assert.Equal(first.LaunchOptions, regenerated.LaunchOptions);
-        Assert.Equal(original, imported);
+
+        // Campo a campo. NO se usa Assert.Equal(original, imported) sobre los records: la igualdad de
+        // record compara por REFERENCIA los miembros que son listas, así que un List<> y un ReadOnlyArray
+        // con el mismo contenido nunca serían "iguales" y el test no probaría lo que dice probar.
+        Assert.Equal(original.FormatVersion, imported.FormatVersion);
+        Assert.Equal(original.Objective, imported.Objective);
+        Assert.Equal(original.FpsCap.Mode, imported.FpsCap.Mode);
+        Assert.Equal(original.FpsCap.FixedFps, imported.FpsCap.FixedFps);
+        Assert.Equal(original.FpsCap.RefreshFactor, imported.FpsCap.RefreshFactor);
+        Assert.Equal(original.VSync, imported.VSync);
+        Assert.Equal(original.SleepWhenUnfocused, imported.SleepWhenUnfocused);
+        Assert.Equal(original.IncludeUnverified, imported.IncludeUnverified);
+        Assert.Equal(original.MeasuredRefreshHz, imported.MeasuredRefreshHz);
+
+        // Y las opciones, elemento a elemento: mismo id y mismo valor, en el mismo orden.
+        Assert.Equal(original.Options.Count, imported.Options.Count);
+        for (var i = 0; i < original.Options.Count; i++)
+        {
+            Assert.Equal(original.Options[i].Id, imported.Options[i].Id);
+            Assert.Equal(original.Options[i].Value, imported.Options[i].Value);
+        }
     }
 
     [Fact]

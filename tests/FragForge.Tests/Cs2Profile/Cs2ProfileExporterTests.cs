@@ -195,7 +195,12 @@ public sealed class Cs2ProfileExporterTests : IDisposable
 
         var allowed = await Cs2ProfileExporter.ExportAsync(request with { Overwrite = true });
         Assert.True(allowed.Written);
-        Assert.StartsWith("// FragForge", await File.ReadAllTextAsync(target), StringComparison.Ordinal);
+        // El contenido escrito es EXACTAMENTE el CfgText de la petición (aquí no hay generador de por medio:
+        // el exportador no añade ni quita nada). Antes se afirmaba que empezaba por "// FragForge", que solo
+        // sería cierto si la petición llevara el encabezado del generador: era el test el que estaba mal.
+        Assert.Equal("fps_max 240\nmat_vsync 0\n", await File.ReadAllTextAsync(target));
+        // Y el archivo dejó de contener el valor anterior: la sobrescritura fue real, no un no-op.
+        Assert.DoesNotContain("viejo", await File.ReadAllTextAsync(target), StringComparison.Ordinal);
     }
 
     [Fact]
