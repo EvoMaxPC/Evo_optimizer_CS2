@@ -292,9 +292,10 @@ public sealed class PowerPlanAction : ITweakAction
 
     private async Task<PowerSettingCapture> QuerySettingAsync(string planGuid, string subgroupGuid, string settingGuid, CancellationToken cancellationToken)
     {
-        // Un solo parser para todo (R-C): /query y /qh comparten la forma de bloque. Se acepta la
+        // Se usa /qh y NO /query: /query omite los ajustes ocultos (en la PN64, PERFEPP y PERFBOOSTMODE devuelven
+        // solo la cabecera del plan). Un solo parser para todo (R-C): /query y /qh comparten la forma de bloque. Se acepta la
         // lectura por el parser y, si el bloque no trae dos índices, se dice en vez de adivinar.
-        var result = await RunAsync(["/query", planGuid, subgroupGuid, settingGuid], cancellationToken);
+        var result = await RunAsync(["/qh", planGuid, subgroupGuid, settingGuid], cancellationToken);
         var parsed = PowerCfgQueryParser.Find(result.StandardOutput, subgroupGuid, settingGuid);
         if (parsed is null) throw new ActionNotApplicableException($"No se pudieron leer los índices AC/DC de {settingGuid} en el plan {planGuid}.");
         return new PowerSettingCapture(subgroupGuid, settingGuid, parsed.AcIndex, parsed.DcIndex);

@@ -47,16 +47,20 @@ public static class PowerCfgQueryParser
     {
         if (string.IsNullOrWhiteSpace(output)) return [];
         var results = new List<PowerSettingQuery>();
-        List<string>? current = null;
-        var currentSubgroup = "";
-        var currentIndent = 0;
+        var stack = new List<HeaderBlock>();
 
-        void Flush()
+        // Cierra (y evalua) todo bloque abierto con sangria >= a la dada. El padre del ajuste es la cabecera
+        // GUID menos sangrada que lo contiene: en la salida real, plan (0) > subgrupo (2) > ajuste (4).
+        void CloseFrom(int indent)
         {
-            if (current is null || current.Count == 0) return;
-            var parsed = ParseBlock(current, currentSubgroup);
-            if (parsed is not null) results.Add(parsed);
-            current = null;
+            while (stack.Count > 0 && stack[^1].Indent >= indent)
+            {
+                var closed = stack[^1];
+                stack.RemoveAt(stack.Count - 1);
+                var parent = stack.Count > 0 ? stack[^1].Guid : "";
+                var parsed = ParseBlock(closed.Lines, parent);
+                if (parsed is not null) results.Add(parsed);
+            }
         }
 
         foreach (var rawLine in output.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
@@ -67,29 +71,21 @@ public static class PowerCfgQueryParser
             var indent = line.Length - line.TrimStart().Length;
             var guids = GuidPattern.Matches(line).Select(m => m.Groups[1].Value.ToLowerInvariant()).ToArray();
 
-            // Línea con GUID y sangría pequeña (0-3): cabecera de SUBGRUPO. Cierra el bloque anterior.
-            if (guids.Length >= 1 && indent <= 3)
+            if (guids.Length >= 1)
             {
-                Flush();
-                currentSubgroup = guids[0];
-                currentIndent = indent;
+                CloseFrom(indent);
+                stack.Add(new HeaderBlock(indent, guids[0], [line]));
                 continue;
             }
 
-            // Línea con GUID y sangría mayor que la del subgrupo: cabecera de SETTING.
-            if (guids.Length >= 1 && indent > currentIndent)
-            {
-                Flush();
-                current = [line];
-                continue;
-            }
-
-            // Cualquier otra línea pertenece al bloque en curso (rangos, índices, descripciones).
-            current?.Add(line);
+            // Cualquier otra linea (rangos, indices, AC/DC) pertenece a la ultima cabecera abierta.
+            if (stack.Count > 0) stack[^1].Lines.Add(line);
         }
-        Flush();
+        CloseFrom(0);
         return results;
     }
+
+    private sealed record HeaderBlock(int Indent, string Guid, List<string> Lines);
 
     /// <summary>Busca un setting concreto dentro de la salida de <c>/qh</c>.</summary>
     public static PowerSettingQuery? Find(string output, string subgroupGuid, string settingGuid) =>

@@ -57,7 +57,7 @@ public sealed class WindowsStartupInventorySource(IRegistry registry) : IStartup
         if (string.IsNullOrWhiteSpace(userStartupFolder))
             notes.Add("La carpeta Startup del usuario del proceso no se pudo resolver; no se leyó.");
         else
-            await ReadStartupFolderAsync(StartupLocation.StartupFolderHkcu, userStartupFolder, userKeys?.ApprovalFolder ?? ApprovalFolder, entries, warnings, cancellationToken);
+            await ReadStartupFolderAsync(StartupLocation.StartupFolderHkcu, userStartupFolder, userKeys?.ApprovalFolder, entries, warnings, cancellationToken);
 
         return (entries.OrderBy(e => e.Location).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToArray(), warnings, notes);
     }
@@ -103,6 +103,8 @@ public sealed class WindowsStartupInventorySource(IRegistry registry) : IStartup
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var name = Path.GetFileName(file);
+                // desktop.ini es un archivo oculto de sistema que Windows pone en Startup; no es un programa.
+                if (name.Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
                 var approval = approvalKey is null ? new RegistryReadResult(false, false, null, null) : await registry.ReadValueAsync(approvalKey, name, cancellationToken);
                 entries.Add(new StartupEntry
                 {

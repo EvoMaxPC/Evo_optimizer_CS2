@@ -74,7 +74,7 @@ public sealed class RecoveryWriterTests
         Assert.True(File.Exists(Path.Combine(result.Directory, "services-original.csv")));
         Assert.True(File.Exists(Path.Combine(result.Directory, "tasks-original.xml")));
         Assert.True(File.Exists(Path.Combine(result.Directory, "recovery-index.json")));
-        Assert.Equal(5, result.Index.Files.Count);
+        Assert.Equal(4, result.Index.Files.Count); // el indice no se lista a si mismo (RecoveryWriter lo excluye a proposito)
         Assert.All(result.Index.Files, file => Assert.Equal(64, file.Sha256.Length));
         Assert.Equal("26200", result.Index.OsBuild);
     }

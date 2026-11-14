@@ -29,7 +29,9 @@ public sealed class SteamGameLocator(IRegistry registry) : IGameLocator
         {
             var libraryFile = Path.Combine(root, "steamapps", "libraryfolders.vdf");
             if (!File.Exists(libraryFile)) continue;
-            var node = ValveDataFormat.Parse(await File.ReadAllTextAsync(libraryFile, cancellationToken));
+            VdfNode node;
+            try { node = ValveDataFormat.Parse(await File.ReadAllTextAsync(libraryFile, cancellationToken)); }
+            catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException) { continue; }
             if (!node.Children.TryGetValue("libraryfolders", out var folders)) continue;
             foreach (var folder in folders.Children.Values)
             {

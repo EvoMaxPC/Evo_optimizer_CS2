@@ -165,7 +165,10 @@ public sealed class ExperimentRunnerTests
         var result = await harness.Runner.StartAsync(Request(runs: 1));
         Assert.Equal(ExperimentRunOutcome.Invalid, result.Outcome);
         Assert.True(result.State.Invalidated);
-        Assert.Equal(0, harness.Capture.Calls);
+        // Con runs: 1 hay 2 corridas; con Seed = 1 el brazo base va primero, asi que se mide ese brazo y el
+        // apply del candidato falla DESPUES. El invariante es que no se captura nada tras el fallo.
+        Assert.Equal(result.State.Runs.Count, harness.Capture.Calls);
+        Assert.DoesNotContain(result.State.Runs, r => r.Arm == ArmKind.Candidate);
     }
 
     [Fact]

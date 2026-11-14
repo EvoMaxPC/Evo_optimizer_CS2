@@ -30,7 +30,7 @@ public sealed class CsvParserTests
         Assert.Equal([5.0, 5.2, 5.1], series.FrameTimesMs);
         Assert.Equal(["Composed: Flip", "Composed: Flip", "Independent Flip"], series.PresentModes);
         Assert.Contains("MsBetweenPresents", series.SourceColumns);
-        Assert.Contains("msInPresentAPI", series.SourceColumns);
+        Assert.Contains("MsInPresentAPI", series.SourceColumns);
     }
 
     [Fact]

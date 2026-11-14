@@ -146,7 +146,16 @@ public sealed class PowerPlanActionTests
             if (joined.StartsWith("/query", StringComparison.Ordinal)) return new ProcessResult(0, $"  Minimum processor state\n    Current AC Power Setting Index: 0x{AcIndex:x8}\n    Current DC Power Setting Index: 0x{DcIndex:x8}", "", false);
             // /qh responde lo mismo para cualquier plan: el simulador no distingue FragForge de origen,
             // y el test solo necesita que el ajuste este enumerado con su rango.
-            if (joined.StartsWith("/qh", StringComparison.Ordinal)) return new ProcessResult(0, QhOutput(), "", false);
+            if (joined.StartsWith("/qh", StringComparison.Ordinal))
+            {
+                // /qh <plan> <subgrupo> <ajuste> (lectura de UN ajuste, como QuerySettingAsync): devuelve el bloque
+                // con los GUID pedidos. /qh <plan> devuelve el bloque de prueba tal cual.
+                var qh = QhOutput();
+                if (request.Arguments.Count() >= 4)
+                    qh = qh.Replace("54533251-82be-4824-96c1-47b60b740d00", request.Arguments[2], StringComparison.OrdinalIgnoreCase)
+                           .Replace("893dee8e-2bef-41e0-89c6-b55d0929964c", request.Arguments[3], StringComparison.OrdinalIgnoreCase);
+                return new ProcessResult(0, qh, "", false);
+            }
             if (joined.StartsWith("/setacvalueindex", StringComparison.Ordinal)) { AcIndex = int.Parse(request.Arguments[^1], System.Globalization.CultureInfo.InvariantCulture); return new ProcessResult(0, "", "", false); }
             if (joined.StartsWith("/setdcvalueindex", StringComparison.Ordinal)) { DcIndex = int.Parse(request.Arguments[^1], System.Globalization.CultureInfo.InvariantCulture); return new ProcessResult(0, "", "", false); }
             if (joined.StartsWith("/delete", StringComparison.Ordinal)) { PlanExists = false; return new ProcessResult(0, "", "", false); }
@@ -242,7 +251,7 @@ public sealed class PowerPlanActionTests
 
         Assert.True(simulator.HasCommand("/setacvalueindex"), "se escribe la variante enumerada");
         // El ajuste ausente nunca se escribe.
-        Assert.DoesNotContain(simulator.Commands, c => c.Contains("de67a0c0", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(simulator.Commands, c => (c.StartsWith("/setacvalueindex", StringComparison.Ordinal) || c.StartsWith("/setdcvalueindex", StringComparison.Ordinal)) && c.Contains("de67a0c0", StringComparison.OrdinalIgnoreCase));
         Assert.Equal(VerificationOutcome.Matches, (await action.VerifyAsync(captured, Context())).Outcome);
     }
 

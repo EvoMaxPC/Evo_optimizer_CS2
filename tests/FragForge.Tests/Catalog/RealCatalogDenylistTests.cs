@@ -97,7 +97,12 @@ public sealed class RealCatalogDenylistTests
         var withTiers = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()), new ConditionFactory(), factory, ServiceTierCatalog.LoadEmbedded());
         var withoutTiers = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()), new ConditionFactory(), factory, null);
 
-        Assert.Empty(withoutTiers.ValidateCatalog([definition]));
+        Assert.Contains(withoutTiers.ValidateCatalog([definition]), e => e.Contains("RpcSs", StringComparison.Ordinal)); // el denylist real rechaza RpcSs aun sin tiers
         Assert.Contains(withTiers.ValidateCatalog([definition]), e => e.Contains("RpcSs", StringComparison.Ordinal));
+
+        // La regla de tiers es otra capa: un servicio fuera del denylist y desconocido para los tiers solo lo frena el validador con tiers.
+        var unlisted = JsonSerializer.Deserialize<TweakDefinition>(T0.Replace("probe.t0", "probe.unlisted").Replace("RpcSs", "FragForgeProbeUnlistedSvc"), FragForge.Core.Logging.JsonDefaults.Options)!;
+        Assert.Empty(withoutTiers.ValidateCatalog([unlisted]));
+        Assert.NotEmpty(withTiers.ValidateCatalog([unlisted]));
     }
 }

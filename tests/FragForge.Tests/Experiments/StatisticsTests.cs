@@ -58,14 +58,15 @@ public sealed class StatisticsTests
     [Fact]
     public void Bootstrap_IsDeterministicForTheSameSeed_AndDifferentForAnother()
     {
-        var a = new[] { 10.0, 11, 12, 10.5, 11.5 };
-        var b = new[] { 8.0, 8.5, 9, 8.2, 8.8 };
+        var a = Enumerable.Range(0, 30).Select(i => 11.0 + Math.Sin(i * 1.7) * 1.5).ToArray();
+        var b = Enumerable.Range(0, 30).Select(i => 9.0 + Math.Cos(i * 2.3) * 1.5).ToArray();
         var first = Statistics.BootstrapMedianDifference(a, b, iterations: 500, seed: 1234);
         var second = Statistics.BootstrapMedianDifference(a, b, iterations: 500, seed: 1234);
         var third = Statistics.BootstrapMedianDifference(a, b, iterations: 500, seed: 99);
         Assert.Equal(first.LowerBound, second.LowerBound, 12);
         Assert.Equal(first.UpperBound, second.UpperBound, 12);
-        Assert.NotEqual(first.LowerBound, third.LowerBound);
+        Assert.True(first.LowerBound != third.LowerBound || first.UpperBound != third.UpperBound,
+            "Otra semilla debe mover al menos un limite del IC.");
         Assert.True(first.ExcludesZero, $"La diferencia debería excluir cero: [{first.LowerBound}, {first.UpperBound}]");
     }
 

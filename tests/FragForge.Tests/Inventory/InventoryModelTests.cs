@@ -71,7 +71,11 @@ public sealed class InventorySerializationTests
             Warnings = ["Servicios: acceso denegado"]
         };
         var json = JsonSerializer.Serialize(inventory, JsonDefaults.Options);
-        Assert.Contains("\"startupLocation\": \"RunHkcu\"", json);
+        using (var document = JsonDocument.Parse(json))
+        {
+            var startup = document.RootElement.GetProperty("startup")[0];
+            Assert.Equal("RunHkcu", startup.GetProperty("location").GetString());
+        }
         var back = JsonSerializer.Deserialize<SystemInventory>(json, JsonDefaults.Options);
         Assert.NotNull(back);
         Assert.Equal("PN64", back!.MachineName);
@@ -216,7 +220,8 @@ public sealed class ImpactSimulatorTests
         {"schemaVersion":1,"services":[
           {"name":"SafeSvc","tier":"T1","reason":"Servicio seguro de prueba.","reference":"https://a"},
           {"name":"OptSvc","tier":"T2","reason":"Servicio opcional de prueba.","reference":"https://b"},
-          {"name":"MeasureSvc","tier":"T3","reason":"Solo medir en la prueba.","reference":"https://c"}]}
+          {"name":"MeasureSvc","tier":"T3","reason":"Solo medir en la prueba.","reference":"https://c"},
+          {"name":"AppOne","tier":"T1","reason":"Servicio de aplicacion de prueba.","reference":"https://d"}]}
         """;
         return ServiceTierCatalog.Parse(json);
     }

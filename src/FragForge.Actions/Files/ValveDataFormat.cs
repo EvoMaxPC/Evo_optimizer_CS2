@@ -14,7 +14,7 @@ public static class ValveDataFormat
     {
         if (text.Length > 1048576) throw new InvalidDataException("VDF exceeds 1 MiB.");
         var index = 0;
-        var result = ParseObject(text, ref index, 0, false);
+        var result = ParseObject(text, ref index, 0, true);
         SkipTrivia(text, ref index);
         if (index != text.Length) throw new InvalidDataException("Trailing characters in VDF.");
         return result;

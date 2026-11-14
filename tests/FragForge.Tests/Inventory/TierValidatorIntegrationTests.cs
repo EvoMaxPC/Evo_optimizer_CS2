@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FragForge.Actions.DependencyInjection;
+using FragForge.Actions.Diagnostics;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Conditions;
 using FragForge.Core.Models;
@@ -21,16 +22,20 @@ public sealed class TierValidatorIntegrationTests
 {
     private static TweakCatalogValidator Validator(ServiceTierCatalog? tiers)
     {
-        var services = new ServiceCollection();
-        services.AddSingleton<IRegistry, FakeRegistry>();
-        services.AddSingleton<IProtectionPolicy>(ProtectionPolicy.CreateDefault());
-        services.AddSingleton<IProcessRunner, FakeProcessRunner>();
-        services.AddFragForgeActions();
-        var provider = services.BuildServiceProvider();
+        // Misma fabrica que RealCatalogDenylistTests.RealFactory: un DI minimo no alcanza (faltan IServiceController, etc.).
+        var registry = new FakeRegistry();
+        ITweakActionFactory factory = new TweakActionFactory(
+            registry,
+            ProtectionPolicy.CreateDefault(),
+            new FakeServiceController(),
+            new FakeScheduledTaskStore(),
+            new FakeNetworkAdapterController(),
+            new FakeProcessRunner(),
+            DiagnosticProbeFactory.CreateDefaults(registry));
         return new TweakCatalogValidator(
             new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
             new ConditionFactory(),
-            provider.GetRequiredService<ITweakActionFactory>(),
+            factory,
             tiers);
     }
 
