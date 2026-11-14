@@ -104,6 +104,37 @@ public sealed class StartupInventorySourceTests
     }
 
     [Fact]
+    public async Task Wow6432Entries_AreApprovedFromRun32_NotFromRun()
+    {
+        // Wow6432Node se aprueba en StartupApproved\Run32; cruzarlo contra \Run da estados falsos.
+        const string Sid = "S-1-5-21-1-2-3-1001";
+        var registry = RegistryWith(r =>
+        {
+            r.Keys[@"HKLM\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Run"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Old32"] = ("String", "old.exe")
+            };
+            // En Run32 está DESHABILITADO (0x03) y en Run ENABLADO (0x02): debe mandar Run32.
+            r.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Old32"] = ("Binary", new byte[] { 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 })
+            };
+            r.Keys[$@"HKU\{Sid}\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"] = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Old32"] = ("Binary", new byte[] { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 })
+            };
+        });
+
+        var entries = (await new WindowsStartupInventorySource(registry).ReadAsync(Sid)).Entries;
+        var item = Assert.Single(entries);
+        Assert.Equal(StartupLocation.RunWow6432, item.Location);
+        Assert.False(item.ApprovedEnabled);
+        Assert.Equal(0x03, item.ApprovalFirstByte);
+        Assert.EndsWith(@"StartupApproved\Run32", item.ApprovalKey, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(registry.ReadCount.Keys, k => k.EndsWith(@"StartupApproved\Run::Old32", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task UnrecognizedApprovalByte_StaysUnknown()
     {
         const string Sid = "S-1-5-21-1-2-3-1001";
