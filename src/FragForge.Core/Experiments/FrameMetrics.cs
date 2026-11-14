@@ -12,6 +12,40 @@ public sealed record FrameSeries
     public IReadOnlyList<string> PresentModes { get; init; } = [];
     public bool IsPartial { get; init; }
     public string? SourceColumns { get; init; }
+
+    // --- Campos aditivos del contrato PresentMon 2.6.0 (todos opcionales; null = columna ausente o celda NA) ---
+    /// <summary>Tiempo de espera de CPU por frame (<c>MsCPUWait</c>). Null si la columna no existe o la celda es NA.</summary>
+    public IReadOnlyList<double?> CpuWaitMs { get; init; } = [];
+    /// <summary>Tiempo de GPU por frame (<c>MsGPUTime</c>). Null si la columna no existe o la celda es NA.</summary>
+    public IReadOnlyList<double?> GpuTimeMs { get; init; } = [];
+    /// <summary>Ms entre cambios de display (<c>MsBetweenDisplayChange</c>). NA en capturas sin seguimiento de display.</summary>
+    public IReadOnlyList<double?> DisplayChangeMs { get; init; } = [];
+    /// <summary>Ms hasta que el frame se muestra (<c>MsUntilDisplayed</c>). NA sin seguimiento de display.</summary>
+    public IReadOnlyList<double?> UntilDisplayedMs { get; init; } = [];
+    /// <summary>Tiempo dentro de la API de presentación (<c>MsInPresentAPI</c>). NO es CPU ocupada.</summary>
+    public IReadOnlyList<double?> PresentApiMs { get; init; } = [];
+    /// <summary>Nombre del proceso tal como lo reporta PresentMon (<c>Application</c>).</summary>
+    public string? ApplicationName { get; init; }
+    /// <summary>PID del proceso capturado (<c>ProcessID</c>).</summary>
+    public int? ProcessId { get; init; }
+    /// <summary>Swapchain utilizada para el análisis (<c>SwapChainAddress</c>).</summary>
+    public string? SwapChainAddress { get; init; }
+    /// <summary>Instantes de presentación en ms desde el inicio (<c>TimeInMs</c>).</summary>
+    public IReadOnlyList<double?> TimesMs { get; init; } = [];
+    /// <summary>Intervalo de sincronización (<c>SyncInterval</c>).</summary>
+    public IReadOnlyList<int?> SyncIntervals { get; init; } = [];
+    /// <summary>Si se permite tearing en ese frame (<c>AllowsTearing</c>).</summary>
+    public IReadOnlyList<bool?> AllowsTearing { get; init; } = [];
+    /// <summary>Advertencias detectadas al parsear (swapchains múltiples, GPU no disponible...).</summary>
+    public IReadOnlyList<string> Warnings { get; init; } = [];
+    /// <summary>
+    /// True cuando había columna GPU pero TODAS sus celdas fueron 0 o NA. Distingue "no se midió"
+    /// de "midió cero", que es la diferencia entre Unknown y un dato.
+    /// </summary>
+    public bool GpuUnavailable { get; init; }
+    /// <summary>Columnas del encabezado, en el orden en que llegaron.</summary>
+    public IReadOnlyList<string> HeaderColumns { get; init; } = [];
+
     public int FrameCount => FrameTimesMs.Count;
     public bool IsEmpty => FrameTimesMs.Count == 0;
 }
