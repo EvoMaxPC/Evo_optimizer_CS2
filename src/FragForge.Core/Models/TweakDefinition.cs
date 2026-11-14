@@ -53,6 +53,19 @@ public sealed record TweakDefinition
     /// </summary>
     public bool RestartsNetworkLink { get; init; }
 
+    /// <summary>
+    /// Aviso de compatibilidad con anticheat (Capa 10.2). Campo ADITIVO y opcional (R-N): ausente = sin aviso.
+    ///
+    /// <para>
+    /// <b>No es un veredicto.</b> El contrato por defecto de un tweak es: "no modifica el proceso ni los archivos
+    /// del juego". Cuando un tweak SÍ toca algo que un anticheat podría mirar (por ejemplo IFEO
+    /// <c>PerfOptions</c>), este campo debe decirlo con la salvedad concreta. Nunca debe afirmar
+    /// compatibilidad con un anticheat por su nombre: "seguro con VAC" no es una afirmación respaldada por
+    /// ninguna fuente y está prohibido en este catálogo.
+    /// </para>
+    /// </summary>
+    public LocalizedText? AnticheatNote { get; init; }
+
     public bool ReadOnly => Actions.Count > 0 && Actions.All(a => a.Kind.Equals("InspectOnly", StringComparison.OrdinalIgnoreCase));
 }
 

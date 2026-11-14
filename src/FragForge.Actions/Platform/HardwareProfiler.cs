@@ -8,7 +8,11 @@ using FragForge.Core.Models;
 
 namespace FragForge.Actions.Platform;
 
-internal static class WmiValues
+/// <summary>
+/// Lectura defensiva de valores de una fila WMI. Es <c>public</c> para que la postura de seguridad (Capa 10.1)
+/// use exactamente el mismo parseo que el perfilador, en vez de duplicar conversiones que se desincronizan.
+/// </summary>
+public static class WmiValues
 {
     public static string? String(IReadOnlyDictionary<string, object?> row, string key) => row.TryGetValue(key, out var value) ? value?.ToString()?.Trim() : null;
     public static ulong? UInt64(IReadOnlyDictionary<string, object?> row, string key) => row.TryGetValue(key, out var value) && value is not null && ulong.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Integer, CultureInfo.InvariantCulture, out var result) ? result : null;

@@ -134,6 +134,8 @@ public static class Program
                     return await MeasurementCommands.ProbeAsync(host.Services, parsed);
                 case "net":
                     return await NetCommands.RunAsync(host.Services, parsed, cancellation.Token);
+                case "security":
+                    return await SecurityCommands.RunAsync(host.Services, parsed, cancellation.Token);
                 case "mouse-test":
                     return await MeasurementCommands.MouseTestAsync(host.Services, parsed);
                 case "mem-bench":
@@ -210,6 +212,9 @@ Capa 2 — inventario y debloat honesto (sin promesas de FPS):
 
 Mantenimiento (lista cerrada de verbos; requiere --confirm VERBO):
   fragforge maintenance retrim|component-cleanup [--confirm VERBO] [--dry-run] [--json]
+
+Seguridad (solo lectura):
+  fragforge security status [--json]
 
 Opciones globales: --data-root RUTA --culture es-MX|en-US
 Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico; 6 medición inválida.

@@ -200,3 +200,12 @@ public sealed record NetworkAdapterSelector
     public bool HasHardwareIdentity =>
         !string.IsNullOrWhiteSpace(InterfaceGuid) || !string.IsNullOrWhiteSpace(NetCfgInstanceId) || !string.IsNullOrWhiteSpace(HardwareIdContains);
 }
+
+/// <summary>
+/// Lee la postura de seguridad del equipo (Capa 10.1). SOLO LECTURA: ninguna implementación de esta
+/// interfaz escribe en el sistema. Lo que no se pueda leer es <c>Unknown</c>, nunca <c>Disabled</c>.
+/// </summary>
+public interface ISecurityPostureService
+{
+    Task<SecurityPosture> ReadAsync(CancellationToken cancellationToken = default);
+}

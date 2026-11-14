@@ -34,6 +34,11 @@
     },
     "sessionEligible": { "type": "boolean" },
     "restartsNetworkLink": { "type": "boolean" },
+    "anticheatNote": {
+      "type": "object", "additionalProperties": false, "required": ["es-MX", "en-US"],
+      "properties": { "es-MX": { "type": "string", "minLength": 1 }, "en-US": { "type": "string", "minLength": 1 } },
+      "description": "Aviso de compatibilidad con anticheat (Capa 10.2). No afirma compatibilidad con ningun anticheat; describe si el tweak toca o no procesos/archivos del juego."
+    },
     "notes": { "$ref": "#/$defs/localizedText" },
     "whenNotToApply": { "$ref": "#/$defs/localizedText" }
   },

@@ -16,6 +16,12 @@ public sealed partial class TweakItemViewModel : ObservableObject
     public string Notes => Definition.Notes?.Resolve(_culture) ?? "";
     public string WhenNotToApply => Definition.WhenNotToApply?.Resolve(_culture) ?? "";
     public bool RequiresReboot => Definition.RequiresReboot;
+
+    /// <summary>
+    /// Aviso anticheat (Capa 10.2): lo que define el catálogo o, si no define nada, el contrato común. Se muestra
+    /// siempre, para que el usuario no tenga que suponer qué hace el tweak con el juego.
+    /// </summary>
+    public string AnticheatNote => FragForge.Core.Models.AnticheatNote.Resolve(Definition.AnticheatNote, _culture);
     [ObservableProperty] private bool isSelected;
     [ObservableProperty] private TweakState state = TweakState.Unknown;
     [ObservableProperty] private string stateDisplay = "Unknown";
@@ -37,5 +43,6 @@ public sealed partial class TweakItemViewModel : ObservableObject
         OnPropertyChanged(nameof(Description));
         OnPropertyChanged(nameof(Notes));
         OnPropertyChanged(nameof(WhenNotToApply));
+        OnPropertyChanged(nameof(AnticheatNote));
     }
 }

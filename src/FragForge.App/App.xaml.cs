@@ -26,6 +26,9 @@ public partial class App : Application
             var viewModel = _host.Services.GetRequiredService<MainViewModel>();
             // Capa 9: el modo sesion se inyecta por propiedad para no tocar el constructor del ViewModel.
             viewModel.Sessions = _host.Services.GetRequiredService<GameSessionService>();
+            // Capa 10.1: panel de postura de seguridad. Se inyecta por propiedad, igual que Sessions, para no
+            // tocar el constructor del ViewModel. Es solo lectura.
+            viewModel.SecurityPostureService = _host.Services.GetRequiredService<FragForge.Core.Abstractions.ISecurityPostureService>();
             // Capa 9.3: recuperacion al arrancar. Si quedo un marcador de una caida y CS2 no corre, se
             // revierte y se limpia; si el juego sigue abierto, no se toca nada.
             try
@@ -38,6 +41,7 @@ public partial class App : Application
             MainWindow = window;
             window.Show();
             await viewModel.ScanCommand.ExecuteAsync(null);
+            await viewModel.ReadSecurityCommand.ExecuteAsync(null);
         }
         catch (Exception ex)
         {

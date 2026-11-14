@@ -54,6 +54,10 @@
     "es-MX": "No usa Realtime ni afinidad. No inyecta código ni lee memoria de cs2.exe. Puede perjudicar audio, Discord o procesos de fondo si compiten por CPU.",
     "en-US": "Does not use Realtime or affinity. Does not inject code or read cs2.exe memory. May hurt audio, Discord or background processes competing for CPU."
   },
+  "anticheatNote": {
+    "es-MX": "Escribe solo en el registro de Windows (IFEO PerfOptions) para que el sistema arranque cs2.exe con prioridad alta. NO abre el proceso, NO inyecta código, NO lee memoria y NO modifica archivos del juego. Es un ajuste del sistema operativo que se aplica antes de que el juego arranque. Revisa los requisitos de tu proveedor de anticheat: FragForge no afirma compatibilidad con ninguno.",
+    "en-US": "Writes only to the Windows registry (IFEO PerfOptions) so the system starts cs2.exe with high priority. It does NOT open the process, does NOT inject code, does NOT read memory and does NOT modify game files. It is an operating-system setting applied before the game starts. Check your anticheat provider's requirements: FragForge does not claim compatibility with any."
+  },
   "whenNotToApply": {
     "es-MX": "No aplicar si causa audio entrecortado, peor frametime o inestabilidad. Reiniciar el juego después de aplicar/revertir.",
     "en-US": "Do not apply if it causes crackling audio, worse frametime or instability. Restart the game after apply/revert."

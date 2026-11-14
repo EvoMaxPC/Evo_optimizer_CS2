@@ -110,6 +110,47 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     public GameSessionService? Sessions { get; set; }
 
+    /// <summary>
+    /// Servicio de postura de seguridad (Capa 10.1). Se asigna desde <c>App.xaml.cs</c> por la misma razón que
+    /// <see cref="Sessions"/>: no se toca el constructor. Si queda en <c>null</c> (tests, diseñador), el panel
+    /// muestra "no disponible" en vez de romper.
+    /// </summary>
+    public ISecurityPostureService? SecurityPostureService { get; set; }
+
+    /// <summary>Postura leída la última vez. <c>null</c> = todavía no se ha leído.</summary>
+    [ObservableProperty] private SecurityPosture? securityPosture;
+
+    /// <summary>Resumen de una línea para el panel. Unknown se muestra como tal (R-L).</summary>
+    public string SecuritySummary => SecurityPosture is null
+        ? "Sin leer. Pulsa Actualizar."
+        : $"VBS={SecurityPosture.Vbs} · HVCI={SecurityPosture.Hvci} · Secure Boot={SecurityPosture.SecureBoot} · TPM={SecurityPosture.Tpm} · BitLocker={SecurityPosture.BitLocker} · Lista drivers={SecurityPosture.VulnerableDriverBlocklist}";
+
+    /// <summary>Contrato anticheat tal cual, para mostrarlo sin reinterpretarlo.</summary>
+    public string SecurityContract => SecurityPosture?.AnticheatContract
+        ?? "FragForge no inyecta, no abre handles a cs2.exe, no modifica archivos del juego y no toca Steam ni procesos de anticheat. Revisa los requisitos de tu proveedor de anticheat.";
+
+    partial void OnSecurityPostureChanged(SecurityPosture? value)
+    {
+        OnPropertyChanged(nameof(SecuritySummary));
+        OnPropertyChanged(nameof(SecurityContract));
+    }
+
+    /// <summary>
+    /// Lee la postura. Solo lectura: no hay ninguna ruta de escritura. Si falla, se registra y se deja el
+    /// panel como estaba; el error no tumba la app.
+    /// </summary>
+    [RelayCommand]
+    private async Task ReadSecurityAsync()
+    {
+        if (SecurityPostureService is null) { _sink.Write("Information", "Postura de seguridad no disponible en este host."); return; }
+        try
+        {
+            SecurityPosture = await SecurityPostureService.ReadAsync();
+            _sink.Write("Information", "Postura de seguridad leída (solo lectura).");
+        }
+        catch (Exception ex) { _sink.Write("Warning", "No se pudo leer la postura de seguridad: " + ex.Message); }
+    }
+
     /// <summary>Texto del interruptor según el estado. Lo resuelve el localizador.</summary>
     public string SessionStateText => _localizer[SessionStateKey];
 

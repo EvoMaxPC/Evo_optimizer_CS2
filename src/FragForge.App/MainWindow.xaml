@@ -52,12 +52,17 @@
           <DataGridTextColumn Header="Evidencia" Binding="{Binding Evidence}" Width="90" IsReadOnly="True"/>
           <DataGridTextColumn Header="Riesgo" Binding="{Binding Risk}" Width="90" IsReadOnly="True"/>
           <DataGridTextColumn Header="Estado" Binding="{Binding StateDisplay}" Width="140" IsReadOnly="True"/>
+          <DataGridTextColumn Header="Anticheat" Binding="{Binding AnticheatNote}" Width="180" IsReadOnly="True"/>
           <DataGridTextColumn Header="Motivo" Binding="{Binding Reason}" Width="*" IsReadOnly="True"/>
         </DataGrid.Columns>
       </DataGrid>
       <Border Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="10,0,0,0">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel>
+            <TextBlock Text="{Binding Localizer[security.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+            <TextBlock Text="{Binding SecuritySummary}" TextWrapping="Wrap" FontFamily="Consolas" FontSize="12" Margin="0,4,0,0"/>
+            <TextBlock Text="{Binding SecurityContract}" TextWrapping="Wrap" FontSize="11" Opacity="0.8" Margin="0,4,0,0"/>
+            <Button Content="{Binding Localizer[security.refresh]}" Command="{Binding ReadSecurityCommand}" Margin="0,8,0,8"/>
             <TextBlock Text="{Binding Localizer[doctor.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
             <ItemsControl ItemsSource="{Binding Checks}">
               <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="0,4"/></DataTemplate></ItemsControl.ItemTemplate>

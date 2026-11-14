@@ -36,6 +36,16 @@ public static class ServiceCollectionExtensions
             ? new Network.WindowsNetworkAdapterResolver(sp.GetRequiredService<IWmiQuery>(), sp.GetRequiredService<IRegistry>())
             : new UnsupportedNetworkAdapterResolver());
         services.AddSingleton<Network.NetworkAdvancedPropertyReader>();
+        // Capa 10.1: postura de seguridad de SOLO LECTURA. La implementación se elige dentro de la fábrica
+        // porque la de Windows está marcada [SupportedOSPlatform("windows")] (CA1416 no ve la comprobación a
+        // través del contenedor).
+        services.AddSingleton<ISecurityPostureService>(sp => OperatingSystem.IsWindows()
+            ? new Security.WindowsSecurityPostureService(
+                sp.GetRequiredService<IWmiQuery>(),
+                sp.GetRequiredService<IRegistry>(),
+                sp.GetRequiredService<IProcessRunner>(),
+                sp.GetRequiredService<Core.Preflight.NetworkChangePreflight>())
+            : new Security.UnsupportedSecurityPostureService());
         services.AddFragForgeDiagnosticProbes();
         return services;
     }
