@@ -1,0 +1,82 @@
+{
+  "id": "power.usb-selective-suspend-off",
+  "category": "Power",
+  "title": {
+    "es-MX": "Desactivar suspensión selectiva de USB (solo CA)",
+    "en-US": "Disable USB selective suspend (AC only)"
+  },
+  "description": {
+    "es-MX": "Fija la suspensión selectiva de USB en «desactivada» (índice 0) para el plan FragForge Performance, solo en corriente alterna. La suspensión selectiva permite que un puerto USB entre en bajo consumo; desactivarla mantiene el puerto alimentado. Escribe solo sobre un plan existente.",
+    "en-US": "Sets USB selective suspend to Disabled (index 0) for the FragForge Performance plan, AC only. Selective suspend lets a USB port enter a low-power state; disabling it keeps the port powered. It only writes to an existing plan."
+  },
+  "evidence": "Low",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "formFactor",
+      "parameters": {
+        "battery": false
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": false,
+        "mode": "settingsOnly",
+        "settings": [
+          {
+            "subgroupGuid": "2a737441-1930-4402-8d77-b2bebba308a3",
+            "settingGuid": "48e6b7a6-50f5-4782-a5d4-53bb8f07e226",
+            "acValue": 0,
+            "dcValue": 0
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "power",
+    "usb",
+    "peripherals",
+    "opt-in",
+    "measure-ab"
+  ],
+  "profiles": [],
+  "conflictsWith": [],
+  "dependsOn": [
+    "power.fragforge-performance"
+  ],
+  "expectedImpact": {
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "Posible: puede evitar micro-cortes de periféricos USB al despertar; no medido",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Leve: los puertos USB no entran en bajo consumo"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/usb-selective-suspend"
+  ],
+  "notes": {
+    "es-MX": "Opt-in y sin perfil: se aplica solo por id. Depende de power.fragforge-performance, así que aplicarlo también crea el plan FragForge Performance si no existe. En la PN64 el valor ya está en 1 (habilitado) y pasa a 0. Si capture lo encuentra ya en 0, no se escribe nada. Reversible: revierte solo su valor.",
+    "en-US": "Opt-in and no profile: apply by id only. It depends on power.fragforge-performance, so applying it also creates the FragForge Performance plan if missing. On the PN64 the value is 1 (enabled) and becomes 0. If capture finds it already at 0, nothing is written. Reversible: reverts only its own value."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en portátiles ni con batería: mantener los puertos alimentados aumenta el consumo. No aplicar si usas periféricos que dependen de suspensión selectiva para ahorrar energía, ni si el equipo tiene problemas de estabilidad USB.",
+    "en-US": "Do not apply on laptops or battery-powered machines: keeping ports powered increases consumption. Do not apply if you rely on selective suspend for power savings, or if the machine has USB stability problems."
+  }
+}

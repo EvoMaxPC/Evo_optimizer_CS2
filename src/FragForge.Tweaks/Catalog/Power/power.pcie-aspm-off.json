@@ -1,0 +1,81 @@
+{
+  "id": "power.pcie-aspm-off",
+  "category": "Power",
+  "title": {
+    "es-MX": "Desactivar ASPM de PCI Express (solo CA)",
+    "en-US": "Disable PCI Express ASPM (AC only)"
+  },
+  "description": {
+    "es-MX": "Fija el vínculo de estado de energía de PCI Express en «desactivado» (índice 0) para el plan FragForge Performance, solo en corriente alterna. Escribe únicamente sobre un plan que ya existe: no lo crea, no lo borra y no lo activa.",
+    "en-US": "Sets the PCI Express link state power management to Off (index 0) for the FragForge Performance plan, AC only. It only writes to an existing plan: it does not create, delete or activate it."
+  },
+  "evidence": "Low",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "formFactor",
+      "parameters": {
+        "battery": false
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": false,
+        "mode": "settingsOnly",
+        "settings": [
+          {
+            "subgroupGuid": "501a4d13-42af-4429-9fd1-a8218c268e20",
+            "settingGuid": "ee12f906-d277-404b-b6da-e5fa1a576df5",
+            "acValue": 0,
+            "dcValue": 0
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "power",
+    "pcie",
+    "opt-in",
+    "measure-ab"
+  ],
+  "profiles": [],
+  "conflictsWith": [],
+  "dependsOn": [
+    "power.fragforge-performance"
+  ],
+  "expectedImpact": {
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "Sin efecto medible esperado",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Leve: el enlace PCIe no entra en estados de bajo consumo"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/pci-power-management"
+  ],
+  "notes": {
+    "es-MX": "Opt-in y sin perfil: se aplica solo por id. Depende de power.fragforge-performance, así que aplicarlo también crea el plan FragForge Performance si no existe. Si capture detecta que el valor ya estaba en 0, no se escribe nada. Reversible: revierte solo su valor.",
+    "en-US": "Opt-in and no profile: apply by id only. It depends on power.fragforge-performance, so applying it also creates the FragForge Performance plan if missing. If capture finds the value already at 0, nothing is written. Reversible: reverts only its own value."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en portátiles ni en equipos con batería: ASPM existe para ahorrar energía y no hay medición que demuestre beneficio en frametime. No aplicar si el equipo presenta inestabilidad del bus PCIe.",
+    "en-US": "Do not apply on laptops or battery-powered machines: ASPM exists to save power and no measurement shows a frametime benefit. Do not apply if the machine shows PCIe bus instability."
+  }
+}

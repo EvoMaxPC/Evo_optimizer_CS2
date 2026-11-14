@@ -109,6 +109,77 @@ public sealed class PowerCfgQueryParserTests
         Assert.Equal(spanish.Increment, english.Increment);
     }
 
+    // ---------- Fixtures reales de la PN64 (salida de /qh, es-MX) ----------
+
+    private const string UsbSubgroup = "2a737441-1930-4402-8d77-b2bebba308a3";
+    private const string UsbSetting = "48e6b7a6-50f5-4782-a5d4-53bb8f07e226";
+    private const string CoreParking1 = "0cc5b647-c1df-4637-891a-dec35c318584";
+
+    /// <summary>
+    /// La PN64: USB (enumerado, SIN línea de alias) y CPMINCORES1 (rango), en ese orden. El bloque
+    /// USB no tiene alias, lo que prueba que el bloque se identifica por GUID y no por etiqueta.
+    /// </summary>
+    private const string Pn64Output = """
+        Configuración de energía actual
+
+        GUID de configuración de energía: 2a737441-1930-4402-8d77-b2bebba308a3  (Configuración USB)
+            GUID de configuración de energía: 48e6b7a6-50f5-4782-a5d4-53bb8f07e226  (suspensión selectiva USB)
+              Valores de configuración de energía posibles:
+                000
+                001
+              Índice de configuración de energía actual de CA: 0x00000001
+              Índice de configuración de energía actual de CC: 0x00000001
+
+        GUID de configuración de energía: 54533251-82be-4824-96c1-47b60b740d00  (Procesador)
+            GUID de configuración de energía: 0cc5b647-c1df-4637-891a-dec35c318584  (aparcamiento de núcleos del procesador, mínima clase 1)
+              Límites de configuración de energía mínimos posibles: 0x00000000
+              Límites de configuración de energía máximos posibles: 0x00000064
+              Incremento de configuración de energía posible: 0x00000001
+              Índice de configuración de energía actual de CA: 0x00000000
+              Índice de configuración de energía actual de CC: 0x00000000
+        """;
+
+    [Fact]
+    public void UsbSetting_ParsesWithoutAnAliasLine()
+    {
+        // El bloque USB no trae "Alias de GUID": se identifica por su GUID y su subgrupo.
+        var usb = PowerCfgQueryParser.Find(Pn64Output, UsbSubgroup, UsbSetting);
+        Assert.NotNull(usb);
+        Assert.Equal(1, usb!.AcIndex);
+        Assert.Equal(1, usb.DcIndex);
+        Assert.Equal(new[] { 0, 1 }, usb.PossibleIndices);
+        Assert.False(usb.IsRange);
+        Assert.True(usb.IsEnumerated);
+        Assert.True(usb.Allows(0));
+        Assert.False(usb.Allows(2)); // el 2 no está enumerado
+    }
+
+    [Fact]
+    public void CoreParkingVariant1_ParsesAsARange()
+    {
+        var parking = PowerCfgQueryParser.Find(Pn64Output, ProcessorSubgroup, CoreParking1);
+        Assert.NotNull(parking);
+        Assert.Equal(0, parking!.AcIndex);
+        Assert.Equal(0, parking.DcIndex);
+        Assert.Equal(0, parking.Minimum);
+        Assert.Equal(100, parking.Maximum);
+        Assert.Equal(1, parking.Increment);
+        Assert.True(parking.Allows(100));
+    }
+
+    [Fact]
+    public void TwoBlocksOfTheSameSubgroup_AreDistinguishedByTheirSettingGuid()
+    {
+        // El subgrupo se repite; lo que distingue es el GUID del setting. Un parser que se guiara por
+        // "la primera aparición del subgrupo" devolvería el bloque equivocado.
+        var all = PowerCfgQueryParser.Parse(Pn64Output);
+        Assert.Equal(2, all.Count);
+        Assert.Equal(UsbSetting, all[0].SettingGuid);
+        Assert.Equal(CoreParking1, all[1].SettingGuid);
+        Assert.Equal(UsbSubgroup, all[0].SubgroupGuid);
+        Assert.Equal(ProcessorSubgroup, all[1].SubgroupGuid);
+    }
+
     [Fact]
     public void MissingSetting_ReturnsNull_SoTheCallerCanReportNotApplicable()
     {

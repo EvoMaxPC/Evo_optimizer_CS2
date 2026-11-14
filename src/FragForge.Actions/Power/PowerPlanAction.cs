@@ -41,15 +41,26 @@ public sealed class PowerPlanAction : ITweakAction
             : (FindSourcePlan(plans) ?? throw new ActionNotApplicableException($"El plan base {_parameters.SourceSchemeGuid} no existe en este equipo; no se puede duplicar.")).Guid;
 
         var queried = await QuerySettingsAsync(queryGuid, cancellationToken);
+        var enumerable = 0;
         foreach (var setting in _parameters.Settings)
         {
-            var found = queried.FirstOrDefault(q =>
-                string.Equals(q.SubgroupGuid, setting.SubgroupGuid, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(q.SettingGuid, setting.SettingGuid, StringComparison.OrdinalIgnoreCase));
-            if (found is null) throw new ActionNotApplicableException($"El sistema no enumera el ajuste {setting.SettingGuid} en este equipo; no se asume nada.");
+            var found = FindSetting(queried, setting);
+            if (found is null)
+            {
+                if (_parameters.SkipUnenumeratedSettings) continue;
+                throw new ActionNotApplicableException($"El sistema no enumera el ajuste {setting.SettingGuid} en este equipo; no se asume nada.");
+            }
             if (!found.Allows(setting.AcValue)) throw new ActionNotApplicableException($"El valor AC {setting.AcValue} de {setting.SettingGuid} no está en {found.Describe()}: lo enumera el sistema para este equipo.");
+            enumerable++;
         }
+        if (enumerable == 0) throw new ActionNotApplicableException("El sistema no enumera ninguno de los ajustes de este tweak en este equipo.");
     }
+
+    /// <summary>Busca un ajuste declarado dentro de lo que devolvió <c>/qh</c>.</summary>
+    private static PowerSettingQuery? FindSetting(IReadOnlyList<PowerSettingQuery> queried, PowerPlanTarget setting) =>
+        queried.FirstOrDefault(q =>
+            string.Equals(q.SubgroupGuid, setting.SubgroupGuid, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(q.SettingGuid, setting.SettingGuid, StringComparison.OrdinalIgnoreCase));
     public async Task<ActionState> CaptureAsync(ActionExecutionContext context, CancellationToken cancellationToken = default)
     {
         Validate();
@@ -100,10 +111,12 @@ public sealed class PowerPlanAction : ITweakAction
         var enumerated = await QuerySettingsAsync(guid, cancellationToken);
         foreach (var setting in _parameters.Settings)
         {
-            var found = enumerated.FirstOrDefault(q =>
-                string.Equals(q.SubgroupGuid, setting.SubgroupGuid, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(q.SettingGuid, setting.SettingGuid, StringComparison.OrdinalIgnoreCase));
-            if (found is null) throw new ActionNotApplicableException($"El sistema dejó de enumerar el ajuste {setting.SettingGuid}; no se escribe a ciegas.");
+            var found = FindSetting(enumerated, setting);
+            if (found is null)
+            {
+                if (_parameters.SkipUnenumeratedSettings) continue;
+                throw new ActionNotApplicableException($"El sistema dejó de enumerar el ajuste {setting.SettingGuid}; no se escribe a ciegas.");
+            }
             if (!found.Allows(setting.AcValue)) throw new ActionNotApplicableException($"El valor AC {setting.AcValue} de {setting.SettingGuid} quedó fuera de {found.Describe()} antes de escribir.");
 
             await RunAsync(["/setacvalueindex", guid, setting.SubgroupGuid, setting.SettingGuid, setting.AcValue.ToString(CultureInfo.InvariantCulture)], cancellationToken);
@@ -123,6 +136,8 @@ public sealed class PowerPlanAction : ITweakAction
         var settingsOnly = _parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase);
         foreach (var setting in _parameters.Settings)
         {
+            // Las variantes que este equipo no enumera no se escribieron ni se exigen.
+            if (_parameters.SkipUnenumeratedSettings && FindSetting(await QuerySettingsAsync(plan.Value.Guid, cancellationToken), setting) is null) continue;
             var current = await QuerySettingAsync(plan.Value.Guid, setting.SubgroupGuid, setting.SettingGuid, cancellationToken);
             if (current.AcIndex != setting.AcValue) return VerificationResult.Missing($"El ajuste {setting.SettingGuid} no coincide en AC.");
             // DC solo se escribió si el equipo no tiene batería: no se exige cuando no se escribió.
@@ -300,6 +315,14 @@ internal sealed record PowerPlanParameters
     /// existe: no duplica, no borra y no cambia el plan activo (lo usan los tweaks de settings).
     /// </summary>
     public string? Mode { get; init; }
+    /// <summary>
+    /// Si es true, las variantes de un mismo ajuste que el sistema NO enumere se omiten en vez de
+    /// hacer fallar el tweak entero (siempre que al menos una esté enumerada). Es lo que necesita un
+    /// tweak que declara las tres variantes de PERFEPP cuando la PN64 solo expone una: se escribe la
+    /// que existe y se omiten las demás. Con false (por defecto) cualquier ajuste no enumerado hace
+    /// que el tweak sea NotApplicable: no se escribe "casi todo" en silencio.
+    /// </summary>
+    public bool SkipUnenumeratedSettings { get; init; }
     public IReadOnlyList<PowerPlanTarget> Settings { get; init; } = [];
 }
 public sealed record PowerPlanTarget

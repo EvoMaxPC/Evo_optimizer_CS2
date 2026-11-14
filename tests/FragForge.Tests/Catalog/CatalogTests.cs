@@ -155,6 +155,8 @@ public sealed class CatalogTests
     {
         ["cpu.power-throttling-off"] = "Balanced, Competitive, Advanced",
         ["cs2.cpu-priority-high"] = "Balanced, Competitive, Advanced",
+        ["cpu.core-parking-off"] = "Advanced",
+        ["cpu.epp-performance"] = "Advanced",
         ["cs2.fullscreen-optimizations-off"] = "Advanced",
         ["debloat.policy.allowtelemetry-minimum"] = "",
         ["debloat.service.diagtrack-disabled"] = "",
@@ -178,7 +180,9 @@ public sealed class CatalogTests
         ["latency.global-timer-resolution"] = "Balanced, Competitive, Advanced",
         ["latency.mouse-acceleration-off"] = "Safe, Balanced, Competitive, Advanced",
         ["network.i225v-eee-off"] = "Competitive, Advanced",
-        ["power.fragforge-performance"] = "Competitive, Advanced"
+        ["power.fragforge-performance"] = "Competitive, Advanced",
+        ["power.pcie-aspm-off"] = "",
+        ["power.usb-selective-suspend-off"] = ""
     };
 
     [Fact]

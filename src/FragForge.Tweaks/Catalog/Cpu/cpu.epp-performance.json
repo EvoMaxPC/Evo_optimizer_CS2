@@ -1,0 +1,91 @@
+{
+  "id": "cpu.epp-performance",
+  "category": "Cpu",
+  "title": {
+    "es-MX": "Perfil de energía del procesador: rendimiento (solo CA)",
+    "en-US": "Processor energy performance preference: performance (AC only)"
+  },
+  "description": {
+    "es-MX": "Fija PERFEPP en 0 (máximo rendimiento) en cada variante que el sistema enumere para el procesador, solo en corriente alterna, dentro del plan FragForge Performance. No promete FPS: el objetivo es que el procesador no retrase la subida de frecuencia, a validar con A/B.",
+    "en-US": "Sets PERFEPP to 0 (maximum performance) on every variant the system enumerates for the processor, AC only, inside the FragForge Performance plan. It does not promise FPS: the goal is that the processor does not delay frequency ramp-up, to be validated with A/B."
+  },
+  "evidence": "Low",
+  "risk": "Advanced",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": false,
+        "mode": "settingsOnly",
+        "settings": [
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "36687f9e-e3a5-4dbf-b1dc-15eb381c6863",
+            "acValue": 0,
+            "dcValue": 0
+          },
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "36687f9e-e3a5-4dbf-b1dc-15eb381c6864",
+            "acValue": 0,
+            "dcValue": 0
+          },
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "36687f9e-e3a5-4dbf-b1dc-15eb381c6865",
+            "acValue": 0,
+            "dcValue": 0
+          }
+        ],
+        "skipUnenumeratedSettings": true
+      }
+    }
+  ],
+  "tags": [
+    "cpu",
+    "power",
+    "opt-in",
+    "measure-ab",
+    "thermal-opt-in"
+  ],
+  "profiles": [
+    "Advanced"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [
+    "power.fragforge-performance"
+  ],
+  "expectedImpact": {
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B",
+    "1%lows": "A validar con A/B; puede mejorar o no según el plan térmico",
+    "inputLatency": "Sin efecto medible esperado",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Peor: menos ahorro de energía => más calor en reposo y bajo carga"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/processor-performance-control"
+  ],
+  "notes": {
+    "es-MX": "Solo escribe las variantes de PERFEPP que /qh enumere en este equipo; las que no estén enumeradas se omiten y el tweak se marca no aplicable. En la PN64 el valor AC actual es 5. Depende de power.fragforge-performance: aplicarlo también crea ese plan si no existe. Reversible: revierte solo sus valores.",
+    "en-US": "Only writes the PERFEPP variants that /qh enumerates on this machine; variants that are not enumerated are skipped and the tweak is reported not applicable. On the PN64 the current AC value is 5. It depends on power.fragforge-performance: applying it also creates that plan if missing. Reversible: reverts only its own values."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en un equipo de 28 W con DTT: puede subir la temperatura y recortar el boost sostenido, dejando menos rendimiento sostenido que antes. Validar con A/B que incluye térmicos y carga sostenida. No aplicar si el equipo ya se calienta o hace ruido.",
+    "en-US": "Do not apply on a 28 W machine with DTT: it can raise temperature and cut sustained boost, leaving less sustained performance than before. Validate with A/B including thermals and sustained load. Do not apply if the machine already runs hot or loud."
+  }
+}

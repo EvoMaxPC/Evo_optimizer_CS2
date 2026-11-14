@@ -1,0 +1,79 @@
+{
+  "id": "cpu.core-parking-off",
+  "category": "Cpu",
+  "title": {
+    "es-MX": "Desactivar aparcamiento de núcleos (variantes no base, solo CA)",
+    "en-US": "Disable core parking (non-base variants, AC only)"
+  },
+  "description": {
+    "es-MX": "Fija en 100 cada variante de CPMINCORES que el sistema enumere, EXCEPTO la base (0cc5b647-c1df-4637-891a-dec35c318583), que pertenece a power.fragforge-performance. Solo corriente alterna, dentro del plan FragForge Performance. No promete FPS.",
+    "en-US": "Sets every CPMINCORES variant the system enumerates to 100, EXCEPT the base one (0cc5b647-c1df-4637-891a-dec35c318583), which belongs to power.fragforge-performance. AC only, inside the FragForge Performance plan. It does not promise FPS."
+  },
+  "evidence": "Low",
+  "risk": "Advanced",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": false,
+        "mode": "settingsOnly",
+        "settings": [
+          {
+            "subgroupGuid": "54533251-82be-4824-96c1-47b60b740d00",
+            "settingGuid": "0cc5b647-c1df-4637-891a-dec35c318584",
+            "acValue": 100,
+            "dcValue": 100
+          }
+        ],
+        "skipUnenumeratedSettings": true
+      }
+    }
+  ],
+  "tags": [
+    "cpu",
+    "power",
+    "opt-in",
+    "measure-ab",
+    "thermal-opt-in"
+  ],
+  "profiles": [
+    "Advanced"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [
+    "power.fragforge-performance"
+  ],
+  "expectedImpact": {
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B",
+    "1%lows": "A validar con A/B; sin garantía de mejora",
+    "inputLatency": "Sin efecto medible esperado",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Peor: menos núcleos aparcados => más consumo y calor"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/core-parking"
+  ],
+  "notes": {
+    "es-MX": "Dueño único por ajuste: la variante base (…583) la escribe power.fragforge-performance y este tweak NO la toca. Solo escribe variantes que /qh enumere; en la PN64 escribe …584 (hoy 0). Qué clase es P-core o E-core no está verificado: ningún texto lo afirma. Reversible: revierte solo sus valores.",
+    "en-US": "Single owner per setting: the base variant (…583) is written by power.fragforge-performance and this tweak does NOT touch it. It only writes variants that /qh enumerates; on the PN64 it writes …584 (currently 0). Which class is P-core or E-core is unverified: no text asserts it. Reversible: reverts only its own values."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si el equipo se calienta o hace ruido: con presupuesto de 28 W, mantener todos los núcleos despiertos sube la temperatura y puede recortar el boost sostenido. Validar con A/B que incluya térmicos.",
+    "en-US": "Do not apply if the machine runs hot or loud: on a 28 W budget, keeping all cores awake raises temperature and can cut sustained boost. Validate with A/B including thermals."
+  }
+}

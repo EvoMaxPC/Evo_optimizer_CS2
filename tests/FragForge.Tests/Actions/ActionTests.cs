@@ -208,6 +208,83 @@ public sealed class PowerPlanActionTests
         Assert.Throws<CatalogValidationException>(() => new PowerPlanAction(new FakeProcessRunner(), Spec.Action("PowerPlan", new { planName = "X", sourceSchemeGuid = "not-a-guid" })));
     }
 
+    // ---------- Pass 2: skipUnenumeratedSettings (variantes de PERFEPP) ----------
+
+    private static ActionSpec SpecTwoVariants(bool skip) => new()
+    {
+        Kind = "PowerPlan",
+        Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            planName = "FragForge Performance",
+            sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+            activate = true,
+            skipUnenumeratedSettings = skip,
+            settings = new[]
+            {
+                new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = 0, dcValue = 0 },
+                // Este segundo ajuste NO lo enumera el simulador: es la variante ausente en la PN64.
+                new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "de67a0c0-0c8e-4c1f-a1e0-000000000002", acValue = 0, dcValue = 0 }
+            }
+        })
+    };
+
+    [Fact]
+    public async Task SkipUnenumeratedSettings_WritesOnlyWhatTheSystemEnumerates()
+    {
+        // Caso PN64: de las tres variantes de PERFEPP solo una está enumerada. Con la bandera activa,
+        // el tweak NO debe declararse inaplicable: escribe la que existe y omite la que no.
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        var action = new PowerPlanAction(simulator.Runner, SpecTwoVariants(skip: true));
+
+        await action.PreflightAsync(Context());
+        var captured = await action.CaptureAsync(Context());
+        await action.ApplyAsync(captured, Context());
+
+        Assert.True(simulator.HasCommand("/setacvalueindex"), "se escribe la variante enumerada");
+        // El ajuste ausente nunca se escribe.
+        Assert.DoesNotContain(simulator.Commands, c => c.Contains("de67a0c0", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyAsync(captured, Context())).Outcome);
+    }
+
+    [Fact]
+    public async Task WithoutSkipUnenumeratedSettings_TheMissingVariantMakesItNotApplicable()
+    {
+        // Por defecto NO se omite nada: una variante no enumerada hace fallar el tweak entero en vez
+        // de escribir "casi todo" en silencio.
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        var action = new PowerPlanAction(simulator.Runner, SpecTwoVariants(skip: false));
+
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WhenNoVariantIsEnumerated_ItIsNotApplicableEvenWithTheFlag()
+    {
+        // La bandera no autoriza a escribir nada: si no hay ninguna variante enumerada, no aplica.
+        var spec = new ActionSpec
+        {
+            Kind = "PowerPlan",
+            Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new
+            {
+                planName = "FragForge Performance",
+                sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+                activate = true,
+                skipUnenumeratedSettings = true,
+                settings = new[]
+                {
+                    new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "de67a0c0-0c8e-4c1f-a1e0-000000000003", acValue = 0, dcValue = 0 }
+                }
+            })
+        };
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        var action = new PowerPlanAction(simulator.Runner, spec);
+
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.Contains("ninguno", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+    }
+
     // ---------- B1: validador "entero >= 0" y rango real contra /qh ----------
 
     [Fact]
