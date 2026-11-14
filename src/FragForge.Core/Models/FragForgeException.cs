@@ -18,3 +18,12 @@ public sealed class PreflightFailedException(string message, PreflightReport rep
 }
 public sealed class RollbackException(string message, Exception? inner = null) : FragForgeException("rollback_failed", message, inner);
 public sealed class ProcessFailedException(string executable, int exitCode, string error) : FragForgeException("process_failed", $"'{executable}' terminó con código {exitCode}: {error}");
+
+/// <summary>
+/// Se lanza cuando una medición no puede ejecutarse (herramienta sin verificar, sin frame data, entorno inválido).
+/// El CLI la traduce al código de salida 6.
+/// </summary>
+public sealed class MeasureNotAvailableException : FragForgeException
+{
+    public MeasureNotAvailableException(string message) : base("measure_not_available", message) { }
+}
