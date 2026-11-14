@@ -28,9 +28,48 @@ namespace FragForge.Composition;
 
 public sealed record ShellOptions(string? DataRoot = null, string Culture = "es-MX", bool ConsoleLogging = true, Action<IServiceCollection>? ConfigureServices = null);
 
+/// <summary>
+/// Dobles que un test (o un host de integración) puede inyectar en <see cref="CompositionRoot"/> (Capa 11.1).
+///
+/// <para>
+/// Es un <b>punto de sustitución</b>, no un modo de producción: en la app y en el CLI queda todo en
+/// <c>null</c> y se resuelven las implementaciones reales. Existe para que un test de composición sea
+/// hermético —sin tareas programadas reales, sin Steam, sin WMI— sin tener que extraer la composición a una
+/// fábrica paralela que se desincronice de la real.
+/// </para>
+///
+/// <para>
+/// Cada campo es opcional e independiente: se puede sustituir solo el runner, o solo el perfilador.
+/// </para>
+/// </summary>
+public sealed record CompositionOverrides
+{
+    /// <summary>Ejecutable de procesos. Sino, la implementación real de la plataforma.</summary>
+    public IProcessRunner? ProcessRunner { get; init; }
+
+    /// <summary>Localizador de CS2 (Steam). Sino, el real; en tests deja de depender de Steam instalado.</summary>
+    public IGameLocator? GameLocator { get; init; }
+
+    /// <summary>Perfilador de hardware. Sino, el real (WMI).</summary>
+    public IHardwareProfiler? HardwareProfiler { get; init; }
+
+    /// <summary>Lector de WMI. Sino, el real.</summary>
+    public IWmiQuery? Wmi { get; init; }
+
+    /// <summary>Controlador de servicios. Sino, el real.</summary>
+    public IServiceController? ServiceController { get; init; }
+
+    /// <summary>Almacén de tareas programadas. Sino, el real.</summary>
+    public IScheduledTaskStore? ScheduledTasks { get; init; }
+}
+
 public static class CompositionRoot
 {
-    public static async Task<IHost> BuildAsync(ShellOptions options, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Construye el host. El tercer parámetro es ADITIVO y opcional: los llamadores existentes (App, CLI y
+    /// todos los tests) siguen compilando sin tocarlos (Capa 11.1).
+    /// </summary>
+    public static async Task<IHost> BuildAsync(ShellOptions options, CancellationToken cancellationToken = default, CompositionOverrides? overrides = null)
     {
         var paths = new FragForgePaths(options.DataRoot);
         paths.EnsureCreated();
@@ -55,27 +94,35 @@ public static class CompositionRoot
         builder.Services.AddSingleton<IApplicationContext>(new ApplicationContext(paths.Root, localizer.Culture));
         builder.Services.AddSingleton(localizer);
         builder.Services.AddSingleton<IProtectionPolicy>(policy);
-        builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
+        // Capa 11.1: si el host de pruebas inyecta un doble, gana. El resto del tiempo esto es la real.
+        if (overrides?.ProcessRunner is { } processRunner) builder.Services.AddSingleton(processRunner);
+        else builder.Services.AddSingleton<IProcessRunner, ProcessRunner>();
         if (OperatingSystem.IsWindows())
         {
-            builder.Services.AddSingleton<IWmiQuery, WmiQuery>();
+            if (overrides?.Wmi is { } wmi) builder.Services.AddSingleton(wmi);
+            else builder.Services.AddSingleton<IWmiQuery, WmiQuery>();
             builder.Services.AddSingleton<ICpuTopologyProbe, WindowsCpuTopologyProbe>();
-            builder.Services.AddSingleton<IServiceController, WindowsServiceController>();
-            builder.Services.AddSingleton<IScheduledTaskStore, WindowsScheduledTaskStore>();
+            if (overrides?.ServiceController is { } serviceController) builder.Services.AddSingleton(serviceController);
+            else builder.Services.AddSingleton<IServiceController, WindowsServiceController>();
+            if (overrides?.ScheduledTasks is { } scheduledTasks) builder.Services.AddSingleton(scheduledTasks);
+            else builder.Services.AddSingleton<IScheduledTaskStore, WindowsScheduledTaskStore>();
             builder.Services.AddSingleton<INetworkAdapterController, WindowsNetworkAdapterController>();
             builder.Services.AddSingleton<ISystemRestoreService, SystemRestoreService>();
-            builder.Services.AddSingleton<IGameLocator, SteamGameLocator>();
+            if (overrides?.GameLocator is { } gameLocator) builder.Services.AddSingleton(gameLocator);
+            else builder.Services.AddSingleton<IGameLocator, SteamGameLocator>();
             // Capa 8.2: resolucion de cs2.exe por appmanifest_730.acf (installdir), aparte del locator.
             builder.Services.AddSingleton<ICs2Resolver, SteamCs2Resolver>();
             // Capa 8.6: inspector de SOLO LECTURA de la configuracion de CS2.
             builder.Services.AddSingleton<Cs2Inspector>();
             // Capa 9: modo sesion. Vive en Core y solo depende del motor y del catalogo.
             builder.Services.AddSingleton<GameSessionService>();
-            builder.Services.AddSingleton<IHardwareProfiler, WindowsHardwareProfiler>();
+            if (overrides?.HardwareProfiler is { } hardwareProfiler) builder.Services.AddSingleton(hardwareProfiler);
+            else builder.Services.AddSingleton<IHardwareProfiler, WindowsHardwareProfiler>();
         }
         else
         {
-            builder.Services.AddSingleton<IWmiQuery, UnsupportedWmiQuery>();
+            if (overrides?.Wmi is { } wmi) builder.Services.AddSingleton(wmi);
+            else builder.Services.AddSingleton<IWmiQuery, UnsupportedWmiQuery>();
             builder.Services.AddSingleton<ICpuTopologyProbe, UnsupportedCpuTopologyProbe>();
             builder.Services.AddSingleton<IServiceController, UnsupportedServiceController>();
             builder.Services.AddSingleton<IScheduledTaskStore, UnsupportedScheduledTaskStore>();

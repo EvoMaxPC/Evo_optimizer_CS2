@@ -18,6 +18,7 @@ namespace FragForge.Tests.Core;
 ///
 /// Tests herméticos: no se toca la PC, todo son filas y fakes.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class TpmAndNetworkHotfixTests
 {
     private static IReadOnlyList<IReadOnlyDictionary<string, object?>> Rows(params Dictionary<string, object?>[] rows) => rows;

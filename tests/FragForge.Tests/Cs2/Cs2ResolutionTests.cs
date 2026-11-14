@@ -237,13 +237,13 @@ public sealed class Cs2ProcessTests
     [Fact]
     public void IsRunning_FindsCs2AmongManyProcesses()
     {
-        Assert.Equal(true, Cs2Process.IsRunning(["explorer", "steam", "cs2", "discord"]));
+        Assert.True(Cs2Process.IsRunning(["explorer", "steam", "cs2", "discord"]));
     }
 
     [Fact]
     public void IsRunning_WithEmptyList_IsFalse()
     {
-        Assert.Equal(false, Cs2Process.IsRunning([]));
+        Assert.False(Cs2Process.IsRunning([]));
     }
 
     /// <summary>

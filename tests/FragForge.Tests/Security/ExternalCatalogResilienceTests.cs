@@ -213,6 +213,6 @@ public sealed class ExternalCatalogResilienceTests
         var catalog = await Loader().LoadEmbeddedAsync();
 
         Assert.False(catalog.LoadReport.HasRejections);
-        Assert.Empty(catalog.Definitions.Where(d => d.Id.Length == 0));
+        Assert.DoesNotContain(catalog.Definitions, d => d.Id.Length == 0);
     }
 }

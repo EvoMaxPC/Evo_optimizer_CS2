@@ -9,6 +9,7 @@ using Xunit;
 
 namespace FragForge.Tests.Inventory;
 
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class StartupInventorySourceTests
 {
     private static FakeRegistry RegistryWith(Action<FakeRegistry> configure)
@@ -163,6 +164,7 @@ public sealed class StartupInventorySourceTests
     }
 }
 
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class TaskInventorySourceTests
 {
     /// <summary>Política mínima que autoriza exactamente el script fijo y rechaza cualquier otro.</summary>
@@ -260,6 +262,7 @@ public sealed class TaskInventorySourceTests
     }
 }
 
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class ServiceInventoryTests
 {
     [Theory]

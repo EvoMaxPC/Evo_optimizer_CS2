@@ -12,6 +12,21 @@ public sealed class CompositionIntegrationTests
 {
     private static ShellOptions Options(string dataRoot) => new(dataRoot, "es-MX", ConsoleLogging: false);
 
+    /// <summary>
+    /// Sustituciones para que la composición sea HERMÉTICA (Capa 11.1): sin tareas programadas reales, sin
+    /// Steam instalado y sin WMI. Antes este test dependía de que el equipo tuviera Task Scheduler accesible y
+    /// una instalación de Steam, y en CI fallaba por motivos ajenos al código.
+    /// </summary>
+    private static CompositionOverrides Fakes() => new()
+    {
+        ProcessRunner = new FakeProcessRunner(),
+        GameLocator = new FakeGameLocator(),
+        HardwareProfiler = new FakeHardwareProfiler(),
+        Wmi = new FakeWmiQuery(),
+        ServiceController = new FakeServiceController(),
+        ScheduledTasks = new FakeScheduledTaskStore()
+    };
+
     private static readonly string[] SeedIds =
     [
         "cpu.power-throttling-off",
@@ -27,6 +42,7 @@ public sealed class CompositionIntegrationTests
     ];
 
     [Fact]
+    [Trait("Category", "Windows")]
     public async Task CompositionRoot_ResolvesEveryService_AndLoadsTheEmbeddedCatalog()
     {
         using var directory = new TempDirectory();
@@ -46,11 +62,15 @@ public sealed class CompositionIntegrationTests
         Assert.NotNull(host.Services.GetRequiredService<IExecutionGate>());
     }
 
+    /// <summary>
+    /// El escaneo y el dry-run completos sobre el catálogo REAL, con dobles inyectados: no toca tareas
+    /// programadas, ni Steam, ni WMI. Es lo que se puede correr en CI sin una máquina Windows preparada.
+    /// </summary>
     [Fact]
-    public async Task ScanAndDryRun_WorkOnAnyPlatform_BecauseEverythingIsFakedOrGuarded()
+    public async Task ScanAndDryRun_WorkWithInjectedDoubles_WithoutTouchingTheRealMachine()
     {
         using var directory = new TempDirectory();
-        using var host = await CompositionRoot.BuildAsync(Options(directory.Path));
+        using var host = await CompositionRoot.BuildAsync(Options(directory.Path), cancellationToken: default, overrides: Fakes());
         var engine = host.Services.GetRequiredService<ITweakEngine>();
         var catalog = host.Services.GetRequiredService<ITweakCatalog>();
         var scan = await engine.ScanAsync();
@@ -70,6 +90,7 @@ public sealed class CompositionIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Windows")]
     public async Task Report_IsGeneratedAsJsonAndHtml_WithAllSections()
     {
         using var directory = new TempDirectory();
@@ -93,6 +114,7 @@ public sealed class CompositionIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Windows")]
     public async Task PersonalDenylist_IsMergedFromProgramData()
     {
         using var directory = new TempDirectory();
@@ -106,6 +128,7 @@ public sealed class CompositionIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Windows")]
     public async Task SnapshotStoreAndJournal_PersistUnderTheConfiguredDataRoot()
     {
         using var directory = new TempDirectory();

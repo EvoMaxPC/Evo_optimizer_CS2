@@ -125,6 +125,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         ? "Sin leer. Pulsa Actualizar."
         : $"VBS={SecurityPosture.Vbs} · HVCI={SecurityPosture.Hvci} · Secure Boot={SecurityPosture.SecureBoot} · TPM={SecurityPosture.Tpm} · BitLocker={SecurityPosture.BitLocker} · Lista drivers={SecurityPosture.VulnerableDriverBlocklist}";
 
+    /// <summary>
+    /// Título de la ventana (Capa 11.1): nombre y versión del ensamblado, no un nombre de fase.
+    /// La localización NO se aplica aquí a propósito: "FragForge 0.1.0" es igual en es-MX y en-US.
+    /// </summary>
+    public string WindowTitle => FragForge.Core.Models.AssemblyInfoText.WindowTitle();
+
     /// <summary>Contrato anticheat tal cual, para mostrarlo sin reinterpretarlo.</summary>
     public string SecurityContract => SecurityPosture?.AnticheatContract
         ?? "FragForge no inyecta, no abre handles a cs2.exe, no modifica archivos del juego y no toca Steam ni procesos de anticheat. Revisa los requisitos de tu proveedor de anticheat.";

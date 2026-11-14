@@ -37,7 +37,7 @@ public sealed class PrivilegeDegradationTests
         var report = await Service().CheckAsync(new ApplyOptions { CreateRestorePoint = true }, Profile(admin: false));
 
         Assert.False(report.CanApply);
-        var admin = Assert.Single(report.Checks.Where(c => c.Id == "admin"));
+        var admin = Assert.Single(report.Checks, c => c.Id == "admin");
         Assert.Equal(PreflightSeverity.Blocking, admin.Severity);
         Assert.Contains("administrador", admin.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(string.IsNullOrWhiteSpace(admin.Remediation));
@@ -50,7 +50,7 @@ public sealed class PrivilegeDegradationTests
         var report = await Service().CheckAsync(new ApplyOptions { CreateRestorePoint = true }, Profile(admin: true));
 
         Assert.True(report.CanApply);
-        var admin = Assert.Single(report.Checks.Where(c => c.Id == "admin"));
+        var admin = Assert.Single(report.Checks, c => c.Id == "admin");
         Assert.Equal(PreflightSeverity.Info, admin.Severity);
     }
 

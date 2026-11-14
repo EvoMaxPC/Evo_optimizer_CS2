@@ -16,6 +16,7 @@ namespace FragForge.Tests.Core;
 /// Estos tests fijan las dos fuentes válidas (enum de RuntimeInformation y número de
 /// Win32_Processor.Architecture) y que lo desconocido NO se convierte en x64.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class ArchitectureHotfixTests
 {
     private static HardwareProfile ProfileWith(string architecture) =>

@@ -103,7 +103,6 @@ public sealed class PowerPlanActionTests
     private static ActionExecutionContext Context() => new() { OperationId = "test", Hardware = TestProfiles.Pn64() };
     private const string PlanGuid = "11111111-2222-3333-4444-555555555555";
     private const string PreviousGuid = "381b4222-f694-41f0-9685-ff5bb260df2e";
-    private static readonly string SettingsJson = """{"settings":[{"subgroupGuid":"54533251-82be-4824-96c1-47b60b740d00","settingGuid":"893dee8e-2bef-41e0-89c6-b55d0929964c","acValue":100,"dcValue":100}]}""";
     private static ActionSpec Spec_() => new() { Kind = "PowerPlan", Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new { planName = "FragForge Performance", sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", activate = true, settings = new[] { new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = 100, dcValue = 100 } } }) };
 
     private sealed class PowerCfgSimulator

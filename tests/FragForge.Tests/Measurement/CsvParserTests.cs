@@ -128,11 +128,11 @@ public sealed class CsvParserTests
         Assert.Contains("seguimiento de display", series.SwapChainReason);
 
         Assert.Equal(2, series.SwapChains.Count);
-        var chosen = Assert.Single(series.SwapChains.Where(c => c.Chosen));
+        var chosen = Assert.Single(series.SwapChains, c => c.Chosen);
         Assert.Equal("0x0", chosen.Address);
         Assert.True(chosen.HasDisplayTracking);
 
-        var discarded = Assert.Single(series.SwapChains.Where(c => c.Discarded));
+        var discarded = Assert.Single(series.SwapChains, c => c.Discarded);
         Assert.Equal("0x167400D5A60", discarded.Address);
         Assert.Equal(3, discarded.FrameCount);
         Assert.False(discarded.HasDisplayTracking);
@@ -159,7 +159,7 @@ public sealed class CsvParserTests
         //    Si se mezclaran las 6 filas, la mediana sería la media de las dos centrales: ~67, muy lejos
         //    de cualquiera de las dos. Se comprueba ese número para dejar constancia de la diferencia.
         var chosenMedian = Median(parsed.FrameTimesMs);
-        var discarded = Assert.Single(parsed.SwapChains.Where(c => c.Discarded));
+        var discarded = Assert.Single(parsed.SwapChains, c => c.Discarded);
         var mixedMedian = Median([.. parsed.FrameTimesMs, 115.63470000000001, 117.71440000000001, 119.76180000000001]);
 
         Assert.Equal(chosenMedian, Median(onlyZero.FrameTimesMs));
@@ -245,7 +245,7 @@ public sealed class CsvParserTests
         Assert.Equal(5, series.FrameCount);
         Assert.Single(series.SwapChains);
         Assert.Null(series.SwapChainReason); // una sola swapchain: no hay nada que justificar
-        Assert.Empty(series.Warnings.Where(w => w.Contains("varias swapchains", StringComparison.Ordinal)));
+        Assert.DoesNotContain(series.Warnings, w => w.Contains("varias swapchains", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -289,7 +289,7 @@ public sealed class CsvParserTests
 
         Assert.Equal("0x0", series.SwapChainAddress);
         Assert.Equal(3, series.FrameCount);
-        var discarded = Assert.Single(series.SwapChains.Where(c => c.Discarded));
+        var discarded = Assert.Single(series.SwapChains, c => c.Discarded);
         Assert.Equal("0x167400D5A60", discarded.Address);
         Assert.Equal(4, discarded.FrameCount);
         Assert.False(discarded.HasDisplayTracking);
