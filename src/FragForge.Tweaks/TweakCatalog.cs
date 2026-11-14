@@ -206,8 +206,18 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
                     rejected.AddRange(structural.Select(e => new CatalogRejection(name, null, e)));
                     continue;
                 }
-                foreach (var reserved in ReservedFields)
-                    if (document.RootElement.TryGetProperty(reserved, out _)) declaredReserved.Add(reserved);
+                // E3: la comparacion de claves tiene que ser la MISMA que la del deserializador.
+                // JsonDefaults pone PropertyNameCaseInsensitive = true (JsonDefaults.cs:12), asi que
+                // "SessionEligible" o "RESTARTSNETWORKLINK" SE DESERIALIZAN como el campo real. Con un
+                // TryGetProperty(exacto) no los veiamos y el rechazo se esquivaba... salvo que el esquema
+                // lo parase antes (additionalProperties:false + JSON Schema case-sensitive). Eso es una
+                // barrera INCIDENTAL: el dia que alguien anada la variante a `properties`, cae. Se compara
+                // ignorando mayusculas para que valga por si misma.
+                foreach (var property in document.RootElement.EnumerateObject())
+                    foreach (var reserved in ReservedFields)
+                        if (string.Equals(property.Name, reserved, StringComparison.OrdinalIgnoreCase)
+                            && !declaredReserved.Contains(reserved))
+                            declaredReserved.Add(reserved);
                 definition = JsonSerializer.Deserialize<TweakDefinition>(json, JsonDefaults.Options) ?? throw new JsonException("Documento nulo.");
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException or CatalogValidationException)

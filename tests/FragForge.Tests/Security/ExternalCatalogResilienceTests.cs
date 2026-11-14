@@ -234,6 +234,64 @@ public sealed class ExternalCatalogResilienceTests
         Assert.Contains(catalog.Definitions, d => d.Id == "ext.bueno");
     }
 
+    /// <summary>
+    /// E3: las variantes de MAYÚSCULAS. Antes el campo se buscaba con <c>TryGetProperty</c> (exacto) y el
+    /// deserializador sí las mapea (<c>PropertyNameCaseInsensitive = true</c>), así que el rechazo se
+    /// esquivaba en cuanto nada lo parase antes.
+    /// </summary>
+    /// <remarks>
+    /// Con el esquema de hoy estas entradas mueren ANTES, en la validación estructural
+    /// (<c>additionalProperties: false</c> y JSON Schema es case-sensitive: <c>JsonSchemaValidator.cs:51</c>
+    /// usa <c>TryGetProperty</c>). Así que el test comprueba las dos capas por separado para que se sepa
+    /// cuál está actuando:
+    ///   - por la ruta real (con esquema): rechazo por estructura, y NO entra;
+    ///   - por la comparación de campos: que es OrdinalIgnoreCase, aunque el esquema no intervenga.
+    /// Si algún día se añade la variante a <c>properties</c>, la segunda capa sigue cubriendo.
+    /// </remarks>
+    [Theory]
+    [InlineData("SessionEligible", "true")]
+    [InlineData("RESTARTSNETWORKLINK", "true")]
+    [InlineData("Profiles", """["Safe"]""")]
+    public void CapitalisationVariants_AreRejectedByTheRealRoute_Too(string field, string value)
+    {
+        var loader = Loader();
+        var brute = RegistryTweak("ext.mayus", @"HKLM\Software\FragForgeTests", "Z");
+        // El valor va en el propio InlineData para que cada campo lleve uno VALIDO para su tipo: si no,
+        // el rechazo seria por "se esperaba un array" y no probaria nada del nombre.
+        var marcado = brute.TrimEnd('}', ',', ' ', '\n', '\r') + $$""", "{{field}}": {{value}} }""";
+
+        var catalog = loader.LoadDocumentsResilient([("mayus.json", marcado)]);
+
+        // No entra. Puede ser por el esquema (hoy) o por el rechazo de campos reservados (si el esquema
+        // dejara de ser estricto): lo que NO puede pasar es que se acepte.
+        Assert.DoesNotContain(catalog.Definitions, d => d.Id == "ext.mayus");
+        Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.mayus" || r.Name == "mayus.json");
+    }
+
+    /// <summary>
+    /// La MISMA comparación, probada sin el esquema de por medio: así se demuestra que la corrección de E3
+    /// vale por sí sola y no solo porque el esquema rechace antes.
+    /// </summary>
+    /// <remarks>
+    /// Se comprueba sobre el deserializador real: <c>PropertyNameCaseInsensitive</c> hace que
+    /// <c>"SessionEligible"</c> acabe en <c>SessionEligible</c>. Si la comparación de nombres no fuera
+    /// OrdinalIgnoreCase, ese campo entraría sin rechazo. Aquí se verifica la premisa (el deserializador
+    /// lo mapea) para que el comentario del código no sea una suposición.
+    /// </remarks>
+    [Fact]
+    public void TheDeserializer_MapsCapitalisedNames_SoTheComparisonMustIgnoreCase()
+    {
+        const string conMayusculas = """
+            {"id":"probe.case","category":"Debloat","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"Low","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"references":["r"],"actions":[],"SessionEligible":true,"Profiles":["Safe"]}
+            """;
+
+        var definition = System.Text.Json.JsonSerializer.Deserialize<TweakDefinition>(conMayusculas, FragForge.Core.Logging.JsonDefaults.Options)!;
+
+        // La premisa: el deserializador NO distingue mayúsculas.
+        Assert.True(definition.SessionEligible);
+        Assert.NotNull(definition.Profiles);
+    }
+
     /// <summary>El catálogo embebido SÍ puede declararlos: no se le aplica la restricción de externos.</summary>
     [Fact]
     public async Task TheEmbeddedCatalog_StillDeclaresItsReservedFields()
