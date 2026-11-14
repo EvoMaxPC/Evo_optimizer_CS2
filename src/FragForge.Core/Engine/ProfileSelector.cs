@@ -5,37 +5,37 @@ namespace FragForge.Core.Engine;
 public static class ProfileSelector
 {
     /// <summary>
-    /// Los tweaks semilla que YA tenían el tag <c>opt-in</c> antes de esta corrección y llegaban a
-    /// Competitive/Advanced. No se les cambia el perfil: el alcance de la corrección es el debloat.
+    /// Membresía de un tweak en un perfil. Tres casos, en orden:
+    /// <list type="number">
+    /// <item>El tweak declara <c>profiles</c>: manda ese campo, EXACTO. <c>[]</c> = ningún perfil.</item>
+    /// <item>Sin <c>profiles</c> y con tag <c>opt-in</c>: fuera de los cuatro perfiles, SIN excepciones.
+    /// Un tweak opt-in se aplica solo por id explícito.</item>
+    /// <item>Sin <c>profiles</c> ni <c>opt-in</c>: regla por riesgo/evidencia, la de siempre.</item>
+    /// </list>
+    /// Este método gobierna únicamente la AUTOSELECCIÓN. Aplicar un tweak por id sigue permitido en
+    /// cualquier perfil (decisión explícita del usuario): el motor no rechaza por pertenencia a perfil.
     /// </summary>
-    private static IReadOnlySet<string> LegacyOptInSeeds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    public static bool Allows(TweakProfile profile, TweakDefinition definition)
     {
-        "cs2.fullscreen-optimizations-off",
-        "network.i225v-eee-off",
-        "power.fragforge-performance"
-    };
+        if (definition.Profiles is not null) return definition.Profiles.Contains(profile.ToString(), StringComparer.OrdinalIgnoreCase);
+        if (IsOptIn(definition)) return false;
+        return profile switch
+        {
+            TweakProfile.Safe => definition.Risk == RiskLevel.Safe && definition.Evidence != EvidenceLevel.Experimental,
+            TweakProfile.Balanced => definition.Risk is RiskLevel.Safe or RiskLevel.Moderate && definition.Evidence != EvidenceLevel.Experimental,
+            TweakProfile.Competitive => definition.Risk is RiskLevel.Safe or RiskLevel.Moderate && definition.Evidence != EvidenceLevel.Experimental,
+            TweakProfile.Advanced => true,
+            _ => false
+        };
+    }
 
     private static bool IsOptIn(TweakDefinition definition) => definition.Tags.Contains("opt-in", StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Regla del hotfix: un tweak marcado <c>opt-in</c> NO se selecciona automáticamente en NINGÚN
-    /// perfil; se pide por id explícito (perfil Advanced). Única excepción: los semilla que ya eran
-    /// opt-in antes, que conservan su perfil para no cambiar comportamiento fuera del debloat.
-    /// </summary>
-    private static bool OptInBlocksAutoSelection(TweakDefinition definition) => IsOptIn(definition) && !LegacyOptInSeeds.Contains(definition.Id);
-
     public static IReadOnlyList<TweakDefinition> Select(IEnumerable<TweakDefinition> definitions, TweakProfile profile) => definitions.Where(d => Allows(profile, d)).OrderBy(d => d.Id, StringComparer.OrdinalIgnoreCase).ToArray();
 
-    public static bool Allows(TweakProfile profile, TweakDefinition definition) => profile switch
-    {
-        // Safe y Balanced ya excluían CUALQUIER opt-in: se deja igual, sin excepciones.
-        TweakProfile.Safe => definition.Risk == RiskLevel.Safe && definition.Evidence != EvidenceLevel.Experimental && !IsOptIn(definition),
-        TweakProfile.Balanced => definition.Risk is RiskLevel.Safe or RiskLevel.Moderate && definition.Evidence != EvidenceLevel.Experimental && definition.Risk != RiskLevel.Experimental && !IsOptIn(definition),
-        // Competitive y Advanced no filtraban opt-in: ahora sí, salvo los semilla que ya eran opt-in.
-        TweakProfile.Competitive => definition.Risk is RiskLevel.Safe or RiskLevel.Moderate && definition.Evidence != EvidenceLevel.Experimental && definition.Risk != RiskLevel.Experimental && !OptInBlocksAutoSelection(definition),
-        TweakProfile.Advanced => !OptInBlocksAutoSelection(definition),
-        _ => false
-    };
+    /// <summary>Perfiles en los que aparece un tweak, para tests y reportes.</summary>
+    public static IReadOnlyList<TweakProfile> ProfilesOf(TweakDefinition definition) =>
+        new[] { TweakProfile.Safe, TweakProfile.Balanced, TweakProfile.Competitive, TweakProfile.Advanced }.Where(p => Allows(p, definition)).ToArray();
 
     public static void EnsureRiskAccepted(TweakDefinition definition, ApplyOptions options)
     {

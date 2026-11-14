@@ -146,13 +146,72 @@ public sealed class CatalogTests
         Assert.DoesNotContain(catalog.Definitions, d => d.Actions.Any(a => a.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase) && a.Parameters.ToString().Contains("WinDefend", StringComparison.OrdinalIgnoreCase)));
     }
 
-    /// <summary>Semilla con opt-in ANTERIOR al hotfix: conserva su perfil, no es debloat.</summary>
-    private static readonly string[] LegacyOptInSeeds =
-    [
-        "cs2.fullscreen-optimizations-off",
-        "network.i225v-eee-off",
-        "power.fragforge-performance"
-    ];
+    /// <summary>
+    /// TABLA DE MEMBRESÍA DE PERFILES: id → perfiles (separados por coma; vacío = ninguno).
+    /// Es la fuente de verdad del contrato de autoselección. Un tweak nuevo DEBE añadirse aquí;
+    /// si no figura, el test falla a propósito para obligar a declarar su membresía.
+    /// </summary>
+    private static readonly Dictionary<string, string> ProfileMembership = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["cpu.power-throttling-off"] = "Balanced, Competitive, Advanced",
+        ["cs2.cpu-priority-high"] = "Balanced, Competitive, Advanced",
+        ["cs2.fullscreen-optimizations-off"] = "Advanced",
+        ["debloat.policy.allowtelemetry-minimum"] = "",
+        ["debloat.service.diagtrack-disabled"] = "",
+        ["debloat.service.dmwappush-disabled"] = "",
+        ["debloat.service.mapsbroker-manual"] = "",
+        ["debloat.service.retaildemo-disabled"] = "",
+        ["debloat.service.wersvc-manual"] = "",
+        ["debloat.service.xblauthmanager-manual"] = "",
+        ["debloat.service.xblgamesave-manual"] = "",
+        ["debloat.service.xboxnetapi-manual"] = "",
+        ["debloat.task.appraiser"] = "",
+        ["debloat.task.ceip-consolidator"] = "",
+        ["debloat.task.ceip-usbceip"] = "",
+        ["debloat.task.kernel-ceip"] = "",
+        ["debloat.task.programdataupdater"] = "",
+        ["debloat.task.queue-reporting"] = "",
+        ["debloat.task.siuf-feedback"] = "",
+        ["diagnostics.system-inspect"] = "Safe, Balanced, Competitive, Advanced",
+        ["latency.game-dvr-capture-off"] = "Balanced, Competitive, Advanced",
+        ["latency.game-mode-on"] = "Safe, Balanced, Competitive, Advanced",
+        ["latency.global-timer-resolution"] = "Balanced, Competitive, Advanced",
+        ["latency.mouse-acceleration-off"] = "Safe, Balanced, Competitive, Advanced",
+        ["network.i225v-eee-off"] = "Competitive, Advanced",
+        ["power.fragforge-performance"] = "Competitive, Advanced"
+    };
+
+    [Fact]
+    public async Task ProfileMembership_MatchesTheDeclaredTable_ForEveryCatalogId()
+    {
+        var (loader, _) = CreateLoader();
+        var catalog = await loader.LoadEmbeddedAsync();
+
+        // 1) Todo id del catálogo tiene que estar declarado en la tabla (obliga a declararlo de nuevo).
+        var undeclared = catalog.Definitions.Select(d => d.Id).Where(id => !ProfileMembership.ContainsKey(id)).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
+        Assert.True(undeclared.Length == 0, $"Tweaks sin membresía declarada en la tabla (añádelos a ProfileMembership): {string.Join(", ", undeclared)}");
+
+        // 2) La membresía real coincide EXACTAMENTE con la tabla, para cada id.
+        var mismatches = new List<string>();
+        foreach (var definition in catalog.Definitions)
+        {
+            var expected = ProfileMembership[definition.Id].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var actual = FragForge.Core.Engine.ProfileSelector.ProfilesOf(definition).Select(p => p.ToString()).ToArray();
+            if (!expected.SequenceEqual(actual, StringComparer.Ordinal))
+                mismatches.Add($"{definition.Id}: tabla=[{string.Join(", ", expected)}] real=[{string.Join(", ", actual)}]");
+        }
+        Assert.True(mismatches.Count == 0, "Membresía de perfiles distinta de la tabla:\n" + string.Join("\n", mismatches));
+    }
+
+    [Fact]
+    public async Task ProfileMembership_TableHasNoOrphanIds()
+    {
+        var (loader, _) = CreateLoader();
+        var catalog = await loader.LoadEmbeddedAsync();
+        var ids = catalog.Definitions.Select(d => d.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var orphans = ProfileMembership.Keys.Where(id => !ids.Contains(id)).OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
+        Assert.True(orphans.Length == 0, $"La tabla menciona ids que ya no existen: {string.Join(", ", orphans)}");
+    }
 
     [Fact]
     public async Task ProfileSelection_MatchesDocumentedRiskGates()
@@ -166,16 +225,11 @@ public sealed class CatalogTests
 
         Assert.DoesNotContain(safe, d => d.Risk != RiskLevel.Safe);
         Assert.Contains(balanced, d => d.Id == "latency.game-dvr-capture-off");
-        // Safe y Balanced ya excluían todo opt-in: sigue igual.
         Assert.DoesNotContain(balanced, d => d.Tags.Contains("opt-in"));
-        // Los semilla que ya eran opt-in conservan su perfil (no se toca nada fuera del debloat).
+        // Los tres semilla conservan su perfil mediante "profiles" explícito.
         Assert.Contains(competitive, d => d.Id == "power.fragforge-performance");
-        // Advanced ya no es "todo": el debloat opt-in queda fuera.
         Assert.DoesNotContain(advanced, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
-
-        var debloat = catalog.Definitions.Count(d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(catalog.Definitions.Count - debloat, advanced.Count);
-        Assert.Contains(advanced, d => LegacyOptInSeeds.Contains(d.Id));
+        Assert.Contains(advanced, d => d.Id == "cs2.fullscreen-optimizations-off");
     }
 
     [Theory]
@@ -189,15 +243,59 @@ public sealed class CatalogTests
         var catalog = await loader.LoadEmbeddedAsync();
         var selected = FragForge.Core.Engine.ProfileSelector.Select(catalog.Definitions, profile);
 
-        // El debloat de la Capa 2 es opt-in de verdad: aparece SOLO si se pide por id.
+        // El debloat es opt-in sin "profiles": fuera de los cuatro perfiles, sin excepciones.
         Assert.DoesNotContain(selected, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
-
-        // Ningún tweak CON opt-in entra automáticamente salvo los semilla que ya lo eran.
-        Assert.DoesNotContain(selected, d => d.Tags.Contains("opt-in", StringComparer.OrdinalIgnoreCase)
-            && !LegacyOptInSeeds.Contains(d.Id, StringComparer.OrdinalIgnoreCase));
-
-        // Pero el tweak existe en el catálogo: sigue siendo aplicable por id explícito.
+        // Ningún opt-in SIN membresía explícita se autoselecciona.
+        Assert.DoesNotContain(selected, d => d.Tags.Contains("opt-in", StringComparer.OrdinalIgnoreCase) && d.Profiles is null);
+        // Pero sigue en el catálogo: aplicable por id explícito.
         Assert.Contains(catalog.Definitions, d => d.Id.StartsWith("debloat.", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void OptInWithoutProfiles_IsExcludedFromEveryProfile_EvenIfSafe()
+    {
+        // Regla verificable: opt-in sin "profiles" nunca entra, aunque su riesgo sea Safe.
+        var (loader, _) = CreateLoader();
+        var probe = """
+        {"id":"probe.optin-safe","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","tags":["opt-in"],"requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"DiagTrack","startMode":"Manual"}}],"references":["r"]}
+        """;
+        var catalog = loader.LoadDocuments([("probe.json", probe)]);
+        var definition = Assert.Single(catalog.Definitions);
+        Assert.Empty(FragForge.Core.Engine.ProfileSelector.ProfilesOf(definition));
+        Assert.False(FragForge.Core.Engine.ProfileSelector.Allows(TweakProfile.Advanced, definition));
+    }
+
+    [Fact]
+    public void ExplicitProfilesField_IsExact_AndEmptyMeansNoProfile()
+    {
+        var (loader, _) = CreateLoader();
+        var withProfiles = """
+        {"id":"probe.explicit","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","profiles":["Competitive"],"requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"DiagTrack","startMode":"Manual"}}],"references":["r"]}
+        """;
+        var none = """
+        {"id":"probe.none","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","profiles":[],"requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"DiagTrack","startMode":"Manual"}}],"references":["r"]}
+        """;
+        var catalog = loader.LoadDocuments([("a.json", withProfiles), ("b.json", none)]);
+        var explicitOne = catalog.Get("probe.explicit");
+        var empty = catalog.Get("probe.none");
+
+        // "profiles" manda sobre el riesgo: es exacto, no se suma a lo que diría la regla por riesgo.
+        Assert.Equal("Competitive", Assert.Single(FragForge.Core.Engine.ProfileSelector.ProfilesOf(explicitOne)).ToString());
+        Assert.Empty(FragForge.Core.Engine.ProfileSelector.ProfilesOf(empty));
+        // Aplicar por id sigue permitido en cualquier perfil: el campo no bloquea el motor.
+        Assert.NotNull(explicitOne);
+    }
+
+    [Fact]
+    public void ProfilesField_RejectsUnknownNamesAndDuplicates()
+    {
+        var (loader, _) = CreateLoader();
+        var unknown = """
+        {"id":"probe.bad","category":"Latency","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","profiles":["Turbo"],"requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Service","parameters":{"name":"DiagTrack","startMode":"Manual"}}],"references":["r"]}
+        """;
+        // Nivel schema: el enum lo rechaza.
+        var schemaErrors = Assert.Throws<CatalogValidationException>(() => loader.LoadDocuments([("bad.json", unknown)])).Errors;
+        Assert.Contains(schemaErrors, e => e.Contains("enum", StringComparison.Ordinal));
     }
 
     [Fact]

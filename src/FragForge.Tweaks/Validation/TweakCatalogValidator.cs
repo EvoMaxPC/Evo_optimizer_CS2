@@ -27,6 +27,18 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             if (definition.Title.EsMx.Length == 0 || definition.Title.EnUs.Length == 0 || definition.Description.EsMx.Length == 0 || definition.Description.EnUs.Length == 0) errors.Add($"{definition.Id}: textos localizados vacíos");
             if (definition.Actions.Count == 0) errors.Add($"{definition.Id}: sin acciones");
             if (!definition.ReadOnly && !definition.RequiresAdmin) errors.Add($"{definition.Id}: una acción mutante requiere Admin");
+            // Membresía de perfiles: nombres de miembro del enum, sin duplicados, sin valores vacíos.
+            // [] es válido y significa "en ningún perfil"; ausente es válido y significa "regla por riesgo".
+            if (definition.Profiles is not null)
+            {
+                var known = Enum.GetNames<TweakProfile>();
+                foreach (var profile in definition.Profiles)
+                {
+                    if (!known.Contains(profile, StringComparer.Ordinal)) errors.Add($"{definition.Id}: perfil desconocido '{profile}'. Válidos: {string.Join(", ", known)}");
+                }
+                var duplicates = definition.Profiles.Where(p => !string.IsNullOrWhiteSpace(p)).GroupBy(p => p, StringComparer.OrdinalIgnoreCase).Where(g => g.Count() > 1).Select(g => g.Key).ToArray();
+                if (duplicates.Length > 0) errors.Add($"{definition.Id}: perfiles duplicados en 'profiles': {string.Join(", ", duplicates)}");
+            }
             if (definition.References.Count == 0) errors.Add($"{definition.Id}: sin referencias");
             if (definition.DependsOn.Contains(definition.Id, StringComparer.OrdinalIgnoreCase) || definition.ConflictsWith.Contains(definition.Id, StringComparer.OrdinalIgnoreCase)) errors.Add($"{definition.Id}: dependencia/conflicto consigo mismo");
             foreach (var condition in definition.Conditions) { try { conditions.Create(condition); } catch (Exception ex) { errors.Add($"{definition.Id}: condición inválida: {ex.Message}"); } }

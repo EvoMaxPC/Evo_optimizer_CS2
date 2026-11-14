@@ -55,6 +55,15 @@ public sealed class JsonSchemaValidator
         if (instance.ValueKind == JsonValueKind.Array)
         {
             if (schema.TryGetProperty("minItems", out var min) && instance.GetArrayLength() < min.GetInt32()) errors.Add($"{path}: menos de {min.GetInt32()} elementos");
+            if (schema.TryGetProperty("uniqueItems", out var unique) && unique.ValueKind == JsonValueKind.True)
+            {
+                var seen = new List<JsonElement>();
+                foreach (var item in instance.EnumerateArray())
+                {
+                    if (seen.Any(s => JsonElement.DeepEquals(s, item))) { errors.Add($"{path}: elementos duplicados no permitidos"); break; }
+                    seen.Add(item);
+                }
+            }
             if (schema.TryGetProperty("items", out var items))
             {
                 var index = 0;

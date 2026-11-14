@@ -52,6 +52,10 @@
     "opt-in",
     "thermal-opt-in"
   ],
+  "profiles": [
+    "Competitive",
+    "Advanced"
+  ],
   "conflictsWith": [],
   "dependsOn": [],
   "expectedImpact": {
