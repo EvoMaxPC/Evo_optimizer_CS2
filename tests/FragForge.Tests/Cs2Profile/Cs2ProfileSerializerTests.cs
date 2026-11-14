@@ -44,9 +44,10 @@ public sealed class Cs2ProfileSerializerTests
         });
 
         // R-N: los enums viajan por NOMBRE. Un número rompería la lectura del perfil a mano.
-        Assert.Contains("\"Objective\": \"LatenciaMinima\"", json, StringComparison.Ordinal);
-        Assert.Contains("\"Mode\": \"DerivadoDelRefresco\"", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("\"Objective\": 0", json, StringComparison.Ordinal);
+        // Las claves van en camelCase porque se heredan de JsonDefaults (PropertyNamingPolicy.CamelCase).
+        Assert.Contains("\"objective\": \"LatenciaMinima\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"mode\": \"DerivadoDelRefresco\"", json, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"objective\": 0", json, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -88,7 +89,7 @@ public sealed class Cs2ProfileSerializerTests
     public void DuplicateOption_IsRejected()
     {
         const string json = """
-        { "FormatVersion": 1, "Options": [ { "Id": "fps_max", "Value": "60" }, { "Id": "FPS_MAX", "Value": "120" } ] }
+        { "formatVersion": 1, "options": [ { "id": "fps_max", "value": "60" }, { "id": "FPS_MAX", "value": "120" } ] }
         """;
 
         Assert.Contains("aparece más de una vez",
@@ -107,7 +108,7 @@ public sealed class Cs2ProfileSerializerTests
     public void Defaults_AreApplied_WhenFieldsAreMissing_Additive()
     {
         // Un perfil mínimo solo con la versión: todo lo demás toma su valor por defecto (campos aditivos).
-        var imported = Cs2ProfileSerializer.Deserialize("""{ "FormatVersion": 1 }""");
+        var imported = Cs2ProfileSerializer.Deserialize("""{ "formatVersion": 1 }""");
 
         Assert.Equal(Cs2ProfileObjective.Equilibrado, imported.Objective);
         Assert.Equal(FpsCapMode.SinTope, imported.FpsCap.Mode);
