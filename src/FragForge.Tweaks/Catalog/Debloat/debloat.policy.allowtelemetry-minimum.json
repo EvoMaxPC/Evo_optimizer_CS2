@@ -1,0 +1,68 @@
+{
+  "id": "debloat.policy.allowtelemetry-minimum",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Telemetría al nivel mínimo permitido (AllowTelemetry)",
+    "en-US": "Telemetry at the minimum allowed level (AllowTelemetry)"
+  },
+  "description": {
+    "es-MX": "Escribe HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection\\AllowTelemetry=0. En Windows 11 Pro ese valor se comporta como el nivel mínimo (Requerido/solo diagnóstico), no como telemetría apagada.",
+    "en-US": "Writes HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection\\AllowTelemetry=0. On Windows 11 Pro that value behaves as the minimum level (Required/diagnostics only), not as telemetry off."
+  },
+  "evidence": "Medium",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection",
+            "name": "AllowTelemetry",
+            "kind": "DWord",
+            "value": 0,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "privacidad",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/privacy/configure-windows-diagnostic-data-in-your-organization"
+  ],
+  "notes": {
+    "es-MX": "No es 'telemetría cero': en Pro el mínimo sigue enviando lo requerido. Reversible: si el valor no existía, revertir lo borra.",
+    "en-US": "Not zero telemetry: on Pro the minimum still sends required data. Reversible: if the value did not exist, reverting deletes it."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en equipos con política corporativa de diagnóstico gestionada por GPO.",
+    "en-US": "Do not apply on machines with a corporate diagnostics policy managed by GPO."
+  }
+}

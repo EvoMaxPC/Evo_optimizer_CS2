@@ -33,5 +33,20 @@
   "force": "Force overwrite of external state",
   "allowPowerShell": "Allow experimental PowerShell actions",
   "doctor.title": "Preflight",
-  "journal.integrity": "Journal integrity"
+  "journal.integrity": "Journal integrity",
+  "route.title": "Recovery route",
+  "route.manual": "Manual instructions",
+  "route.winpe": "WinRE / offline (ControlSet001)",
+  "route.copy": "Copy to an external drive",
+  "route.verify": "Verify integrity (SHA-256)",
+  "status.preflight": "Preflight",
+  "status.imported": "Imported",
+  "layers.title": "Layer 2 — honest inventory and debloat",
+  "layers.premise.atlas": "Your machine already went through Atlas v0.5.0.",
+  "layers.premise.fps": "None of these changes promises FPS. We measure and tell the truth.",
+  "tier.T0": "T0 · never touch",
+  "tier.T1": "T1 · safe",
+  "tier.T2": "T2 · optional",
+  "tier.T3": "T3 · measure only",
+  "tier.T4": "T4 · inspect only"
 }

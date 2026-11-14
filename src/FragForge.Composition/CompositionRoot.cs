@@ -13,6 +13,7 @@ using FragForge.Core.Localization;
 using FragForge.Core.Logging;
 using FragForge.Core.Persistence;
 using FragForge.Core.Preflight;
+using FragForge.Core.Tiers;
 using FragForge.Tweaks;
 using FragForge.Tweaks.Localization;
 using FragForge.Tweaks.Validation;
@@ -79,7 +80,13 @@ public static class CompositionRoot
         builder.Services.AddFragForgeActions();
         builder.Services.AddSingleton<ITweakConditionFactory, ConditionFactory>();
         builder.Services.AddSingleton<JsonSchemaValidator>(_ => new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()));
-        builder.Services.AddSingleton<TweakCatalogValidator>();
+        // El validador recibe el catálogo de tiers: la regla "Service solo si T1/T2" se aplica al cargar
+        // el catálogo de tweaks, no en tiempo de aplicación. Se resuelve aquí para no depender del orden.
+        builder.Services.AddSingleton<TweakCatalogValidator>(sp => new TweakCatalogValidator(
+            sp.GetRequiredService<JsonSchemaValidator>(),
+            sp.GetRequiredService<ITweakConditionFactory>(),
+            sp.GetRequiredService<ITweakActionFactory>(),
+            ServiceTierCatalog.LoadEmbedded()));
         builder.Services.AddSingleton<JsonTweakCatalogLoader>();
         builder.Services.AddSingleton<ITweakCatalog>(sp => sp.GetRequiredService<JsonTweakCatalogLoader>().LoadEmbeddedAsync(Path.Combine(paths.Root, "catalog")).GetAwaiter().GetResult());
         builder.Services.AddSingleton<ISnapshotStore, FileSnapshotStore>();
@@ -89,6 +96,7 @@ public static class CompositionRoot
         builder.Services.AddSingleton<ITweakEngine, TweakEngine>();
         builder.Services.AddSingleton<IReportService, ReportService>();
         builder.Services.AddLayer1Diagnostics();
+        builder.Services.AddLayer2Inventory();
         options.ConfigureServices?.Invoke(builder.Services);
         return builder.Build();
     }

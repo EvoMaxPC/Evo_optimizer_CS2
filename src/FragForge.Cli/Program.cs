@@ -136,6 +136,20 @@ public static class Program
                     return await MeasurementCommands.AbAsync(host.Services, parsed);
                 case "experiment":
                     return await MeasurementCommands.ExperimentAsync(host.Services, parsed);
+                case "audit":
+                    return await InventoryCommands.AuditAsync(host.Services, parsed, cancellation.Token);
+                case "inventory":
+                    return await InventoryCommands.InventoryAsync(host.Services, parsed, cancellation.Token);
+                case "drift":
+                    return await InventoryCommands.DriftAsync(host.Services, parsed, cancellation.Token);
+                case "myths":
+                    return InventoryCommands.Myths(host.Services, parsed);
+                case "simulate":
+                    return await InventoryCommands.SimulateAsync(host.Services, parsed, cancellation.Token);
+                case "atlas":
+                    return await InventoryCommands.AtlasAsync(host.Services, parsed, cancellation.Token);
+                case "footprint":
+                    return await InventoryCommands.FootprintAsync(host.Services, parsed, cancellation.Token);
                 default: throw new ArgumentException($"Comando desconocido: {parsed.Command}");
             }
         }
@@ -174,6 +188,15 @@ Uso:
   fragforge baseline [--duration 120] [--runs 3] [--warmup 10] [--json]
   fragforge ab <ids...> [--runs 5] [--aa] [--mode interleaved|blocked] [--seed N] [--json]
   fragforge experiment list|show|resume|report [ID] [--out RUTA] [--json]
+
+Capa 2 — inventario y debloat honesto (sin promesas de FPS):
+  fragforge audit [--out RUTA] [--json]
+  fragforge inventory [services|tasks|startup|appx] [--json]
+  fragforge simulate <ids...> [--json]
+  fragforge drift [--reapply] [--json]
+  fragforge atlas [--json]
+  fragforge myths [ID] [--json]
+  fragforge footprint [--duration 60] [--label TEXT] [--json]
 
 Opciones globales: --data-root RUTA --culture es-MX|en-US
 Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico; 6 medición inválida.

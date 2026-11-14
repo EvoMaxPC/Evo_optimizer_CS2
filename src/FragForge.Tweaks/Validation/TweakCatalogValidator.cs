@@ -2,11 +2,20 @@ using System.Text.Json;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Engine;
 using FragForge.Core.Models;
+using FragForge.Core.Tiers;
 
 namespace FragForge.Tweaks.Validation;
 
-public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakConditionFactory conditions, ITweakActionFactory actions)
+public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakConditionFactory conditions, ITweakActionFactory actions, ServiceTierCatalog? tiers = null)
 {
+    /// <summary>
+    /// Regla de la Capa 2: un tweak con acción <c>Service</c> solo es válido si el servicio figura
+    /// explícitamente en <c>service-tiers.json</c> con tier T1 o T2. Cualquier otra cosa —T0, T3, T4,
+    /// servicio desconocido o parámetro ilegible— hace fallar la carga del catálogo.
+    /// Sin tabla de tiers (null) la regla no se aplica: es el modo de la Capa 0/1 para no romper sus pruebas.
+    /// </summary>
+    public ServiceTierCatalog Tiers => tiers ?? ServiceTierCatalog.Empty;
+
     public IReadOnlyList<string> ValidateStructure(JsonElement document) => schema.Validate(document);
     public IReadOnlyList<string> ValidateCatalog(IReadOnlyList<TweakDefinition> definitions)
     {
@@ -24,6 +33,13 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             foreach (var action in definition.Actions)
             {
                 try { actions.Create(action); } catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
+                if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
+                {
+                    var service = ImpactSimulator.ExtractServiceName(action);
+                    if (string.IsNullOrWhiteSpace(service)) errors.Add($"{definition.Id}: acción Service sin nombre legible.");
+                    else if (!tiers.IsApplicable(service!))
+                        errors.Add($"{definition.Id}: el servicio '{service}' es {tiers.TierOf(service!)} en service-tiers.json; solo se permite T1/T2.");
+                }
                 if (action.Kind.Equals("PowerShell", StringComparison.OrdinalIgnoreCase) || action.Kind.Equals("Bcdedit", StringComparison.OrdinalIgnoreCase))
                     if (definition.Risk is not (RiskLevel.Advanced or RiskLevel.Experimental)) errors.Add($"{definition.Id}: {action.Kind} requiere riesgo Advanced/Experimental");
             }

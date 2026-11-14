@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.ceip-consolidator",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar CEIP Consolidator",
+    "en-US": "Disable CEIP Consolidator"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea del Programa de mejora de la experiencia del cliente que consolida datos de uso.",
+    "en-US": "Disables the Customer Experience Improvement Program task that consolidates usage data."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\Consolidator",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-start-page"
+  ],
+  "notes": {
+    "es-MX": "Se deshabilita, no se borra: el XML original queda en el snapshot y se puede restaurar.",
+    "en-US": "Disabled, not deleted: the original XML stays in the snapshot and can be restored."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si necesitas los informes de CEIP para soporte empresarial.",
+    "en-US": "Do not apply if you need CEIP reports for enterprise support."
+  }
+}

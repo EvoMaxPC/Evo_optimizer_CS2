@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "name": "DiagTrack",
+      "tier": "T2",
+      "reason": "Servicio de telemetría Connected User Experiences and Telemetry. Enviar datos de diagnóstico no aporta nada al juego; deshabilitarlo reduce actividad en segundo plano.",
+      "reference": "https://learn.microsoft.com/en-us/windows/privacy/configure-windows-diagnostic-data-in-your-organization",
+      "recommendation": "Deshabilitar es reverssible (Auto). No tiene dependientes esenciales.",
+      "optIn": false
+    },
+    {
+      "name": "dmwappushservice",
+      "tier": "T1",
+      "reason": "Device Management WAP Push. Solo se usa con MDM/Intune; en un equipo doméstico no tiene función.",
+      "reference": "https://learn.microsoft.com/en-us/windows/configuration/wcd-overview",
+      "recommendation": "Deshabilitar. Sin dependientes.",
+      "optIn": false
+    },
+    {
+      "name": "MapsBroker",
+      "tier": "T2",
+      "reason": "Descargas de mapas sin conexión de la app Mapas. No interviene en el juego.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/services/services",
+      "recommendation": "Manual si no usas la app Mapas.",
+      "optIn": true
+    },
+    {
+      "name": "lfsvc",
+      "tier": "T2",
+      "reason": "Geolocalización (Windows Location Service). Deshabilitarlo rompe la ubicación para apps que la pidan.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/api/_sensors/",
+      "recommendation": "Solo si no usas ubicación. Es una función visible del usuario: opt-in.",
+      "optIn": true
+    },
+    {
+      "name": "RetailDemo",
+      "tier": "T1",
+      "reason": "Modo demostración de tienda. No se usa en un equipo personal.",
+      "reference": "https://learn.microsoft.com/en-us/windows/configuration/",
+      "recommendation": "Deshabilitar. Sin dependientes.",
+      "optIn": false
+    },
+    {
+      "name": "WerSvc",
+      "tier": "T2",
+      "reason": "Windows Error Reporting. Deshabilitarlo elimina el envío de informes de fallo; NO impide que una app falle, solo impide reportarlo.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/wer/windows-error-reporting",
+      "recommendation": "Manual si prefieres que no se envíen informes. No mejora FPS: ningún efecto medible esperado.",
+      "optIn": true
+    },
+    {
+      "name": "XblAuthManager",
+      "tier": "T2",
+      "reason": "Xbox Live Auth Manager. Solo necesario para títulos y cuentas Xbox.",
+      "reference": "https://learn.microsoft.com/en-us/gaming/gdk/",
+      "recommendation": "Manual si no usas Xbox Live. CS2 no lo necesita.",
+      "optIn": true
+    },
+    {
+      "name": "XblGameSave",
+      "tier": "T2",
+      "reason": "Xbox Live Game Save. Sincroniza partidas guardadas de juegos Xbox.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/services/services",
+      "recommendation": "Manual si no juegas títulos Xbox Play Anywhere.",
+      "optIn": true
+    },
+    {
+      "name": "XboxNetApiSvc",
+      "tier": "T2",
+      "reason": "Xbox Live Networking Service. Requerido por títulos que usan la red de Xbox.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/services/services",
+      "recommendation": "Manual si no usas Xbox Live.",
+      "optIn": true
+    },
+    {
+      "name": "XboxGipSvc",
+      "tier": "T2",
+      "reason": "Xbox Accessory Management. Necesario para mandos Xbox por el protocolo GIP.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/xinput/xinput-game-controller-apis-portal",
+      "recommendation": "Manual SOLO si no usas un mando Xbox. Si juegas con mando, no lo toques.",
+      "optIn": true
+    },
+    {
+      "name": "PcaSvc",
+      "tier": "T3",
+      "reason": "Program Compatibility Assistant. Interviene cuando un programa antiguo falla; tocarlo puede ocultar problemas de compatibilidad que el usuario querría ver.",
+      "reference": "https://learn.microsoft.com/en-us/windows/compatibility/",
+      "recommendation": "Solo medir. No hay evidencia de que afecte al juego.",
+      "optIn": true
+    },
+    {
+      "name": "CDPUserSvc",
+      "tier": "T2",
+      "reason": "Plantilla de servicio por usuario (Connected Devices Platform). Sus instancias llevan sufijo variable; el catálogo apunta a la plantilla y la evidencia se lee de la clave Start.",
+      "reference": "https://learn.microsoft.com/en-us/windows/application-management/per-user-services-in-windows",
+      "recommendation": "Medir primero: sin capa de conexión entre dispositivos, algunas apps de sincronización dejan de funcionar.",
+      "optIn": true
+    },
+    {
+      "name": "SEMgrSvc",
+      "tier": "T2",
+      "reason": "Payments and NFC/SE Manager. Solo interviene con pagos NFC.",
+      "reference": "https://learn.microsoft.com/en-us/windows-hardware/drivers/nfc/",
+      "recommendation": "Manual si no usas NFC.",
+      "optIn": true
+    },
+    {
+      "name": "icssvc",
+      "tier": "T2",
+      "reason": "Windows Mobile Hotspot Service. Necesario para compartir la conexión por Wi-Fi.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/api/_netlistmgr/",
+      "recommendation": "Manual si nunca compartes datos. Es una función visible: opt-in.",
+      "optIn": true
+    },
+    {
+      "name": "WbioSrvc",
+      "tier": "T2",
+      "reason": "Windows Biometric Service (Windows Hello, huella). Deshabilitarlo puede impedir iniciar sesión con biometría.",
+      "reference": "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/windows-hello-biometric-requirements",
+      "recommendation": "NO tocar si usas Windows Hello. Solo opt-in explícito.",
+      "optIn": true
+    },
+    {
+      "name": "upnphost",
+      "tier": "T2",
+      "reason": "UPnP Device Host. Lo usan aplicaciones y algunos router/NAT para abrir puertos.",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/upnp/upnp-portal",
+      "recommendation": "Manual. Si tienes problemas de NAT en el juego, déjalo.",
+      "optIn": true
+    },
+    {
+      "name": "SSDPSRV",
+      "tier": "T2",
+      "reason": "SSDP Discovery. Descubrimiento de dispositivos en red local (DLNA, impresoras).",
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/ssdp/ssdp-portal",
+      "recommendation": "Manual. Depende de upnphost: ambos opt-in a la vez.",
+      "optIn": true
+    }
+  ]
+}

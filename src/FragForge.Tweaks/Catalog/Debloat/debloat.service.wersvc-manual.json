@@ -1,0 +1,68 @@
+{
+  "id": "debloat.service.wersvc-manual",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Pasar informes de error a Manual (WerSvc)",
+    "en-US": "Set error reporting to Manual (WerSvc)"
+  },
+  "description": {
+    "es-MX": "Pasa Windows Error Reporting a inicio Manual. No impide que una app falle: solo evita que el servicio esté siempre activo.",
+    "en-US": "Sets Windows Error Reporting to Manual start. Does not stop apps from failing: it only avoids the service being always active."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "WerSvc",
+        "startMode": "Manual"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "errores",
+    "opt-in"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/wer/windows-error-reporting"
+  ],
+  "notes": {
+    "es-MX": "No mejora FPS. Si algo falla, seguirás teniendo el evento en el Visor de eventos.",
+    "en-US": "Does not improve FPS. If something fails, the event still lands in Event Viewer."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si dependes del envío automático de informes de fallo para soporte.",
+    "en-US": "Do not apply if you rely on automatic crash reports for support."
+  }
+}

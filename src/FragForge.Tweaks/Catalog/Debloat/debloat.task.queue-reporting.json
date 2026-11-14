@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.queue-reporting",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar cola de informes de error",
+    "en-US": "Disable error reporting queue"
+  },
+  "description": {
+    "es-MX": "Deshabilita Windows Error Reporting QueueReporting, que envía los informes pendientes.",
+    "en-US": "Disables Windows Error Reporting QueueReporting, which uploads pending reports."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Windows Error Reporting\\QueueReporting",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "errores"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/wer/windows-error-reporting"
+  ],
+  "notes": {
+    "es-MX": "Deshabilitada, los informes se quedan en la cola local. No afecta a la estabilidad del juego.",
+    "en-US": "When disabled, reports stay in the local queue. Does not affect game stability."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si soporte depende de los informes de error automáticos.",
+    "en-US": "Do not apply if support relies on automatic error reports."
+  }
+}

@@ -33,5 +33,20 @@
   "force": "Forzar sobrescritura de estado externo",
   "allowPowerShell": "Permitir acciones PowerShell experimentales",
   "doctor.title": "Preflight",
-  "journal.integrity": "Integridad del journal"
+  "journal.integrity": "Integridad del journal",
+  "route.title": "Ruta de recuperación",
+  "route.manual": "Instrucciones manuales",
+  "route.winpe": "WinRE / offline (ControlSet001)",
+  "route.copy": "Copiar a una unidad externa",
+  "route.verify": "Verificar integridad (SHA-256)",
+  "status.preflight": "Preflight",
+  "status.imported": "Importado",
+  "layers.title": "Capa 2 — inventario y debloat honesto",
+  "layers.premise.atlas": "Tu equipo ya pasó por Atlas v0.5.0.",
+  "layers.premise.fps": "Ninguno de estos cambios promete FPS. Medimos y decimos la verdad.",
+  "tier.T0": "T0 · nunca tocar",
+  "tier.T1": "T1 · seguro",
+  "tier.T2": "T2 · opcional",
+  "tier.T3": "T3 · solo medir",
+  "tier.T4": "T4 · solo inspección"
 }

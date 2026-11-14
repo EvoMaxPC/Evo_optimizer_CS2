@@ -27,3 +27,25 @@ public sealed class MeasureNotAvailableException : FragForgeException
 {
     public MeasureNotAvailableException(string message) : base("measure_not_available", message) { }
 }
+
+/// <summary>
+/// Un servicio rechazó un cambio de modo de inicio o de estado. Es un error OPERATIVO con explicación
+/// legible, no una traza cruda de WMI: el motor lo reporta y sigue con el resto del lote.
+/// </summary>
+public sealed class ServiceChangeRejectedException(string serviceName, string operation, uint returnCode)
+    : FragForgeException("service_change_rejected", Describe(serviceName, operation, returnCode))
+{
+    public string ServiceName { get; } = serviceName;
+    public string Operation { get; } = operation;
+    public uint ReturnCode { get; } = returnCode;
+
+    /// <summary>Códigos de Win32_Service devueltos por ChangeStartMode/StartService/StopService.</summary>
+    private static string Describe(string serviceName, string operation, uint code) => code switch
+    {
+        1 => $"{operation}('{serviceName}') rechazado: la operación no está soportada por este servicio.",
+        5 => $"{operation}('{serviceName}') rechazado: acceso denegado. Ejecuta FragForge como administrador.",
+        10 => $"{operation}('{serviceName}') rechazado: el servicio está deshabilitado y no se puede iniciar.",
+        21 => $"{operation}('{serviceName}') rechazado: parámetro inválido para este servicio.",
+        _ => $"{operation}('{serviceName}') rechazado con el código WMI {code}."
+    };
+}

@@ -1,0 +1,68 @@
+{
+  "id": "debloat.service.diagtrack-disabled",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Deshabilitar telemetría (DiagTrack)",
+    "en-US": "Disable telemetry (DiagTrack)"
+  },
+  "description": {
+    "es-MX": "Deshabilita el servicio Connected User Experiences and Telemetry y lo apaga. Reduce la actividad de envío de datos de diagnóstico en segundo plano.",
+    "en-US": "Disables the Connected User Experiences and Telemetry service and stops it. Reduces background diagnostic-data upload activity."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "DiagTrack",
+        "startMode": "Disabled"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "telemetry",
+    "privacidad"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/privacy/configure-windows-diagnostic-data-in-your-organization"
+  ],
+  "notes": {
+    "es-MX": "No toca la política AllowTelemetry: eso es un tweak aparte. Reversible a su modo original. En Atlas ya suele estar deshabilitado, y en ese caso se muestra como AppliedExternally.",
+    "en-US": "Does not touch the AllowTelemetry policy: that is a separate tweak. Reversible to its original start mode. Atlas usually leaves it disabled already, in which case it shows as AppliedExternally."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si tu organización exige telemetría para soporte administrado.",
+    "en-US": "Do not apply if your organization requires telemetry for managed support."
+  }
+}

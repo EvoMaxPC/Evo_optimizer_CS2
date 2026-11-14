@@ -1,0 +1,69 @@
+{
+  "id": "debloat.service.mapsbroker-manual",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Pasar Mapas a Manual (MapsBroker)",
+    "en-US": "Set Maps to Manual (MapsBroker)"
+  },
+  "description": {
+    "es-MX": "Pasa la descarga de mapas sin conexión a inicio Manual. Solo arranca si abres la app Mapas.",
+    "en-US": "Sets offline map download to Manual start. Only starts if you open the Maps app."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "MapsBroker",
+        "startMode": "Manual"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "apps",
+    "opt-in",
+    "opt-in"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/services/services"
+  ],
+  "notes": {
+    "es-MX": "Opt-in: afecta a una app visible del usuario. Reversible.",
+    "en-US": "Opt-in: affects a visible user app. Reversible."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si usas la app Mapas sin conexión.",
+    "en-US": "Do not apply if you use the Maps app offline."
+  }
+}

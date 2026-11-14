@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "myths": [
+    {
+      "id": "hpet-platformclock",
+      "title": {
+        "es-MX": "Desactivar HPET o useplatformclock da más FPS",
+        "en-US": "Disabling HPET or useplatformclock gives more FPS"
+      },
+      "verdict": "False",
+      "why": {
+        "es-MX": "En Windows 11 el temporizador lo elige el kernel según el hardware y ya no se controla con bcdedit platformclock. Forzarlo suele EMPEORAR la latencia y la estabilidad del frametime porque degrada el temporizador a una fuente peor. No hay ningún mecanismo por el que desactivar HPET aumente los FPS.",
+        "en-US": "On Windows 11 the kernel picks the timer source from hardware; bcdedit platformclock no longer controls it. Forcing it usually makes latency and frametime stability WORSE by degrading to a poorer clock source. There is no mechanism by which disabling HPET raises FPS."
+      },
+      "reference": "https://learn.microsoft.com/en-us/windows-server/technologies/tcp-ip-performance-tuning"
+    },
+    {
+      "id": "systemresponsiveness-networkthrottling",
+      "title": {
+        "es-MX": "SystemResponsiveness=0 y NetworkThrottlingIndex=-1 mejoran CS2",
+        "en-US": "SystemResponsiveness=0 and NetworkThrottlingIndex=-1 improve CS2"
+      },
+      "verdict": "Misleading",
+      "why": {
+        "es-MX": "Esos valores existen desde la era de Vista para el programador multimedia y para el throttle de recepción de paquetes sin procesar. CS2 no depende de ellos: el juego no usa el multimedia class scheduler para su render y el throttle descartaba paquetes de forma agregada en escenarios muy concretos. Cambiarlos no tiene efecto medible esperado en FPS ni en frametime; el riesgo es dejar valores no probados por Microsoft.",
+        "en-US": "Those values date back to Vista for the multimedia class scheduler and for raw receive packet throttling. CS2 does not depend on them: the game does not use the MMCSS path for rendering, and throttling only mattered in narrow aggregate scenarios. Changing them has no expected measurable effect on FPS or frametime; the risk is leaving values Microsoft never tested."
+      },
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/procthread/multimedia-class-scheduler-service",
+      "whatHelpsInstead": {
+        "es-MX": "Medir con fragforge baseline y ab. Si algo no supera el piso de ruido, no es una mejora: es ruido.",
+        "en-US": "Measure with fragforge baseline and ab. If something does not beat the noise floor, it is not an improvement: it is noise."
+      }
+    },
+    {
+      "id": "tcpackfrequency-nodelay",
+      "title": {
+        "es-MX": "TcpAckFrequency=1 y TCPNoDelay mejoran la latencia en CS2",
+        "en-US": "TcpAckFrequency=1 and TCPNoDelay improve latency in CS2"
+      },
+      "verdict": "False",
+      "why": {
+        "es-MX": "CS2 transporta el juego por UDP. TcpAckFrequency y TCPNoDelay son parámetros de TCP: no tocan ni un paquete del tráfico de juego. El efecto real, si existe, sería sobre descargas y navegación, no sobre el juego.",
+        "en-US": "CS2 carries gameplay over UDP. TcpAckFrequency and TCPNoDelay are TCP parameters: they do not touch a single packet of gameplay traffic. Any real effect would be on downloads and browsing, not the game."
+      },
+      "reference": "https://learn.microsoft.com/en-us/troubleshoot/windows-server/networking/configure-tcpip-registry-settings-with-netsh"
+    },
+    {
+      "id": "ram-cleaner",
+      "title": {
+        "es-MX": "Limpiar la RAM o purgar la standby list libera memoria para el juego",
+        "en-US": "Cleaning RAM or purging the standby list frees memory for the game"
+      },
+      "verdict": "False",
+      "why": {
+        "es-MX": "La standby list es memoria caché que el gestor de memoria puede reutilizar al instante; purgarla no libera recursos útiles, los tira. El resultado típico es más I/O y peor tiempo de carga, no más FPS. Windows ya reduce el working set de los procesos de fondo cuando hace falta memoria.",
+        "en-US": "The standby list is cache the memory manager can reuse instantly; purging it does not free useful resources, it throws them away. The usual result is more I/O and slower loads, not more FPS. Windows already trims background working sets under memory pressure."
+      },
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/memory/memory-management-functions"
+    },
+    {
+      "id": "disable-pagefile",
+      "title": {
+        "es-MX": "Desactivar el archivo de paginación aumenta el rendimiento",
+        "en-US": "Disabling the page file increases performance"
+      },
+      "verdict": "False",
+      "why": {
+        "es-MX": "Sin archivo de paginación, cuando la memoria física se agota el sistema falla en lugar de paginar, y muchas aplicaciones reservan memoria que asumen respaldada por disco. Además Windows necesita espacio de paginación para volcados y para alguna reserva de memoria de vídeo compartida. El riesgo es un cuelgue o un cierre inesperado, no más FPS.",
+        "en-US": "Without a page file, running out of physical memory fails the system instead of paging, and many applications reserve memory assuming a disk-backed commit. Windows also needs paging space for crash dumps and some shared video memory reservations. The risk is a hang or crash, not more FPS."
+      },
+      "reference": "https://learn.microsoft.com/en-us/troubleshoot/windows-client/performance/how-to-determine-the-appropriate-page-file-size"
+    },
+    {
+      "id": "realtime-priority",
+      "title": {
+        "es-MX": "Poner CS2 en prioridad Realtime da más FPS",
+        "en-US": "Setting CS2 to Realtime priority gives more FPS"
+      },
+      "verdict": "Misleading",
+      "why": {
+        "es-MX": "Realtime (24) deja al juego por encima de los hilos del sistema, incluidos los del controlador de vídeo, de audio y del propio kernel. El resultado medido en equipos domésticos es audio entrecortado, entrada con retardo y, con frecuencia, MENOS FPS porque el juego se queda esperando a que el driver pueda atenderlo. FragForge usa High (3) como máximo.",
+        "en-US": "Realtime (24) puts the game above system threads, including video, audio and kernel drivers. What is actually observed on consumer machines is crackling audio, laggy input and often FEWER FPS because the game waits for the driver to run. FragForge caps at High (3)."
+      },
+      "reference": "https://learn.microsoft.com/en-us/windows/win32/procthread/scheduling-priorities"
+    },
+    {
+      "id": "disable-sysmain-wsearch",
+      "title": {
+        "es-MX": "Desactivar SysMain y WSearch libera recursos y da FPS",
+        "en-US": "Disabling SysMain and WSearch frees resources and gives FPS"
+      },
+      "verdict": "Misleading",
+      "why": {
+        "es-MX": "SysMain precarga en RAM lo que se va a usar: desactivarlo suele ir en contra del juego en un equipo con 16 GB. WSearch solo consume de verdad cuando indexa. En ambos casos el consumo de CPU es de fondo y de baja prioridad, y no compite con el hilo de render. El efecto en FPS no es medible; el coste es arranque y búsquedas más lentos.",
+        "en-US": "SysMain preloads what will be used; disabling it usually hurts gaming on a 16 GB machine. WSearch only really consumes while indexing. In both cases background, low-priority CPU use does not compete with the render thread. The FPS effect is not measurable; the cost is slower boot and search."
+      },
+      "reference": "https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/sc-config"
+    },
+    {
+      "id": "disable-defender-gaming",
+      "title": {
+        "es-MX": "Desactivar Defender sube los FPS",
+        "en-US": "Disabling Defender raises FPS"
+      },
+      "verdict": "Misleading",
+      "why": {
+        "es-MX": "El escaneo en tiempo real puede costar algo de CPU al abrir archivos, pero el juego, una vez cargado, no pasa por ahí frame a frame. Desactivarlo no da FPS medibles y expone el equipo. La solución razonable es una exclusión de la carpeta del juego si el usuario lo decide, no apagar la protección. FragForge no toca Defender por política.",
+        "en-US": "Real-time scanning can cost some CPU when files are opened, but once a game is loaded it is not scanned per frame. Disabling it does not give measurable FPS and exposes the machine. The reasonable move is a game-folder exclusion if the user chooses it, not turning protection off. FragForge does not touch Defender by policy."
+      },
+      "reference": "https://learn.microsoft.com/en-us/defender-endpoint/configure-process-opened-file-exclusions-microsoft-defender-antivirus"
+    }
+  ]
+}

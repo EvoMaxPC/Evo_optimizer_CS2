@@ -1,0 +1,69 @@
+{
+  "id": "debloat.service.xblgamesave-manual",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Pasar guardado de Xbox Live a Manual (XblGameSave)",
+    "en-US": "Set Xbox Live game save to Manual (XblGameSave)"
+  },
+  "description": {
+    "es-MX": "Pasa el servicio de guardado de Xbox Live a inicio Manual. Solo arranca si un título o una app de Xbox lo pide.",
+    "en-US": "Sets the Xbox Live game save service to Manual start. Only starts if an Xbox title or app requests it."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "XblGameSave",
+        "startMode": "Manual"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "xbox",
+    "opt-in",
+    "opt-in"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/services/services"
+  ],
+  "notes": {
+    "es-MX": "Opt-in: si juegas títulos de Xbox o usas Game Pass, déjalo como está. CS2 no lo necesita.",
+    "en-US": "Opt-in: if you play Xbox titles or use Game Pass, leave it as is. CS2 does not need it."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si usas Game Pass, Xbox Cloud Gaming o mandos Xbox con la app de Xbox.",
+    "en-US": "Do not apply if you use Game Pass, Xbox Cloud Gaming or Xbox controllers with the Xbox app."
+  }
+}

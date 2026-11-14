@@ -19,6 +19,12 @@ public sealed record SystemSnapshot
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public string CreatedByVersion { get; init; } = "0.1.0";
     public HardwareProfile? Hardware { get; init; }
+    /// <summary>
+    /// Build de Windows en el momento de la captura, como texto. Campo ADITIVO y opcional (Capa 2):
+    /// sirve para atribuir un drift a una actualización de características. Los snapshots antiguos
+    /// no lo tienen y se cargan igual (null).
+    /// </summary>
+    public string? HardwareBuild { get; init; }
     public long? RestorePointSequence { get; init; }
     public IReadOnlyList<TweakSnapshot> Tweaks { get; init; } = [];
     public IReadOnlyList<string> Artifacts { get; init; } = [];

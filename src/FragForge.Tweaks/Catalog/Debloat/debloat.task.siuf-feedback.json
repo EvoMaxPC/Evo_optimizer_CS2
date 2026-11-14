@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.siuf-feedback",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar Feedback Siuf",
+    "en-US": "Disable Feedback Siuf"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea de recopilación de datos de opiniones del usuario (SIUF).",
+    "en-US": "Disables the Software Inventory and Usage Feedback data collection task."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Feedback\\Siuf\\DmClient",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-start-page"
+  ],
+  "notes": {
+    "es-MX": "Se deshabilita, no se borra. La app Comentarios seguirá abriéndose si la usas.",
+    "en-US": "Disabled, not deleted. The Feedback app still opens if you use it."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si participas activamente en el programa de opiniones de Windows Insider.",
+    "en-US": "Do not apply if you actively participate in the Windows Insider feedback program."
+  }
+}

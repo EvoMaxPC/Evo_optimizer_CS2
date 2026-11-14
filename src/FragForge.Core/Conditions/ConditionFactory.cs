@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FragForge.Core.Abstractions;
+using FragForge.Core.Atlas;
 using FragForge.Core.Logging;
 using FragForge.Core.Models;
 
@@ -130,8 +131,13 @@ internal sealed class AtlasCondition(ExpectedBoolParameters p) : ITweakCondition
     public string Type => "atlas";
     public ConditionResult Evaluate(HardwareProfile profile)
     {
-        var detected = profile.Playbooks.Any(x => x.Name.Contains("Atlas", StringComparison.OrdinalIgnoreCase));
-        return detected == p.Expected ? ConditionResult.Met($"Atlas detectado: {detected} (heurística).") : ConditionResult.Unmet($"Atlas detectado: {detected}; esperado {p.Expected}.");
+        // Capa 2: la detección se hace sobre MARCADORES FUERTES (organización o carpeta de datos).
+        // Antes bastaba con que hubiera cualquier entrada de playbook, y "servicios parados" contaba:
+        // un usuario que paró DiagTrack a mano se reportaba como Atlas. Eso era un falso positivo.
+        var atlas = AtlasProfile.FromHardware(profile);
+        var detected = atlas.Detected;
+        var detail = $"Atlas detectado: {detected} (confianza {atlas.Confidence}; {atlas.Markers.Count(m => m.Detected == true)} marcador(es) fuerte(s)).";
+        return detected == p.Expected ? ConditionResult.Met(detail) : ConditionResult.Unmet(detail + $" Se esperaba {p.Expected}.");
     }
 }
 internal sealed class UserHiveCondition(ExpectedBoolParameters p) : ITweakCondition

@@ -2,6 +2,10 @@
   <ItemGroup>
     <EmbeddedResource Include="Policy/denylist.json" />
     <None Include="Policy/denylist.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Policy/denylist.json" />
+    <EmbeddedResource Include="Tiers/service-tiers.json" />
+    <None Include="Tiers/service-tiers.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Tiers/service-tiers.json" />
+    <EmbeddedResource Include="Myths/myths.json" />
+    <None Include="Myths/myths.json" CopyToOutputDirectory="PreserveNewest" TargetPath="Myths/myths.json" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

@@ -1,0 +1,67 @@
+{
+  "id": "debloat.service.retaildemo-disabled",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Deshabilitar modo demostración (RetailDemo)",
+    "en-US": "Disable retail demo mode (RetailDemo)"
+  },
+  "description": {
+    "es-MX": "Deshabilita el modo de demostración de tienda, que no tiene función en un equipo personal.",
+    "en-US": "Disables retail demo mode, which has no purpose on a personal machine."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "RetailDemo",
+        "startMode": "Disabled"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "tienda"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/configuration/"
+  ],
+  "notes": {
+    "es-MX": "Sin dependientes. Reversible.",
+    "en-US": "No dependents. Reversible."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en un equipo de exhibición de tienda.",
+    "en-US": "Do not apply on a store display unit."
+  }
+}

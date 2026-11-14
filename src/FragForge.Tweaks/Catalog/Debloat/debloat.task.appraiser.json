@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.appraiser",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar Appraiser (Application Experience)",
+    "en-US": "Disable Appraiser (Application Experience)"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea que evalúa la compatibilidad de aplicaciones para recomendar actualizaciones.",
+    "en-US": "Disables the task that evaluates application compatibility to recommend upgrades."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Application Experience\\Appraiser",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "compatibilidad"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/deployment/"
+  ],
+  "notes": {
+    "es-MX": "Deshabilitada, Windows deja de evaluar programas para el asistente de actualización. No afecta a apps en ejecución.",
+    "en-US": "When disabled, Windows stops evaluating programs for the upgrade assistant. Does not affect running apps."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si estás a punto de actualizar de versión de Windows y quieres el informe de compatibilidad.",
+    "en-US": "Do not apply if you are about to upgrade Windows versions and want the compatibility report."
+  }
+}

@@ -27,7 +27,8 @@ public sealed class WindowsServiceController(IRegistry registry) : IServiceContr
         parameters["StartMode"] = startMode switch { "Auto" => "Automatic", "Manual" => "Manual", "Disabled" => "Disabled", _ => throw new ArgumentException("Invalid start mode.") };
         using var result = service.InvokeMethod("ChangeStartMode", parameters, null);
         var code = Convert.ToUInt32(result["ReturnValue"]);
-        if (code != 0) throw new FragForgeException("service_change_failed", $"ChangeStartMode({name}) devolvió {code}.");
+        // 5 = acceso denegado, 1 = no soportado, 10 = servicio deshabilitado, 21 = parámetro inválido.
+        if (code != 0) throw new ServiceChangeRejectedException(name, "ChangeStartMode", code);
         if (delayedAutoStart is not null)
         {
             var key = ServicesKey + "\\" + name;
@@ -44,7 +45,7 @@ public sealed class WindowsServiceController(IRegistry registry) : IServiceContr
         var method = state switch { "Running" => "StartService", "Stopped" => "StopService", _ => throw new ArgumentException("Invalid service state.") };
         using var result = service.InvokeMethod(method, null, null);
         var code = Convert.ToUInt32(result["ReturnValue"]);
-        if (code is not (0 or 10)) throw new FragForgeException("service_state_failed", $"{method}({name}) devolvió {code}.");
+        if (code is not (0 or 10)) throw new ServiceChangeRejectedException(name, method, code);
     }, cancellationToken);
     private static ManagementObject Find(string name)
     {

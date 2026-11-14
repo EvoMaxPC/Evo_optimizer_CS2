@@ -419,7 +419,15 @@ public sealed class TweakEngine(
             sequence = restoreResult.Sequence;
             await AppendAsync(operationId, JournalEventType.RestorePointCreated, null, snapshotId, restoreResult.Message, cancellationToken);
         }
-        var snapshot = new SystemSnapshot { Id = snapshotId, Label = label, Hardware = hardware, RestorePointSequence = sequence, Tweaks = captured };
+        var snapshot = new SystemSnapshot
+        {
+            Id = snapshotId,
+            Label = label,
+            Hardware = hardware,
+            HardwareBuild = hardware.Os.Build.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            RestorePointSequence = sequence,
+            Tweaks = captured
+        };
         await snapshots.SaveAsync(snapshot, cancellationToken);
         await AppendAsync(operationId, JournalEventType.SnapshotCreated, null, snapshotId, label, cancellationToken);
         return snapshot;

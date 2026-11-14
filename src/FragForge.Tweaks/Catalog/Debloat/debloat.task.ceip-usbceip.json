@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.ceip-usbceip",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar CEIP UsbCeip",
+    "en-US": "Disable CEIP UsbCeip"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea de CEIP que recopila datos de uso de dispositivos USB.",
+    "en-US": "Disables the CEIP task that collects USB device usage data."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Customer Experience Improvement Program\\UsbCeip",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-start-page"
+  ],
+  "notes": {
+    "es-MX": "Se deshabilita, no se borra. Reversible desde el snapshot.",
+    "en-US": "Disabled, not deleted. Reversible from the snapshot."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en equipos con diagnóstico de periféricos gestionado.",
+    "en-US": "Do not apply on machines with managed peripheral diagnostics."
+  }
+}

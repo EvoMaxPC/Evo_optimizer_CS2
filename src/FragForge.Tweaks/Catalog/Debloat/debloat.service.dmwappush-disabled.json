@@ -1,0 +1,67 @@
+{
+  "id": "debloat.service.dmwappush-disabled",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Deshabilitar WAP Push (dmwappushservice)",
+    "en-US": "Disable WAP Push (dmwappushservice)"
+  },
+  "description": {
+    "es-MX": "Deshabilita Device Management WAP Push, que solo se usa con administración MDM/Intune.",
+    "en-US": "Disables Device Management WAP Push, only used with MDM/Intune management."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "atlas",
+      "parameters": {
+        "expected": true
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Service",
+      "parameters": {
+        "name": "dmwappushservice",
+        "startMode": "Disabled"
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "servicio",
+    "mdm"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Reduce actividad en segundo plano; sin efecto medible esperado en FPS",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/configuration/wcd-overview"
+  ],
+  "notes": {
+    "es-MX": "En un equipo personal no tiene función. Sin dependientes conocidos.",
+    "en-US": "Has no purpose on a personal machine. No known dependents."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en un equipo administrado por Intune o MDM corporativo.",
+    "en-US": "Do not apply on a machine managed by Intune or corporate MDM."
+  }
+}

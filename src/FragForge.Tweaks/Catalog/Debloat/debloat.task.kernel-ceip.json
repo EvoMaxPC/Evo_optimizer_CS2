@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.kernel-ceip",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar KernelCeipTask",
+    "en-US": "Disable KernelCeipTask"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea de recopilación de datos de CEIP del kernel.",
+    "en-US": "Disables the kernel CEIP data collection task."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Kernel\\KernelCeipTask",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-start-page"
+  ],
+  "notes": {
+    "es-MX": "Se deshabilita, no se borra. No afecta al arranque ni a los controladores.",
+    "en-US": "Disabled, not deleted. Does not affect boot or drivers."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar si Microsoft soporta el equipo con trazas de kernel habilitadas.",
+    "en-US": "Do not apply if Microsoft supports the machine with kernel tracing enabled."
+  }
+}

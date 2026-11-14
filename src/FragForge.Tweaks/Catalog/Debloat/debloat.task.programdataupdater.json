@@ -1,0 +1,61 @@
+{
+  "id": "debloat.task.programdataupdater",
+  "category": "Debloat",
+  "title": {
+    "es-MX": "Desactivar ProgramDataUpdater",
+    "en-US": "Disable ProgramDataUpdater"
+  },
+  "description": {
+    "es-MX": "Deshabilita la tarea que envía datos de programas instalados al programa de experiencia del cliente.",
+    "en-US": "Disables the task that uploads installed-program data to the Customer Experience program."
+  },
+  "evidence": "Low",
+  "risk": "Safe",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "ScheduledTask",
+      "parameters": {
+        "path": "\\Microsoft\\Windows\\Application Experience\\ProgramDataUpdater",
+        "enabled": false
+      }
+    }
+  ],
+  "tags": [
+    "debloat",
+    "tarea",
+    "telemetria"
+  ],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Sin efecto medible esperado en FPS; reduce actividad en segundo plano programada",
+    "1%lows": "Sin efecto medible esperado",
+    "inputLatency": "None",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows/win32/taskschd/task-scheduler-start-page"
+  ],
+  "notes": {
+    "es-MX": "Se deshabilita, no se borra.",
+    "en-US": "Disabled, not deleted."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en equipos gestionados con inventario corporativo.",
+    "en-US": "Do not apply on managed machines with corporate inventory."
+  }
+}
