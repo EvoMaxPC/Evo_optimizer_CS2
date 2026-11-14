@@ -32,6 +32,18 @@ public static class Cs2ProfilePlanner
     /// </summary>
     public const double DefaultRefreshFactor = 1.0;
 
+    /// <summary>
+    /// Valor de <c>engine_no_focus_sleep</c> cuando se quiere que el motor NO duerma al perder el foco.
+    /// Es el 0 documentado en la descripción de la opción: dormir 0 ms es no dormir.
+    /// </summary>
+    public const string SleepDisabledValue = "0";
+
+    /// <summary>
+    /// Valor cuando SÍ se quiere dormir al perder el foco. 1 ms es el valor positivo mínimo: la convar es de
+    /// milisegundos y el usuario pidió un sí/no, no una cantidad. HEURÍSTICA NO VALIDADA.
+    /// </summary>
+    public const string SleepEnabledValue = "1";
+
     public static ProfilePlan Plan(Cs2ProfilePreferences preferences, Cs2OptionCatalog catalog)
     {
         var warnings = new List<string>();
@@ -58,7 +70,12 @@ public static class Cs2ProfilePlanner
         if (preferences.VSync is { } vsync && catalog.Find("mat_vsync") is { } matVsync)
             selected[matVsync.Id] = vsync ? "1" : "0";
         if (preferences.SleepWhenUnfocused is { } sleep && catalog.Find("engine_no_focus_sleep") is { } sleepOption)
-            selected[sleepOption.Id] = sleep ? "0" : "1";
+        {
+            // La convar es de MILISEGUNDOS y 0 significa "no dormir" (ver su descripción en el catálogo).
+            // Por eso la correspondencia es directa: pedir que duerma -> valor > 0; pedir que no duerma -> 0.
+            // Invertirlo ponía el juego a dormir justo cuando el usuario pedía lo contrario.
+            selected[sleepOption.Id] = sleep ? SleepEnabledValue : SleepDisabledValue;
+        }
 
         // 4) Orden determinista: el del catálogo, para que dos ejecuciones den el mismo texto.
         var cfg = new List<PlannedOption>();

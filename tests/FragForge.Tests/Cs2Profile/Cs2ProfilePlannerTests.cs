@@ -29,7 +29,7 @@ public sealed class Cs2ProfilePlannerTests
         // Cálculo a mano: 144 Hz * 1.0 = 144 -> round(144) = 144.
         var plan = Plan(new Cs2ProfilePreferences { FpsCap = FpsCap.DerivedFromRefresh(1.0), MeasuredRefreshHz = 144 });
 
-        var fpsMax = Assert.Single(plan.CfgOptions.Where(o => o.Id == "fps_max"));
+        var fpsMax = Assert.Single(plan.CfgOptions, o => o.Id == "fps_max");
         Assert.Equal("144", fpsMax.Value);
         Assert.Empty(plan.Warnings);
     }
@@ -40,11 +40,11 @@ public sealed class Cs2ProfilePlannerTests
         // Cálculo a mano: 165 Hz * 0.5 = 82.5 -> AwayFromZero -> 83. (Con ToEven daría 82: por eso se fija.)
         var plan = Plan(new Cs2ProfilePreferences { FpsCap = FpsCap.DerivedFromRefresh(0.5), MeasuredRefreshHz = 165 });
 
-        Assert.Equal("83", Assert.Single(plan.CfgOptions.Where(o => o.Id == "fps_max")).Value);
+        Assert.Equal("83", Assert.Single(plan.CfgOptions, o => o.Id == "fps_max").Value);
 
         // Cálculo a mano: 165 Hz * 2.0 = 330 -> 330.
         var doubled = Plan(new Cs2ProfilePreferences { FpsCap = FpsCap.DerivedFromRefresh(2.0), MeasuredRefreshHz = 165 });
-        Assert.Equal("330", Assert.Single(doubled.CfgOptions.Where(o => o.Id == "fps_max")).Value);
+        Assert.Equal("330", Assert.Single(doubled.CfgOptions, o => o.Id == "fps_max").Value);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class Cs2ProfilePlannerTests
 
         // Cálculo a mano: no hay factor ni refresco de por medio; se escribe el número tal cual.
         var ok = Plan(new Cs2ProfilePreferences { FpsCap = FpsCap.Fixed(240) });
-        Assert.Equal("240", Assert.Single(ok.CfgOptions.Where(o => o.Id == "fps_max")).Value);
+        Assert.Equal("240", Assert.Single(ok.CfgOptions, o => o.Id == "fps_max").Value);
     }
 
     [Fact]
@@ -69,27 +69,28 @@ public sealed class Cs2ProfilePlannerTests
             Options = [new SelectedOption { Id = "fps_max", Value = "100" }]
         });
 
-        Assert.Equal("240", Assert.Single(plan.CfgOptions.Where(o => o.Id == "fps_max")).Value);
+        Assert.Equal("240", Assert.Single(plan.CfgOptions, o => o.Id == "fps_max").Value);
         Assert.Single(plan.CfgOptions, o => o.Id == "fps_max");
     }
 
     [Fact]
     public void VsyncSwitch_MapsTo1Or0_AndOnlyWhenAsked()
     {
-        Assert.Equal("1", Assert.Single(Plan(new Cs2ProfilePreferences { VSync = true }).CfgOptions.Where(o => o.Id == "mat_vsync")).Value);
-        Assert.Equal("0", Assert.Single(Plan(new Cs2ProfilePreferences { VSync = false }).CfgOptions.Where(o => o.Id == "mat_vsync")).Value);
+        Assert.Equal("1", Assert.Single(Plan(new Cs2ProfilePreferences { VSync = true }).CfgOptions, o => o.Id == "mat_vsync").Value);
+        Assert.Equal("0", Assert.Single(Plan(new Cs2ProfilePreferences { VSync = false }).CfgOptions, o => o.Id == "mat_vsync").Value);
 
         // Null = no se toca: ninguna línea de mat_vsync.
         Assert.DoesNotContain(Plan(new Cs2ProfilePreferences { VSync = null }).CfgOptions, o => o.Id == "mat_vsync");
     }
 
     [Fact]
-    public void SleepWhenUnfocused_IsInverted()
+    public void SleepWhenUnfocused_MapsDirectly_NotInverted()
     {
-        // engine_no_focus_sleep = 0 significa "no dormir" (ver la descripción del catálogo), así que pedir
-        // "dormir fuera de foco" => 1, y "no dormir" => 0.
-        Assert.Equal("0", Assert.Single(Plan(new Cs2ProfilePreferences { SleepWhenUnfocused = false }).CfgOptions.Where(o => o.Id == "engine_no_focus_sleep")).Value);
-        Assert.Equal("1", Assert.Single(Plan(new Cs2ProfilePreferences { SleepWhenUnfocused = true }).CfgOptions.Where(o => o.Id == "engine_no_focus_sleep")).Value);
+        // engine_no_focus_sleep es de MILISEGUNDOS y 0 significa "no dormir" (ver la descripción del
+        // catálogo), así que la correspondencia es directa: "no dormir" => 0 y "dormir" => 1 (positivo mínimo).
+        // Este test detectó que el planificador lo tenía invertido: pedía "no dormir" y escribía 1.
+        Assert.Equal("0", Assert.Single(Plan(new Cs2ProfilePreferences { SleepWhenUnfocused = false }).CfgOptions, o => o.Id == "engine_no_focus_sleep").Value);
+        Assert.Equal("1", Assert.Single(Plan(new Cs2ProfilePreferences { SleepWhenUnfocused = true }).CfgOptions, o => o.Id == "engine_no_focus_sleep").Value);
     }
 
     /// <summary>
@@ -167,7 +168,7 @@ public sealed class Cs2ProfilePlannerTests
         foreach (var objective in new[] { Cs2ProfileObjective.LatenciaMinima, Cs2ProfileObjective.FrametimeEstable, Cs2ProfileObjective.Equilibrado })
         {
             var plan = Plan(new Cs2ProfilePreferences { Objective = objective, FpsCap = FpsCap.Fixed(120) });
-            Assert.Equal("120", Assert.Single(plan.CfgOptions.Where(o => o.Id == "fps_max")).Value);
+            Assert.Equal("120", Assert.Single(plan.CfgOptions, o => o.Id == "fps_max").Value);
         }
     }
 }
