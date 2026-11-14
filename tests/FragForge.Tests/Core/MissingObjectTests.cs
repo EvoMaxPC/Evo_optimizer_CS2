@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FragForge.Actions.Tasks;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Models;
@@ -102,11 +101,9 @@ public sealed class MissingObjectTests
             : throw new InvalidOperationException("Este doble solo crea ScheduledTask (test).");
     }
 
-    private static ActionSpec TaskAction(string path, bool enabled = false) => new()
-    {
-        Kind = "ScheduledTask",
-        Parameters = JsonSerializer.SerializeToElement(new { path, enabled }, JsonDefaults.Options)
-    };
+    // Se usa Spec.Action, que ya serializa con JsonDefaults.Options (ver TestSupport.cs:10): no se
+    // duplica la configuración de serialización en este archivo.
+    private static ActionSpec TaskAction(string path, bool enabled = false) => Spec.Action("ScheduledTask", new { path, enabled });
 
     private static TweakDefinition TaskTweak(string id, string path, bool enabled = false) => new()
     {
@@ -353,6 +350,12 @@ public sealed class MissingObjectTests
             report.DryRun,
             $"el reporte del camino de excepción debe reflejar options.DryRun=true; DryRun={report.DryRun}, " +
             $"Errors=[{string.Join(" | ", report.Errors)}]");
+        // Esto es lo que demuestra que se pasó por el catch general (TweakEngine.cs:250) y no por otra
+        // rama: un dry-run que no falla devuelve Success=true sin errores.
+        Assert.True(
+            report.Errors.Count > 0,
+            $"el camino de excepción debe dejar el error registrado; fue Success={report.Success} sin errores, " +
+            $"así que el test no estaría ejercitando el catch general. DryRun={report.DryRun}");
         Assert.Null(report.SnapshotId);
     }
 }
