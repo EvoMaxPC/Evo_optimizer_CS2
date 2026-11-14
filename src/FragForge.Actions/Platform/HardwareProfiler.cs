@@ -402,7 +402,11 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
     public static string DescribeChannels(IReadOnlyList<MemoryModuleInfo> modules)
     {
         if (modules.Count == 0)
-            return "Win32_PhysicalMemory no devolvió módulos; no se puede decir nada sobre los canales.";
+            // Se mantiene el invariante del metodo ("WMI describe modulos, no el entrelazado") tambien cuando
+            // no hay modulos: antes esta rama era la unica que no lo decia, y el test que lo exige para
+            // cualquier numero de modulos fallaba justo con 0.
+            return "Win32_PhysicalMemory no devolvió módulos; no se puede decir nada sobre los canales. "
+                 + "Aun así, WMI describe módulos, no el entrelazado del controlador.";
 
         const string BaseText = "Win32_PhysicalMemory describe módulos, no el entrelazado del controlador.";
 
