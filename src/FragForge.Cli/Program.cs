@@ -22,6 +22,10 @@ public static class Program
         {
             var parsed = CommandLineParser.Parse(args);
             if (parsed.Command == "help") { Help(); return ExitCodes.Success; }
+            // `analyze` es de SOLO LECTURA y no necesita el host: sin registro, sin servicios, sin log, sin
+            // admin. Despacharlo antes de CompositionRoot evita crear directorios y abrir un fichero de log
+            // para una operación que solo lee CSV.
+            if (parsed.Command == "analyze") return AnalyzeCommands.Analyze(parsed, args);
             var options = new ShellOptions(parsed.Value("data-root"), parsed.Value("culture") ?? "es-MX");
             using var host = await CompositionRoot.BuildAsync(options, cancellation.Token);
             var engine = host.Services.GetRequiredService<ITweakEngine>();
@@ -200,6 +204,11 @@ Uso:
   fragforge baseline [--duration 120] [--runs 3] [--warmup 10] [--json]
   fragforge ab <ids...> [--runs 5] [--aa] [--mode interleaved|blocked] [--seed N] [--json]
   fragforge experiment list|show|resume|report [ID] [--out RUTA] [--json]
+  fragforge analyze <captura.csv> [--warmup-seconds N] [--exclude-pauses] [--json]
+  fragforge analyze <a1.csv> <a2.csv> ... --versus <b1.csv> <b2.csv> ... [--warmup-seconds N]
+                    [--exclude-pauses] [--json]
+      (solo lectura: MIDE y DESCRIBE capturas de PresentMon ya hechas; no lanza PresentMon, no toca el
+       sistema y no requiere admin. No promete FPS ni diagnostica cuellos de botella.)
 
 Capa 2 — inventario y debloat honesto (sin promesas de FPS):
   fragforge audit [--out RUTA] [--json]

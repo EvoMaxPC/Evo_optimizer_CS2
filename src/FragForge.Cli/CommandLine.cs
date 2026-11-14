@@ -11,8 +11,35 @@ public sealed class ParsedArgs
 }
 public static class CommandLineParser
 {
-    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply" };
-    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count" };
+    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply", "exclude-pauses" };
+    private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count", "warmup-seconds" };
+    /// <summary>
+    /// Opciones que toman VARIOS valores seguidos (<c>--versus b1.csv b2.csv</c>). El parser las ACEPTA y las
+    /// marca como presentes, pero NO consume ningún valor. Si estuvieran en <c>ValueOptions</c> se tomaría
+    /// solo el primero y el resto quedaría suelto. Quien las usa parte la línea con
+    /// <see cref="CommandLineParser.SplitAt(string, string[])"/>.
+    /// </summary>
+    private static readonly HashSet<string> MultiValueOptions = new(StringComparer.OrdinalIgnoreCase) { "versus" };
+    /// <summary>
+    /// Parte la línea de comandos en el token <c>--opción</c>: devuelve lo de ANTES ya interpretado con
+    /// <see cref="Parse(string[])"/> y los valores sueltos que vienen DESPUÉS (hasta el siguiente <c>--</c>).
+    /// </summary>
+    /// <remarks>
+    /// Existe porque <see cref="Parse(string[])"/> mete en <see cref="ParsedArgs.Positionals"/> TAMBIÉN los
+    /// valores de una opción multi-valor: con <c>analyze a.csv --versus b.csv</c>, "b.csv" acabaría entre los
+    /// CSV de A. Partir la línea antes de parsear lo evita sin duplicar la lógica del parser.
+    /// </remarks>
+    public static (ParsedArgs Before, IReadOnlyList<string> ValuesAfter) SplitAt(string option, string[] args)
+    {
+        var index = Array.FindIndex(args, a => a.Equals("--" + option, StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return (Parse(args), []);
+
+        var before = Parse(args[..index]);
+        var values = new List<string>();
+        for (var i = index + 1; i < args.Length && !args[i].StartsWith("--", StringComparison.Ordinal); i++) values.Add(args[i]);
+        return (before, values);
+    }
+
     public static ParsedArgs Parse(string[] args)
     {
         if (args.Length == 0 || args[0] is "--help" or "-h" or "help") return new ParsedArgs { Command = "help" };
@@ -25,6 +52,7 @@ public static class CommandLineParser
             if (!token.StartsWith("--", StringComparison.Ordinal)) { positionals.Add(token); continue; }
             var name = token[2..];
             if (Flags.Contains(name)) { options[name] = ["true"]; continue; }
+            if (MultiValueOptions.Contains(name)) { options[name] = ["true"]; continue; }
             if (!ValueOptions.Contains(name)) throw new ArgumentException($"Opción desconocida: --{name}");
             if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal)) throw new ArgumentException($"Falta el valor de --{name}");
             if (!options.TryGetValue(name, out var values)) { values = []; options[name] = values; }
