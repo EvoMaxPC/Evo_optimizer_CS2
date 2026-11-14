@@ -27,6 +27,13 @@ public sealed class PreflightService(
         if (options.DryRun)
         {
             checks.Add(new("dry-run", PreflightSeverity.Info, "Simulación: no se modificará el sistema ni se creará un punto de restauración."));
+            // CORRECCION (ronda de fallos 1, C3): antes se retornaba AQUI y el dry-run nunca llegaba a
+            // RecoveryCoverage (:51), asi que la vista previa salia limpia para un tweak que despues
+            // fallaba al aplicar. El contrato pide lo contrario: el dry-run NO lanza, pero ENSENA el
+            // aviso. Se evalua igual y se DEGRADA a Warning: un dry-run no cambia nada, de modo que no
+            // hay nada que impedir, pero el usuario ve por que no se podra aplicar.
+            checks.AddRange(RecoveryCoverage(options.SelectedIds)
+                .Select(c => c with { Severity = PreflightSeverity.Warning }));
             return PreflightReport.Passed(checks);
         }
         checks.Add(profile.IsUnsupportedPlatform ? new("platform", PreflightSeverity.Blocking, "Las acciones reales requieren Windows 11 x64.", "Ejecuta FragForge en el equipo objetivo.") : new("platform", PreflightSeverity.Info, "Plataforma Windows detectada."));

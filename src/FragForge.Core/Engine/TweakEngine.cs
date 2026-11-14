@@ -130,8 +130,11 @@ public sealed class TweakEngine(
                     options with { SelectedIds = plans.Select(p => p.Definition.Id).ToHashSet(StringComparer.OrdinalIgnoreCase) },
                     hardware,
                     cancellationToken);
+                // Se aceptan Blocking Y Warning: el preflight degrada a Warning lo que en un apply real
+                // bloquea (preflight.CheckAsync, rama DryRun), porque aqui no hay nada que impedir. Filtrar
+                // solo por Blocking hacia que el aviso no saliera NUNCA (fallo C3 de la ronda de fallos 1).
                 warnings.AddRange(previewPreflight.Checks
-                    .Where(c => c.Severity == PreflightSeverity.Blocking)
+                    .Where(c => c.Severity is PreflightSeverity.Blocking or PreflightSeverity.Warning)
                     .Select(c => "NO SE PODRÁ APLICAR — " + c.Message));
                 return await FinishAsync(new BatchReport { OperationId = operationId, DryRun = true, Success = true, Results = results, Warnings = warnings }, true, cancellationToken);
             }
