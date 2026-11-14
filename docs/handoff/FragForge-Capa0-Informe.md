@@ -8,6 +8,7 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 
 ## Índice
 0. **[Hotfix de la PARTE A (posterior a esta entrega)](#hotfix-parte-a--correcciones-sobre-la-pc-real)** — qué se rompía en la PC real y qué se cambió
+0. **[Hotfix PARTE B / ronda 3](#hotfix-parte-b-ronda-3--los-4-tests-que-fallaban-en-la-pc-real-y-el-aviso-de-red)** — los 4 tests rojos, el aviso de `MSFT_NetAdapter` y los warnings
 0. [Briefing compacto para otra sesión de Claude](#0-briefing-compacto-para-otra-sesión-de-claude-copiarpegar)
 1. [Arquitectura y decisiones](#1-arquitectura-y-decisiones)
 2. [Árbol de carpetas](#2-árbol-de-carpetas)
@@ -123,6 +124,152 @@ citadas; quedan aisladas y comentadas precisamente para que se puedan discutir.
 | `tests/FragForge.Tests/Core/TpmAndNetworkHotfixTests.cs` | consulta que **lanza** ⇒ `Unknown` (antes `NotPresent`); 0 instancias ⇒ `NotPresent`; 1 instancia ⇒ `Enabled`/`Disabled`; namespaces fijados; perfil completo sobrevive a fallos de TPM y red |
 | `tests/FragForge.Tests/Catalog/RealCatalogArchitectureTests.cs` | catálogo **real embebido** contra el perfil PN64 en memoria: 30 tweaks, 3 en Safe, los 3 Aplicables, `cpu.epp-performance` cumple su condición `windows` |
 | `tests/FragForge.Tests/Core/CultureDefaultsTests.cs` | la cultura inicial siempre existe en la lista de opciones |
+
+---
+
+## Hotfix PARTE B (ronda 3) — los 4 tests que fallaban en la PC real y el aviso de red
+
+Compilado por el usuario en `24ce047`: **build 0 errores / 55 warnings, tests 496 OK / 4 fallan / 500**.
+Los 4 fallos eran los puntos 1–3 y 4 de abajo. Todo lo demás de esta ronda es diagnóstico (puntos 5 y 6)
+y solo cambió donde el diagnóstico probó que el código estaba mal.
+
+### Punto 1 — `RealCatalogArchitectureTests.…_EverythingIsNotApplicable`
+
+**Qué fallaba.** El test afirmaba `Assert.False(r.IsMet)` para las 3 condiciones Safe del catálogo real
+con `Architecture = "64 bits"`. Es decir: **el test codificaba el bug viejo** (el texto localizado no se
+entendía y todo salía "No aplicable").
+
+**Causa.** Ninguna en producción. Con el hotfix de la PARTE A, `ArchitectureInterpreter.Parse` mapea
+`"64 bits"` → `X64` y las 3 condiciones se cumplen. El test quedó al revés.
+
+**Qué se cambió.** Solo el test, renombrado a
+`RealCatalog_WithTheLocalizedArchitectureText_ConditionsAreMet_NotBroken`. Afirma que las 3 se cumplen,
+que el enum y el texto localizado dan el mismo resultado, y conserva un control negativo
+(`"procesador raro"` ⇒ `IsMet=false` **e** `IsKnown=false`, para distinguir "no cumple" de "no sé").
+**No se tocó código de producción.**
+
+### Punto 2 — `CsvParserTests.V1MetricsLayout_IsAcceptedAsFallback_AndFlaggedNonStandard` (:326)
+
+**Qué fallaba.** `Assert.True(series.IsNonStandardLayout)` daba `False`.
+
+**Causa: el parser, no el fixture ni el gate.** La detección era `!headers.Contains("MsBetweenPresents")`
+—una sola columna—, y el layout `--v1_metrics` **también trae `msBetweenPresents`** (en minúscula; la
+comparación es `OrdinalIgnoreCase`, así que casaba). v1 no se distingue por el frame time sino por usar
+`Runtime` donde el layout por defecto usa `PresentRuntime`. v2 fallaba bien porque sí le falta
+`MsBetweenPresents`: por eso solo rompía v1.
+
+**Qué se cambió.** `PresentMonCsvParser.IsDefaultLayout`: layout por defecto ⇔ tiene `MsBetweenPresents`
+**y** `PresentRuntime`. Se comprobaron los 8 encabezados del repo (2 fixtures reales, 2 sintéticos, el
+default y 3 casos degenerados): la regla nueva clasifica los 8 como antes, salvo v1, que es justo el que
+estaba mal. El aviso ahora dice qué falta en vez de solo "no es estándar".
+
+### Punto 3 — `CaptureValidityTests.NonStandardLayout_IsSuspect_WithItsOwnReason` (:88)
+
+**Qué fallaba.** Esperaba `Suspect`, daba `Valid`.
+
+**Causa: la misma del punto 2.** El gate estaba bien; nunca recibía `IsNonStandardLayout=true` porque el
+parser no lo marcaba para v1. Arreglado el parser, el gate marca `Suspect` con su motivo propio. No se
+tocó `CaptureValidityGate`.
+
+### Punto 4 — `CompositionIntegrationTests.ScanAndDryRun_…` (:61)
+
+**La línea 61 es `Assert.True(report.DryRun)`**, no una aserción sobre hardware.
+
+**Qué significa el fallo.** `ApplyAsync` tiene **una sola** salida que fija `DryRun = true`
+(`TweakEngine.cs:123`). El reporte que devuelve el `catch` final (`TweakEngine.cs:226-234`) **no fija
+`DryRun`**, así que queda `false`. Un `DryRun=false` aquí significa **"la operación se cortó por
+excepción, no que el dry-run se haya ignorado"**. Los 20 s que tarda apuntan a una consulta WMI que
+expira. El `ScanAsync` de la línea 56 ya perfila el hardware real con éxito; `ApplyAsync` **vuelve a
+perfilar** (línea 84) y ahí es donde puede cortarse.
+
+**Qué se cambió.** Solo el mensaje del assert, con `DryRun`, `Success`, `Cancelled`,
+`HasCriticalFailure`, número de `Results` y los `Errors`/`Warnings` completos. **No se refactorizó nada**,
+como pediste. El mensaje es lo que dirá qué excepción cortó la operación en la próxima corrida.
+
+**No verificado.** No sé qué excepción concreta salta en tu equipo: sin compilador no puedo correrlo. La
+línea 61 y el flujo sí están trazados a mano sobre el código.
+
+### Punto 5 — `MSFT_NetAdapter`: "Consulta no válida" ×3
+
+**Causa medida (por ti, en la PC real; yo no la deduje).** El código pedía `DriverVersion`, `MediaType` y
+`LinkSpeed`, que **no existen** en `root\StandardCimv2:MSFT_NetAdapter`. Cada una tumbaba la consulta y
+generaba su propio aviso: de ahí salían exactamente **3**. La hipótesis de que el *scope* estaba mal era
+**falsa**: ya era `root\StandardCimv2`.
+
+De la medición: funcionan `Name, InterfaceDescription, InterfaceGuid, DriverProvider, State,
+HardwareInterface, Virtual`. Fallan con `InvalidQuery` las tres nombradas. La clase devuelve 2 instancias
+(Ethernet I225-V, Wi-Fi AX210) y `Status` viene vacío.
+
+**(a) Reemplazos, uno por concepto:**
+
+| Antes (inexistente) | Ahora | Por qué esa y no otra |
+|---|---|---|
+| `DriverVersion` | `DriverVersionString` | es la única propiedad de versión de driver en la clase (`DriverMajor/MinorNdisVersion` son de NDIS, no del driver). |
+| `MediaType` | `NdisPhysicalMedium` | `MediaType` es un nombre de `Win32_NetworkAdapter`; en `MSFT_NetAdapter` el medio físico NDIS es `NdisPhysicalMedium`. `NdisMedium` es el medio de la capa, no el físico. |
+| `LinkSpeed` | `Speed` | `Speed` es la velocidad negociada **actual**. `ReceiveLinkSpeed`/`TransmitLinkSpeed` son por dirección y `MaxSpeed` es el máximo, no lo actual. |
+
+**(b) Mapeo de tipo de medio.** Solo valores documentados de `NDIS_PHYSICAL_MEDIUM`:
+`14` = `NdisPhysicalMedium802_3` → `Ethernet`; `9` = `NdisPhysicalMediumNative802_11` → `Wi-Fi`;
+**todo lo demás → `Unknown`**. El mapeo anterior (`1`=Ethernet, `2`=Wi-Fi) no corresponde a esa
+enumeración, y su rama por defecto **adivinaba Ethernet** a partir del nombre: se eliminó, porque
+convertir "no sé" en "Ethernet" es justo lo que R-L prohíbe.
+
+**(c) Test nuevo.** `tests/FragForge.Tests/Core/NetAdapterPropertiesTests.cs` embebe las **103 propiedades
+reales** de la clase como constante (la lista que mediste, verificada nombre a nombre: 103 = 103, mismo
+orden) y **falla si el código pide una que no esté**. Las tres retiradas quedan fijadas como
+inexistentes, así que reintroducirlas rompe el test.
+
+**(d) Aviso con la consulta.** El texto pasó de `"MSFT_NetAdapter: Consulta no válida"` a
+`"root\StandardCimv2:MSFT_NetAdapter (Name,DriverVersion): Consulta no válida"`. Saber la lista de
+propiedades es lo que habría permitido encontrar el problema sin 11 consultas a mano.
+
+También se eliminó la sonda en dos pasadas: existía solo para adivinar qué propiedades aceptaba el
+sistema, y ya no hay nada que adivinar.
+
+**No verificado (importante).** Que `NdisPhysicalMedium` devuelva `14` en la I225-V y `9` en la AX210 **no
+se midió**. Si devuelve otro valor, el adaptador saldrá `Unknown` — que es el comportamiento correcto,
+pero conviene confirmarlo con `Get-NetAdapter | Select Name,NdisPhysicalMedium` antes de fiarse de la
+columna.
+
+### Punto 6 — Warnings
+
+**(i) CS0414 — localizado, no es del hotfix.** Es
+`tests/FragForge.Tests/Actions/ActionTests.cs:106`: `private static readonly string SettingsJson`
+declarado y **nunca usado** (0 lecturas, 0 escrituras en todo el repo). Lo introdujo `a2c5429`
+("Layer 0: complete FragForge solution"), anterior al hotfix. **No se corrigió**: la regla de esta ronda
+era tocar solo lo propio, y borrar un fixture de test ajeno no es un hotfix. Se anota aquí para que se
+decida aparte.
+
+Se revisaron además todos los campos privados del repo con un análisis de lectura/escritura por AST: el
+único otro candidato real es `MainViewModel.culture`, y **no lo es**, porque el generador de MVVM Toolkit
+sí lo lee al generar la propiedad pública.
+
+**(ii) CA1416 — no vienen de código nuevo.** No hay ninguna llamada nueva a API de Windows en `src/`
+introducida por el hotfix: las líneas agregadas son `WmiValues.*` (helpers puros de parseo, sin API de
+Windows) y el mapeo de enums. `CompositionRoot.cs:67`, que registra `WindowsHardwareProfiler` (marcado
+`[SupportedOSPlatform("windows")]`) desde un proyecto `net10.0`, está **guardado** por
+`OperatingSystem.IsWindows()`.
+
+**Pero**: el test nuevo de esta ronda sí habría introducido CA1416 propios, porque llama a miembros
+estáticos de la clase marcada como Windows desde `FragForge.Tests` (`net10.0`). Se anotó la clase con
+`[SupportedOSPlatform("windows")]` para no añadir ninguno. Los tests del hotfix anterior
+(`TpmAndNetworkHotfixTests`, `ArchitectureHotfixTests`) hacen lo mismo **sin** la marca: si entre esos 55
+warnings hay CA1416, lo más probable es que vengan de ahí y no de esta ronda.
+
+**No verificado.** Sin compilador no puedo saber qué 55 warnings son. Lo anterior es el inventario de
+candidatos por lectura del código, no la salida del build.
+
+### Resumen de archivos tocados en la ronda 3
+
+| Archivo | Cambio |
+|---|---|
+| `tests/…/Catalog/RealCatalogArchitectureTests.cs` | test invertido y renombrado (punto 1) |
+| `src/…/Measurement/PresentMonCsvParser.cs` | `IsDefaultLayout` con dos columnas (puntos 2 y 3) |
+| `tests/…/Measurement/CsvParserTests.cs` | mensajes con valores en los dos tests de layout |
+| `tests/…/Measurement/CaptureValidityTests.cs` | mensajes con valores |
+| `tests/…/Integration/CompositionIntegrationTests.cs` | solo el mensaje del assert de la línea 61 |
+| `src/…/Platform/HardwareProfiler.cs` | propiedades reales, mapeo NDIS, aviso con la consulta, sin sonda |
+| `tests/…/Core/NetAdapterPropertiesTests.cs` | **nuevo**: 103 propiedades reales + mapeo + aviso |
 
 ---
 

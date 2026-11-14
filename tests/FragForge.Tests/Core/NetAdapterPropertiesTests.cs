@@ -1,3 +1,4 @@
+using System.Runtime.Versioning;
 using FragForge.Actions.Platform;
 using FragForge.Core.Models;
 using Xunit;
@@ -14,7 +15,11 @@ namespace FragForge.Tests.Core;
 ///
 /// La lista de abajo es la verdad MEDIDA en la clase real (root\StandardCimv2:MSFT_NetAdapter, 2
 /// instancias: I225-V y AX210). No es un fixture inventado.
+///
+/// La clase bajo prueba está marcada <c>[SupportedOSPlatform("windows")]</c>, así que este test
+/// hereda la marca: en un proyecto <c>net10.0</c> sin ella, cada acceso daría CA1416.
 /// </summary>
+[SupportedOSPlatform("windows")]
 public sealed class NetAdapterPropertiesTests
 {
     /// <summary>

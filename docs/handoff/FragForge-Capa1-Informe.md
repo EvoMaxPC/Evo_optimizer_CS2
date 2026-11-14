@@ -247,6 +247,10 @@ cada corrida con sus motivos.
 6. **La captura de referencia no es un baseline válido.** Se usa solo como fixture.
    **No se afirma que el juego corra a 60 FPS ni que la pantalla esté a 60 Hz**: hay dos
    swapchains y su relación no está determinada.
+7. **Ronda 3: el arreglo del layout v1 no se compiló ni se corrió aquí.** Está trazado a mano
+   sobre el código y verificado con script sobre los 8 encabezados del repo, pero la corrida
+   que lo confirma es la tuya. Si el mensaje del assert vuelve a salir, ahora imprime las
+   columnas reales del CSV: eso identifica el layout sin ambigüedad.
 
 ## Correcciones posteriores a la adenda 2
 
@@ -282,6 +286,55 @@ dato que la propia captura demostraba.
 **Arreglo.** El motivo dice ahora *"GPU no disponible en la swapchain analizada"*.
 
 **Test:** `GpuUnavailableReason_SaysTheChainAnalyzed_NotAllRows`.
+
+---
+
+## Correcciones de la ronda 3 — el layout v1 no se detectaba
+
+Compilado por el usuario en `24ce047`: 4 tests rojos de 500. **Dos de los cuatro eran de Capa 1 y
+tenían la misma causa.** El tercero y el cuarto eran de Capa 0 (ver el informe de Capa 0, sección
+"Hotfix PARTE B").
+
+### El defecto: `IsNonStandardLayout` nunca era `true` para `--v1_metrics`
+
+**Tests rojos.**
+- `CsvParserTests.V1MetricsLayout_IsAcceptedAsFallback_AndFlaggedNonStandard` (línea 326)
+- `CaptureValidityTests.NonStandardLayout_IsSuspect_WithItsOwnReason` (línea 88)
+
+**Qué se creía.** Que el gate de validez era el que fallaba (el test esperaba `Suspect` y daba `Valid`).
+
+**Qué era.** El **parser**. La detección era:
+
+```csharp
+var isNonStandardLayout = !headers.Any(h => h.Equals("MsBetweenPresents", OrdinalIgnoreCase));
+```
+
+Una sola columna. Y `--v1_metrics` **también trae `msBetweenPresents`** — en minúscula, pero la
+comparación es `OrdinalIgnoreCase`, así que casaba. v1 no se distingue por el frame time: se distingue
+porque usa `Runtime` donde el layout por defecto usa `PresentRuntime`. v2 sí fallaba bien (no trae
+`MsBetweenPresents`), y por eso el bug solo se veía en v1.
+
+El gate estaba correcto desde el principio: nunca recibía `IsNonStandardLayout = true`.
+
+**El arreglo.** `IsDefaultLayout(headers)`: layout por defecto ⇔ tiene `MsBetweenPresents` **y**
+`PresentRuntime`. Se compararon los 8 encabezados que hay en el repo —los 2 fixtures reales, los 2
+sintéticos, el default de 2.6.0 y 3 casos degenerados—: la regla nueva los clasifica igual que antes
+salvo v1, que pasa a no estándar. Es el único cambio de comportamiento.
+
+Deliberadamente **no** se comparan las 28 columnas una a una: una versión futura de PresentMon puede
+añadir columnas y el layout seguiría siendo el estándar para lo que hacemos (el frame time se lee por
+nombre).
+
+**Tests.** Los dos rojos ahora pasan; se les añadió el valor real en el mensaje del assert (columnas,
+`IsNonStandardLayout`, motivos) para que un futuro fallo diga por qué. `DefaultLayout_IsNotFlaggedNonStandard`
+sigue pasando con la regla nueva.
+
+### Matiz sobre la regla anterior
+
+La regla vieja no era "no mirar el frame time": era asumir que el nombre de la columna identificaba el
+layout. Eso valía mientras solo se contemplara v2. Al entrar v1 en el contrato, la identidad del layout
+tuvo que pasar a ser un par de columnas. Queda anotado porque es el tipo de error que reaparece si se
+añade un tercer layout: hay que volver a revisar esta función, no asumir que aguanta.
 
 ---
 
