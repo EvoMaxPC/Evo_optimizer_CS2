@@ -145,9 +145,10 @@ El contrato de PresentMon 2.6.0 de esa ronda pedía añadir `--stop_existing_ses
    genera un nombre único por corrida (`FragForge-<runId>`, `PresentMonFrameCapture.SessionName`), así que
    **no existe una sesión previa con ese nombre** que detener. Sería un no-op que solo añade riesgo.
 
-3. **Comportamiento no verificado.** Qué hace exactamente la opción cuando hay una sesión con el mismo
-   nombre, y si afecta a sesiones de otros nombres, no se observó en la PC objetivo. R-L prohíbe actuar
-   sobre lo no verificado.
+3. ~~**Comportamiento no verificado.**~~ **CORREGIDO por la adenda 2: el flag SÍ está verificado.** Se
+   ejecutó `--session_name FragForge --stop_existing_session` en la PC objetivo: exit 0 y sin procesos
+   residuales. Lo que sigue **sin** verificarse es si afecta a sesiones de OTROS nombres; solo se probó
+   con el nombre propio. Los motivos 1 y 2 se mantienen intactos, y son suficientes por sí solos.
 
 **Para reabrirlo:** hacerlo con un nombre de sesión fijo y documentado, cambiar primero el test de higiene
 (de forma consciente y explicada), probar en la PC objetivo qué ocurre con una sesión ajena activa, y
