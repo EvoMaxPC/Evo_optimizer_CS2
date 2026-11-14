@@ -197,16 +197,114 @@ public sealed class RecoveryCoverageTests
     }
 
     /// <summary>El mensaje está en los dos idiomas y sale en el que toca, sin texto suelto en el código.</summary>
+    /// <summary>
+    /// El texto sale del JSON de localización REAL, no de un diccionario de juguete: si la clave no estuviera
+    /// en los recursos, <c>Localizer[key]</c> devuelve la clave y este test lo vería.
+    /// </summary>
     [Theory]
     [InlineData("es-MX", "todavía no escribe")]
     [InlineData("en-US", "does not write")]
     public async Task TheReason_IsLocalized(string culture, string expectedFragment)
     {
-        var report = await Service(new TweakCatalog([RealNetworkTweak()]), new Localizer(culture, new Dictionary<string, string>()))
+        var localizer = await FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync(culture);
+        var report = await Service(new TweakCatalog([RealNetworkTweak()]), localizer)
             .CheckAsync(Selecting("network.i225v-eee-off"), Profile());
 
         var check = Assert.Single(report.Checks, c => c.Id == "recovery");
         Assert.Contains(expectedFragment, check.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// F1: el REVERT no se bloquea nunca por R-J. Volver atrás es la salida de emergencia: si el preflight
+    /// pudiera impedirla, el usuario quedaría atrapado con el cambio aplicado.
+    /// </summary>
+    /// <remarks>
+    /// Se demuestra de dos formas complementarias:
+    ///   (a) estática: <c>TweakEngine.RevertAsync</c> (línea 278) no contiene ninguna llamada a
+    ///       <c>preflight</c>; las únicas están en ScanAsync (:57) y ApplyAsync (:145), y ninguna está
+    ///       después de la línea 277.
+    ///   (b) aquí: se aplica un tweak, se revierte, y un preflight ESPÍA confirma que el revert no consultó.
+    /// </remarks>
+    [Fact]
+    public async Task Revert_DoesNotConsultThePreflight_SoRecoveryBlockingCannotTrapTheUser()
+    {
+        var danger = Tweak.Create("network.i225v-eee-off", Spec.Action("Fake", new { id = "eee" }), RiskLevel.Advanced)
+            with { RestartsNetworkLink = true };
+
+        using var harness = new EngineTestHarness().WithCatalog([danger]);
+        var spy = new CountingPreflight();
+        // Mismo ctor de 11 argumentos que el harness (TweakEngine.cs:14-25), con el espía en su sitio.
+        // No se anade nada a EngineTestHarness ni al ctor del motor (R-A).
+        var engine = new FragForge.Core.Engine.TweakEngine(
+            harness.Catalog, harness.Profiler, harness.Factory, new FragForge.Core.Conditions.ConditionFactory(),
+            harness.Snapshots, harness.Journal, harness.Restore, spy,
+            new FragForge.Core.Persistence.FileExecutionGate(harness.Paths), [],
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<FragForge.Core.Engine.TweakEngine>.Instance);
+
+        // Para tener algo que revertir hace falta un snapshot; se aplica con un preflight que NO bloquea
+        // (el espía delega pero se le quita el catálogo de la comprobación: ver CountingPreflight).
+        var applied = await engine.ApplyAsync(["network.i225v-eee-off"], harness.Options(dryRun: false));
+        var callsAfterApply = spy.Calls;
+        Assert.True(callsAfterApply > 0, "si el apply no consultó el preflight, el test no prueba nada del revert");
+
+        // El revert: sin saber el snapshot se usa --last, que es lo que hace el CLI.
+        var reverted = await engine.RevertAsync(new RevertRequest { Last = true });
+
+        Assert.True(reverted.Success, string.Join(" | ", reverted.Errors));
+        Assert.Equal(callsAfterApply, spy.Calls);   // el revert NO consultó el preflight
+    }
+
+    /// <summary>
+    /// Preflight que cuenta consultas y delega. Para el apply deja pasar (sin Blocking) porque lo que se
+    /// prueba es el revert; el bloqueo real se prueba en los otros tests de esta clase.
+    /// </summary>
+    private sealed class CountingPreflight : IPreflightService
+    {
+        public int Calls { get; private set; }
+        public Task<PreflightReport> CheckAsync(ApplyOptions options, HardwareProfile profile, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            // Sin checks Blocking: aquí solo interesa CONTAR si el revert consulta.
+            return Task.FromResult(PreflightReport.Passed([new PreflightCheck("spy", PreflightSeverity.Info, "ok")]));
+        }
+    }
+
+    /// <summary>
+    /// F2: el DRY-RUN no lanza, pero TAMPOCO esconde el motivo. La vista previa tiene que decir "esto no se
+    /// podrá aplicar y por qué" ANTES de que el usuario lo intente.
+    /// </summary>
+    /// <remarks>
+    /// Antes de F2, el dry-run retornaba en TweakEngine.cs:125, doce líneas antes del preflight (:145), así
+    /// que el chequeo "recovery" no se calculaba nunca y la vista previa salía limpia para un tweak que
+    /// después fallaba al aplicar. Eso es peor que bloquear: el usuario se entera al final.
+    /// </remarks>
+    [Fact]
+    public async Task DryRun_DoesNotThrow_ButShowsTheBlockingCheckAsAWarning()
+    {
+        var danger = Tweak.Create("network.i225v-eee-off", Spec.Action("Fake", new { id = "eee" }), RiskLevel.Advanced)
+            with { RestartsNetworkLink = true };
+        using var harness = new EngineTestHarness().WithCatalog([danger]);
+
+        // NO lanza: un dry-run no cambia nada.
+        var report = await harness.CreateEngine().ApplyAsync(["network.i225v-eee-off"], harness.Options(dryRun: true));
+
+        Assert.True(report.DryRun);
+        Assert.True(report.Success, string.Join(" | ", report.Errors));
+        // Y el motivo está a la vista, marcado como "no se podrá aplicar".
+        Assert.Contains(report.Warnings, w => w.Contains("NO SE PODRÁ APLICAR", StringComparison.Ordinal)
+                                          && w.Contains("network.i225v-eee-off", StringComparison.Ordinal));
+    }
+
+    /// <summary>Un dry-run de algo inocuo no arrastra avisos de R-J.</summary>
+    [Fact]
+    public async Task DryRun_OfASafeTweak_HasNoRecoveryWarning()
+    {
+        var safe = Tweak.Create("latency.mouse-acceleration-off", Spec.Action("Fake", new { id = "m" }), RiskLevel.Safe);
+        using var harness = new EngineTestHarness().WithCatalog([safe]);
+
+        var report = await harness.CreateEngine().ApplyAsync(["latency.mouse-acceleration-off"], harness.Options(dryRun: true));
+
+        Assert.DoesNotContain(report.Warnings, w => w.Contains("NO SE PODRÁ APLICAR", StringComparison.Ordinal));
     }
 
     /// <summary>

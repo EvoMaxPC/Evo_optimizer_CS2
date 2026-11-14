@@ -132,6 +132,36 @@ public sealed class CompositionIntegrationTests
         _ = engine;
     }
 
+    /// <summary>
+    /// F4: el motivo del bloqueo sigue el IDIOMA ACTIVO por el camino real, no queda fijo en es-MX.
+    /// </summary>
+    /// <remarks>
+    /// La 9b decía que el Localizer no estaba registrado en DI. Era falso: CompositionRoot.cs:95 lo registra
+    /// (cargado en :77 con options.Culture) y el contenedor lo inyecta en el 4º parámetro del servicio. Este
+    /// test lo demuestra con las dos culturas por composición, sin construir nada a mano.
+    /// </remarks>
+    [Theory]
+    [InlineData("es-MX", "todavía no escribe")]
+    [InlineData("en-US", "does not write")]
+    public async Task TheRecoveryReason_FollowsTheApplicationLanguage_ThroughComposition(string culture, string expectedFragment)
+    {
+        using var directory = new TempDirectory();
+        using var host = await CompositionRoot.BuildAsync(new ShellOptions(directory.Path, culture, ConsoleLogging: false),
+            cancellationToken: default, overrides: Fakes());
+        var preflight = host.Services.GetRequiredService<IPreflightService>();
+        var hardware = await host.Services.GetRequiredService<IHardwareProfiler>().ProfileAsync();
+
+        var report = await preflight.CheckAsync(new ApplyOptions
+        {
+            Profile = TweakProfile.Advanced,
+            TargetUserSid = "S-1-5-21-1-2-3-1001",
+            SelectedIds = new HashSet<string>(["network.i225v-eee-off"])
+        }, hardware);
+
+        var check = Assert.Single(report.Checks, c => c.Id == "recovery");
+        Assert.Contains(expectedFragment, check.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     [Trait("Category", "Windows")]
     public async Task Report_IsGeneratedAsJsonAndHtml_WithAllSections()
