@@ -38,16 +38,6 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
         return reader.ReadToEnd();
     }
     /// <summary>
-    /// Carga el catálogo embebido y, si se indica, el EXTERNO del usuario.
-    ///
-    /// <para>
-    /// Los dos se validan por separado a propósito (Capa 10.4): un archivo externo roto no puede tumbar el
-    /// catálogo del binario. Los embebidos pasan por la ruta ESTRICTA (un fallo ahí es un bug de la entrega y
-    /// debe lanzar); los externos, por la RESILIENTE (la entrada mala se descarta con motivo visible y el resto
-    /// carga). Antes se concatenaban y un solo JSON inválido del usuario abortaba TODO el catálogo.
-    /// </para>
-    /// </summary>
-    /// <summary>
     /// Los documentos JSON incrustados en el binario, en orden estable. Se extrajo de
     /// <see cref="LoadEmbeddedAsync"/> para que la carga resiliente pueda saber qué ids ya están ocupados por
     /// el catálogo embebido sin duplicar la lectura de recursos.
@@ -88,6 +78,16 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
         return byResource;
     }
 
+    /// <summary>
+    /// Carga el catálogo embebido y, si se indica, el EXTERNO del usuario.
+    ///
+    /// <para>
+    /// Los dos se validan por separado a propósito (Capa 10.4): un archivo externo roto no puede tumbar el
+    /// catálogo del binario. Los embebidos pasan por la ruta ESTRICTA (un fallo ahí es un bug de la entrega y
+    /// debe lanzar); los externos, por la RESILIENTE (la entrada mala se descarta con motivo visible y el resto
+    /// carga). Antes se concatenaban y un solo JSON inválido del usuario abortaba TODO el catálogo.
+    /// </para>
+    /// </summary>
     public async Task<TweakCatalog> LoadEmbeddedAsync(string? additionalDirectory = null, CancellationToken cancellationToken = default)
     {
         var embedded = await ReadEmbeddedDocumentsAsync(cancellationToken);
