@@ -40,6 +40,13 @@ public sealed class RecoveryCoverageTests
         }
     };
 
+    /// <summary>
+    /// Los textos REALES que ve el usuario. Se cargan de los recursos embebidos (la misma fuente que
+    /// CompositionRoot.cs:77), no de un diccionario de juguete, para que una clave ausente se note.
+    /// </summary>
+    private static Task<Localizer> Localizer(string culture = "es-MX") =>
+        FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync(culture);
+
     private static PreflightService Service(ITweakCatalog catalog, Localizer? localizer = null) =>
         new(new FakeSystemRestoreService { Protection = FeatureState.Enabled }, catalog, null, localizer);
 
@@ -66,13 +73,25 @@ public sealed class RecoveryCoverageTests
     private static ApplyOptions Selecting(params string[] ids) =>
         new() { SelectedIds = ids.ToHashSet(StringComparer.OrdinalIgnoreCase) };
 
+    /// <summary>
+    /// Opciones de apply que PASAN la puerta del perfil. Hace falta porque un tweak con Risk.Advanced exige
+    /// aceptacion explicita por id y la frase exacta (ProfileSelector.cs:43-45), y el Options() del harness
+    /// (EngineTestHarness.cs:59) no las trae: sin esto, ApplyAsync moria antes de llegar al preflight y el
+    /// test parecia decir que R-J no bloquea, cuando lo que fallaba era el perfil.
+    /// </summary>
+    private static ApplyOptions RiskAccepted(EngineTestHarness harness, params string[] ids) => harness.Options() with
+    {
+        RiskAcknowledgements = ids.ToHashSet(StringComparer.OrdinalIgnoreCase),
+        AdvancedRiskPhrase = "ACEPTO EL RIESGO"
+    };
+
     /// <summary>El tweak REAL del catálogo: es el único de los 32 con NetAdapterProperty y restartsNetworkLink.</summary>
     private static TweakDefinition RealNetworkTweak() => MinimalTweak("network.i225v-eee-off", "NetAdapterProperty") with { RestartsNetworkLink = true };
 
     [Fact]
     public async Task ATweakThatRestartsTheNetworkLink_IsBlocking_WithAReason()
     {
-        var report = await Service(new TweakCatalog([RealNetworkTweak()])).CheckAsync(Selecting("network.i225v-eee-off"), Profile());
+        var report = await Service(new TweakCatalog([RealNetworkTweak()]), await Localizer()).CheckAsync(Selecting("network.i225v-eee-off"), Profile());
 
         Assert.False(report.CanApply);
         var check = Assert.Single(report.Checks, c => c.Id == "recovery");
@@ -115,7 +134,7 @@ public sealed class RecoveryCoverageTests
     {
         var catalog = new TweakCatalog([MinimalTweak("latency.game-mode-on", "Registry"), RealNetworkTweak()]);
 
-        var report = await Service(catalog).CheckAsync(Selecting("latency.game-mode-on", "network.i225v-eee-off"), Profile());
+        var report = await Service(catalog, await Localizer()).CheckAsync(Selecting("latency.game-mode-on", "network.i225v-eee-off"), Profile());
 
         Assert.False(report.CanApply);
         var check = Assert.Single(report.Checks, c => c.Id == "recovery");
@@ -172,7 +191,10 @@ public sealed class RecoveryCoverageTests
     {
         var dangerousButMarked = Tweak.Create("network.i225v-eee-off", Spec.Action("Fake", new { id = "eee" }), RiskLevel.Advanced)
             with { RestartsNetworkLink = true, SessionEligible = true };
-        var bcdeditMarked = Tweak.Create("probe.bcdedit", Spec.Action("Fake", new { id = "bcd" }), RiskLevel.Advanced)
+        // El kind tiene que ser Bcdedit: NeedsOutOfBandRecovery juzga el KIND de la accion
+        // (PreflightService.cs:139), no el id. Antes se creaba con Spec.Action("Fake", ...), de modo que
+        // el tweak NO necesitaba recuperacion y el test culpaba al servicio de no excluirlo.
+        var bcdeditMarked = Tweak.Create("probe.bcdedit", Spec.Action("Bcdedit"), RiskLevel.Advanced)
             with { SessionEligible = true };
         var fine = Tweak.Create("cpu.epp-performance", Spec.Action("Fake", new { id = "epp" }), RiskLevel.Safe) with { SessionEligible = true };
 
@@ -192,7 +214,9 @@ public sealed class RecoveryCoverageTests
     {
         var report = await Service(new TweakCatalog([])).CheckAsync(Selecting(), Profile());
 
-        Assert.True(report.CanApply);
+        // NO se assertea report.CanApply: con el catalogo vacio el preflight emite "catalog" Blocking
+        // (PreflightService.cs:38, "El catálogo está vacío"), que es correcto y no tiene nada que ver con
+        // R-J. Lo que este test afirma es que la comprobacion de recuperacion no se dispara.
         Assert.DoesNotContain(report.Checks, c => c.Id == "recovery");
     }
 
@@ -243,7 +267,7 @@ public sealed class RecoveryCoverageTests
 
         // Para tener algo que revertir hace falta un snapshot; se aplica con un preflight que NO bloquea
         // (el espía delega pero se le quita el catálogo de la comprobación: ver CountingPreflight).
-        var applied = await engine.ApplyAsync(["network.i225v-eee-off"], harness.Options(dryRun: false));
+        var applied = await engine.ApplyAsync(["network.i225v-eee-off"], RiskAccepted(harness, "network.i225v-eee-off"));
         var callsAfterApply = spy.Calls;
         Assert.True(callsAfterApply > 0, "si el apply no consultó el preflight, el test no prueba nada del revert");
 
@@ -290,12 +314,13 @@ public sealed class RecoveryCoverageTests
 
         Assert.True(report.DryRun);
         Assert.True(report.Success, string.Join(" | ", report.Errors));
-        // El motivo está a la vista, marcado como "no se podrá aplicar". El TEXTO del motivo depende del
-        // localizador: el harness arma PreflightService SIN localizer (EngineTestHarness.cs:55), así que
-        // aquí llega la CLAVE "preflight.recovery", no la frase. Por eso NO se asserta el id ni la prosa:
-        // se asserta el prefijo (lo pone el motor) y que el bloqueo llegó. El texto real, en los dos
-        // idiomas y por el camino de composición, lo cubren TheReason_IsLocalized y el test de integración.
-        Assert.Contains(report.Warnings, w => w.StartsWith("NO SE PODRÁ APLICAR", StringComparison.Ordinal));
+        // El motivo está a la vista, marcado como "no se podrá aplicar", y es el mensaje REAL: el harness
+        // inyecta el localizador de produccion (EngineTestHarness.cs:60), asi que lleva el id y "R-J" en vez
+        // de la clave. Se comprueban las tres cosas: el prefijo (lo pone el motor, TweakEngine.cs:138), que
+        // el id aparece (dice CUAL no se podra aplicar) y que el motivo es el de R-J.
+        var aviso = Assert.Single(report.Warnings, w => w.StartsWith("NO SE PODRÁ APLICAR", StringComparison.Ordinal));
+        Assert.Contains("network.i225v-eee-off", aviso, StringComparison.Ordinal);
+        Assert.Contains("R-J", aviso, StringComparison.Ordinal);
     }
 
     /// <summary>Un dry-run de algo inocuo no arrastra avisos de R-J.</summary>
@@ -314,14 +339,27 @@ public sealed class RecoveryCoverageTests
     /// El enlace que hace que "Blocking" signifique algo: el MOTOR rechaza aplicar. Sin este test, los de
     /// arriba solo prueban que se emite un aviso.
     /// </summary>
+    /// <remarks>
+    /// CORREGIDO en la ronda de fallos 1 (C1). Antes esperaba PreflightFailedException y el test fallaba con
+    /// "No exception was thrown". El motivo era doble: (a) el tweak es Risk.Advanced y sin aceptacion
+    /// explicita (ProfileSelector.cs:43-45) el apply moria antes de llegar al preflight; (b) el contrato del
+    /// motor NO es lanzar. ApplyAsync reporta el bloqueo como report.Success=false + report.Errors
+    /// (TweakEngine.cs:284-289, el catch generico). Es el mismo contrato que ya fija
+    /// EngineTests.MomentFor... (EngineTests.cs:256-259) para el bloqueo por reinicio pendiente, y es
+    /// deliberado: un lote bloqueado no es un crash, es un resultado con su motivo.
+    /// </remarks>
     [Fact]
     public async Task Apply_WithABlockingTweak_IsRejected_NotJustWarned()
     {
         using var harness = new EngineTestHarness().WithCatalog(RealNetworkTweak());
 
-        var failure = await Assert.ThrowsAsync<PreflightFailedException>(() =>
-            harness.CreateEngine().ApplyAsync(["network.i225v-eee-off"], harness.Options()));
+        var blocked = await harness.CreateEngine().ApplyAsync(["network.i225v-eee-off"], RiskAccepted(harness, "network.i225v-eee-off"));
 
-        Assert.Contains("recovery", string.Join(" ", failure.Report.Checks.Select(c => c.Id)), StringComparison.Ordinal);
+        Assert.False(blocked.Success);
+        // El motivo llega al usuario y es el de R-J, no un "algo falló".
+        Assert.Contains(blocked.Errors, e => e.Contains("R-J", StringComparison.Ordinal));
+        Assert.Contains(blocked.Errors, e => e.Contains("network.i225v-eee-off", StringComparison.Ordinal));
+        // Y no se aplicó NADA: ni se llegó a tocar el registro. Sin esto el test solo probaría el mensaje.
+        Assert.DoesNotContain("apply:eee", harness.Factory.Trace);
     }
 }
