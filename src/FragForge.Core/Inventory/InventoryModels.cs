@@ -129,12 +129,15 @@ public sealed record AuditReport
         var applicable = present.Where(tiers.IsApplicable).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
         var unknown = present.Where(n => !tiers.IsKnown(n)).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
         var catalogOnly = tiers.Entries.Select(e => e.Name).Where(n => !present.Contains(n, StringComparer.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
-        var notes = new List<string>
-        {
+        // El operador de propagación (..) SOLO es válido dentro de una expresión de colección ([...]).
+        // En un inicializador de colección (new List<T> { ... }) no existe: el compilador lo lee como
+        // un Index (como en lista[^1]) y falla con CS0029. Se usa una expresión de colección.
+        List<string> notes =
+        [
             "Inventario de solo lectura: FragForge no modificó nada para generarlo.",
             $"{unknown.Length} servicios no figuran en service-tiers.json y se tratan como T0 (nunca aplicables).",
             .. inventory.Notes
-        };
+        ];
         return new AuditReport
         {
             Inventory = inventory,
