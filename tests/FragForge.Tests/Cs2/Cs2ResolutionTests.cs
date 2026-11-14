@@ -95,20 +95,45 @@ public sealed class Cs2ResolutionTests : IDisposable
         Assert.Throws<InvalidDataException>(() => SteamCs2Resolver.ParseInstallDir(acf));
     }
 
-    [Theory]
-    [InlineData(@"C:\Steam", @"C:\Steam")]
-    [InlineData(@"C:/Steam", @"C:\Steam")]
-    [InlineData(@"C:\\Steam\\\\Library", @"C:\Steam\Library")]
-    [InlineData(@"C:\Program Files (x86)\Steam\", @"C:\Program Files (x86)\Steam")]
-    // Barras normales + dobles + final, todo a la vez.
-    [InlineData("C:/a//b/", @"C:\a\b")]
-    // Raiz de unidad: CONSERVA su barra. "C:" no es una carpeta, es la unidad.
-    [InlineData(@"C:\", @"C:\")]
-    // Raiz UNC: se queda en \\server\share y NO se reduce a \\server (que ya no seria el recurso).
-    [InlineData(@"\\server\share\", @"\\server\share")]
-    public void NormalizeDirectory_CollapsesSeparators(string raw, string expected)
+    // Estos casos son SOLO de Windows y por eso no son un [Theory] con [InlineData]: el assert depende de
+    // que Path.DirectorySeparatorChar sea '\\' y de que Path.GetFullPath("C:\") devuelva "C:\". En Linux
+    // el separador es '/', "C:\Steam" es una ruta RELATIVA y GetFullPath la cuelga del cwd
+    // ("/home/runner/work/C:\Steam"). Fallaria por el entorno, no por el codigo: WindowsOnlyFact lo omite
+    // con motivo en vez de dar un verde vacio.
+    [WindowsOnlyFact]
+    public void NormalizeDirectory_KeepsADrivePathAsItIs()
     {
-        Assert.Equal(expected, SteamCs2Resolver.NormalizeDirectory(raw));
+        Assert.Equal(@"C:\Steam", SteamCs2Resolver.NormalizeDirectory(@"C:\Steam"));
+    }
+
+    [WindowsOnlyFact]
+    public void NormalizeDirectory_AcceptsForwardSlashesFromTheVdf()
+    {
+        Assert.Equal(@"C:\Steam", SteamCs2Resolver.NormalizeDirectory(@"C:/Steam"));
+    }
+
+    [WindowsOnlyFact]
+    public void NormalizeDirectory_CollapsesRepeatedBackslashes()
+    {
+        Assert.Equal(@"C:\Steam\Library", SteamCs2Resolver.NormalizeDirectory(@"C:\\Steam\\\\Library"));
+    }
+
+    [WindowsOnlyFact]
+    public void NormalizeDirectory_RemovesTheTrailingSeparator_ButNotFromTheDriveRoot()
+    {
+        // Barra final fuera.
+        Assert.Equal(@"C:\Program Files (x86)\Steam", SteamCs2Resolver.NormalizeDirectory(@"C:\Program Files (x86)\Steam\"));
+        // Barras normales + dobles + final, todo a la vez.
+        Assert.Equal(@"C:\a\b", SteamCs2Resolver.NormalizeDirectory("C:/a//b/"));
+        // Raiz de unidad: CONSERVA su barra. "C:" no es una carpeta, es la unidad.
+        Assert.Equal(@"C:\", SteamCs2Resolver.NormalizeDirectory(@"C:\"));
+    }
+
+    [WindowsOnlyFact]
+    public void NormalizeDirectory_KeepsTheUncShare_InsteadOfReducingItToTheServer()
+    {
+        // Se queda en \\server\share y NO se reduce a \\server (que ya no seria el recurso).
+        Assert.Equal(@"\\server\share", SteamCs2Resolver.NormalizeDirectory(@"\\server\share\"));
     }
 
     /// <summary>
