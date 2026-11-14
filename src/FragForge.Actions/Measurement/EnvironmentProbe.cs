@@ -28,7 +28,9 @@ public sealed class MeasurementEnvironmentProbe(double backgroundCpuThresholdPer
             {
                 if (process.Id == Environment.ProcessId) continue;
                 if (Ignore(process.ProcessName)) continue;
-                var cpu = background.TryGetValue(process.Id, out var value) ? value : null;
+                // "var" aquí no compila (CS0173): un ternario double ? double : null no tiene tipo
+                // destino del que inferir, y no hay conversión implícita entre double y <null>.
+                double? cpu = background.TryGetValue(process.Id, out var value) ? value : null;
                 processes.Add(new BackgroundProcessInfo(process.ProcessName, process.Id, cpu));
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { continue; }
