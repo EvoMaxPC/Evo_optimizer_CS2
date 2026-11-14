@@ -60,6 +60,46 @@ public sealed class MeasurementEnvironmentProbe(double backgroundCpuThresholdPer
     }
 
     /// <summary>
+    /// Decide si el entorno capturado permite comparar los brazos A/B. Devuelve la lista de problemas
+    /// que invalidan la comparación; una lista vacía significa que el entorno es válido.
+    ///
+    /// Contrato (el que documenta <see cref="IExperimentEnvironmentProbe"/> y el que consume
+    /// <c>ExperimentRunner</c>): si devuelve algo, el experimento NO se ejecuta y se marca inválido.
+    ///
+    /// Solo se comprueban campos que <see cref="ExperimentEnvironment"/> ya expone, con la misma
+    /// evidencia que el resumen de la clase: las tres cosas que mueven el frametime más que el tweak
+    /// que se intenta medir.
+    /// <list type="bullet">
+    /// <item>Reinicio pendiente: el sistema no está en el estado final de una configuración.</item>
+    /// <item>Servicing activo (TiWorker/TrustedInstaller): consumo de CPU y E/S impredecible.</item>
+    /// <item>Carga de fondo por encima del umbral: el ruido tapa el efecto que se quiere medir.</item>
+    /// </list>
+    /// La ausencia de la medición de carga de fondo NO se cuenta como problema: es un dato faltante y
+    /// tratarlo como "carga alta" bloquearía medir por un fallo del sensor, no del entorno. Se informa
+    /// en <c>Warnings</c> durante la captura.
+    /// </summary>
+    public IReadOnlyList<string> Validate(ExperimentEnvironment environment)
+    {
+        ArgumentNullException.ThrowIfNull(environment);
+        var problems = new List<string>();
+
+        if (environment.PendingReboot)
+            problems.Add("Hay un reinicio pendiente: el sistema aún no está en el estado que se quiere medir.");
+
+        if (environment.ServicingActive)
+            problems.Add("Windows Servicing está activo (TiWorker/TrustedInstaller): el consumo de CPU y E/S no es comparable.");
+
+        // Dato desconocido != carga alta: sin medición no se inventa un veredicto.
+        if (environment.BackgroundCpuPercent is { } background && background > backgroundCpuThresholdPercent)
+            problems.Add(
+                $"La carga de fondo es {background.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}% " +
+                $"y supera el umbral de {backgroundCpuThresholdPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}%: " +
+                "el ruido puede pesar más que el tweak.");
+
+        return problems;
+    }
+
+    /// <summary>
     /// Mide el consumo de CPU de cada proceso tomando dos lecturas de <c>TotalProcessorTime</c> separadas
     /// por <paramref name="window"/> y normalizando por número de procesadores. Devuelve % por PID.
     /// Es una medición real: si no se puede leer un proceso, ese PID simplemente no aparece.
