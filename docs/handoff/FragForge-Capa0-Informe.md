@@ -10,6 +10,7 @@ Repositorio: todos los archivos listados abajo existen en el árbol de trabajo y
 0. **[Hotfix de la PARTE A (posterior a esta entrega)](#hotfix-parte-a--correcciones-sobre-la-pc-real)** — qué se rompía en la PC real y qué se cambió
 0. **[Hotfix PARTE B / ronda 3](#hotfix-parte-b-ronda-3--los-4-tests-que-fallaban-en-la-pc-real-y-el-aviso-de-red)** — los 4 tests rojos, el aviso de `MSFT_NetAdapter` y los warnings
 0. **[Ronda 4: combos](#ronda-4-combos)** — texto oscuro sobre el cromo claro; qué se cambió y qué queda sin verificar
+0. **[Ronda 5](#ronda-5-el-dry-run-se-cortaba-si-una-tarea-del-catálogo-no-existe)** — objeto inexistente = No aplicable, no error de lote
 0. [Briefing compacto para otra sesión de Claude](#0-briefing-compacto-para-otra-sesión-de-claude-copiarpegar)
 1. [Arquitectura y decisiones](#1-arquitectura-y-decisiones)
 2. [Árbol de carpetas](#2-árbol-de-carpetas)
@@ -382,6 +383,41 @@ hecho medido** para estos dos combos.
    cambia el chrome de algunos controles).
 3. Solo entonces decidir: fijar `Background`/`BorderBrush` del `ComboBoxItem` para el resaltado, o
    pasar a un tema oscuro completo (que es Capa 11 y no se hace acá).
+
+---
+
+## Ronda 5: el dry-run se cortaba si una tarea del catálogo no existe
+
+Síntoma medido: `ScanAndDryRun_WorkOnAnyPlatform_...` devolvía
+`DryRun=False, Success=False, Results=18, Errors=[La tarea \Microsoft\Windows\Application
+Experience\Appraiser no existe.]`. **Bug de producción**, no del test: Atlas Playbook había eliminado
+esa tarea en la PC objetivo.
+
+**Causa.** `ScheduledTaskAction.CaptureAsync` lanza `ActionNotApplicableException` cuando la tarea no
+existe. El **scan** ya la atrapaba (`TweakEngine.cs:386`), por eso el scan pasaba. El **apply** no:
+`VerifyPlanAsync` (`:510`) y `CaptureAndPersistAsync` (`:445`) llamaban a `CaptureAsync` sin proteger,
+y la excepción subía al `catch` general (`:250`), tumbando el lote entero. `Results=18` de 30: los 12
+restantes nunca se evaluaron.
+
+**Regla nueva.** Objeto inexistente = **NotApplicable**, nunca error y nunca "aplicado". Vale en scan,
+dry-run, apply real y revert. Se arregla en `VerifyPlanAsync`, que ya se llamaba antes de capturar el
+snapshot (no paga una captura extra: `PowerShellAction.CaptureAsync` ejecuta un script).
+`CaptureAndPersistAsync` queda como defensa si el objeto desaparece en el medio.
+**Solo** se traga `ActionNotApplicableException`: acceso denegado, Task Scheduler caído o timeout
+siguen siendo error (control negativo en los tests).
+
+**Sin depender del idioma.** La decisión es el booleano `exists` que devuelve
+`WindowsScheduledTaskStore` al parsear la salida JSON de `Get-ScheduledTask`. Ningún
+`Contains("no existe")` en el camino. Probado con textos es-MX, en-US y de-DE.
+
+**Reporte honesto.** El `BatchReport` del camino de excepción ahora fija `DryRun = options.DryRun`.
+
+**Tabla de objetos inexistentes:** tarea programada → era el único que rompía; servicio, power plan y
+propiedad de red ya lo decidían en `PreflightAsync` (protegido); registro captura el valor ausente
+como ausente. Detalle completo en `FragForge-Capa2-Informe.md`, sección "Ronda 5".
+
+**No verificado:** sin `dotnet` no se compiló ni se ejecutó; solo tree-sitter (que no es compilar). No
+se sabe si faltan más tareas del catálogo en esa PC: solo `Appraiser` está medido.
 
 ---
 

@@ -277,6 +277,144 @@ localizaciones `es-MX`/`en-US` (35 → 50 claves).
 
 ---
 
+---
+
+## Ronda 5: un objeto del catálogo que NO existe no debe romper el lote
+
+### El síntoma, medido en la PC real
+
+`Integration.CompositionIntegrationTests.ScanAndDryRun_...` fallaba con:
+
+```
+DryRun=False, Success=False, Cancelled=False, HasCriticalFailure=False, Results=18,
+Errors=[La tarea \Microsoft\Windows\Application Experience\Appraiser no existe.], Warnings=[]
+```
+
+**Es un bug de producción, no del test.** La PC tiene Atlas Playbook aplicado, que eliminó esa tarea.
+El resto de la suite pasaba: 514 de 515.
+
+### Causa (traza)
+
+1. **Qué tweak.** `debloat.task.appraiser` (`src/FragForge.Tweaks/Catalog/Debloat/debloat.task.appraiser.json:30`)
+   declara una acción `ScheduledTask` sobre `\Microsoft\Windows\Application Experience\Appraiser`.
+2. **Quién genera el mensaje.** `src/FragForge.Actions/Tasks/ScheduledTaskAction.cs:29` (era la línea 20 antes del arreglo):
+   `if (!state.Exists) throw new ActionNotApplicableException(...)`.
+3. **Cómo se detecta que no existe.** `WindowsScheduledTaskStore.GetAsync` lanza
+   `powershell.exe -Command "Get-ScheduledTask ... -ErrorAction SilentlyContinue; if ($null -eq $t) { '{\"exists\":false}' } else {...}"`
+   y parsea **JSON**. La decisión es el campo booleano `exists`, **no el texto**. No es `schtasks`,
+   ni COM `ITaskService`, ni WMI.
+4. **En qué fase se lanzaba.** En `CaptureAsync`, y `ApplyAsync` la llamaba desde **dos sitios sin
+   proteger**:
+   - `TweakEngine.cs:510` (`VerifyPlanAsync` → `action.CaptureAsync`), que `ApplyAsync` invoca en la
+     línea 139 **antes** de capturar el snapshot;
+   - `TweakEngine.cs:445` (`CaptureAndPersistAsync`, la captura real del snapshot).
+   La excepción subía hasta el `catch (Exception)` general (`:250`) y **tumbaba el lote entero**.
+5. **Por qué el scan pasaba y el apply no.** `TweakEngine.cs:386` (dentro de `EvaluateAsync`, que usa
+   el scan) **sí** atrapaba `ActionNotApplicableException` y lo convertía en `NotApplicable`. El
+   apply no tenía ese trato. Mismo dato, dos políticas distintas.
+6. **¿Se detiene al primer error?** Sí: el `catch` está fuera del bucle de tweaks, así que aborta
+   todo lo que quedaba. `Results=18` de 30 = los 12 restantes nunca se evaluaron.
+
+### Tabla: qué pasa si el objeto NO existe
+
+| Tipo de objeto | Quién decide "no existe" | Dónde | Antes de la ronda 5 |
+|---|---|---|---|
+| **Tarea programada** | `WindowsScheduledTaskStore` (JSON `exists`) | **`CaptureAsync`** | **ROMPÍA EL LOTE** ← el bug |
+| Servicio | `WindowsServiceController.Find` (WMI, 0 instancias) | `PreflightAsync` | NotApplicable (ya bien) |
+| Registro (clave/valor) | no aplica: un valor ausente **se captura** como ausente | `CaptureAsync` | correcto por diseño |
+| Power plan | `PowerPlanAction` | `PreflightAsync` / `ApplyAsync` | NotApplicable (ya bien); `CaptureAsync` no lanza |
+| Adaptador / propiedad de red | `NetAdapterPropertyAction` | `PreflightAsync` | NotApplicable (ya bien) |
+| Appx / script / archivo | no hay comprobación de existencia de appx en el catálogo actual | — | sin cambios |
+
+**Conclusión de la tabla:** `ScheduledTask` era el **único** caso que decidía "no existe" dentro de
+`CaptureAsync`, y por eso el único que se escapaba. Las demás acciones ya lo decidían en
+`PreflightAsync`, que `TryBuildPlanAsync` sí protegía. **No tocaba cambiar nada más**: el mismo bug
+con la misma regla no existía en otro sitio.
+
+### La corrección
+
+**`TweakEngine.VerifyPlanAsync`** (el punto por el que escapaba) ahora atrapa
+`ActionNotApplicableException` y devuelve `TweakStatus NotApplicable`. `ApplyAsync` lo reporta como
+omitido y **no lo mete en el snapshot**.
+
+Por qué ahí y no en `TryBuildPlanAsync`: la alternativa era sondear `CaptureAsync` al construir el
+plan, pero eso **paga una captura extra de cada acción en cada apply**, y `PowerShellAction.CaptureAsync`
+**ejecuta un script**. `VerifyPlanAsync` ya se llamaba antes de capturar, así que la comprobación sale
+gratis.
+
+**`CaptureAndPersistAsync`**: defensa en profundidad por si el objeto desaparece **entre** el verify y
+la captura (una carrera real: el usuario borra la tarea en ese instante). El tweak queda fuera del
+snapshot, se reporta `NotApplicable` y no se aplica.
+
+**Solo se traga `ActionNotApplicableException`.** Un fallo real —acceso denegado, Task Scheduler
+caído, timeout— es otra excepción y **sigue siendo error**. Es el control negativo que exige R-L.
+
+**`ScheduledTaskAction`**: el mensaje pasa a `La tarea no existe en este equipo: <ruta>`, y el
+comentario fija que la decisión la toma `Exists`, no el texto.
+
+### Detección sin depender del idioma
+
+La regla es un **dato**, no una interpretación:
+
+- `Get-ScheduledTask -ErrorAction SilentlyContinue` no escribe error cuando falta: devuelve `$null`.
+- El script emite `{"exists":false}` y `GetAsync` lee **ese booleano**.
+- No hay `Contains("no existe")` ni comparación con texto de Windows en ninguna parte del camino.
+
+Por eso el mismo binario se comporta igual en es-MX, en-US o de-DE. El test
+`ErrorText_DoesNotDecideTheLogic_SameOutcomeInEveryLanguage` lo fija con tres idiomas.
+
+**Por qué es seguro**: la señal no es "el comando falló", es "consulté y el objeto no está". Un fallo
+de verdad (permisos, RPC caído) hace que `RunAsync` lance `ProcessFailedException` por exit code ≠ 0,
+y eso **no** se confunde con ausencia.
+
+### Reporte de fallo honesto
+
+`BatchReport` del camino de excepción (`TweakEngine.cs:262`) fijaba `DryRun` por defecto (`false`)
+aunque se hubiera pedido dry-run, y parecía que el dry-run se había ignorado. Ahora fija
+`DryRun = options.DryRun`. Un dry-run fallido sigue siendo un dry-run: `Success=false` es lo que dice
+que falló. Test: `FailedDryRun_StillReportsDryRunTrue`.
+
+### Tests (9, controlador falso, sin hardware)
+
+`tests/FragForge.Tests/Core/MissingObjectTests.cs`, con un `IScheduledTaskStore` doble:
+
+| Test | Fija |
+|---|---|
+| `Scan_MissingTask_IsNotApplicable_...` | scan → `NotApplicable`, no `Unknown` |
+| `DryRun_MissingTask_IsSuccess_...` | dry-run → `Success=true`, 0 errores, `NotApplicable`, 0 escrituras |
+| `Apply_MissingTask_IsNotAnError_AndWritesNothing` | apply real → ni error ni "aplicado", 0 escrituras |
+| `Apply_RealFailure_IsStillAnError_...` | **control negativo**: acceso denegado **sigue siendo error** |
+| `Scan_RealFailure_IsUnknown_NotNotApplicable` | fallo real al leer → `Unknown`, no `NotApplicable` |
+| `ErrorText_DoesNotDecideTheLogic_...` | es-MX / en-US / de-DE: mismo resultado |
+| `MissingIsDecidedByTheStateFlag_NotByAnyMessage` | la decisión es `Exists`, no un texto |
+| `Apply_TaskThatVanishesBetweenProbeAndCapture_...` | carrera verify→captura |
+| `FailedDryRun_StillReportsDryRunTrue` | `DryRun=true` en el camino de excepción |
+
+Se añadió un parámetro opcional `factory` a `EngineTestHarness.CreateEngine` para inyectar la acción
+real contra el doble, sin tocar el `FakeActionFactory` que usan los demás tests.
+
+**No se tocó `CompositionIntegrationTests`.**
+
+### Cómo dejaría hermético el test de composición (sin hacerlo)
+
+El test real construye la composición entera y por tanto perfila el hardware de verdad. Para que sea
+hermético, en otra ronda: exponer en `CompositionRoot.BuildAsync` un punto de sustitución de servicios
+de plataforma (o un `ShellOptions` que reciba un `Action<IServiceCollection>` **después** del registro
+de plataforma), y registrar allí los dobles de `IHardwareProfiler`, `IWmiQuery` e `IScheduledTaskStore`.
+Así el test probaría la composición sin depender de la PC. Requiere tocar `CompositionRoot`, que es
+más de lo que autoriza esta ronda: **queda listado, no hecho**.
+
+### No verificado
+
+- **Sin `dotnet` no se compiló ni se ejecutó nada.** Lo único automático fue tree-sitter (sintaxis),
+  que **no es compilar**. La confirmación es la corrida del usuario.
+- **No sé si faltan más tareas del catálogo en esa PC.** Solo está medido `Appraiser`. El arreglo
+  cubre cualquiera que falte, pero no se enumeraron las 7 tareas `ScheduledTask` del catálogo contra
+  el equipo.
+- No se ejerció el camino real de `powershell.exe`/`Get-ScheduledTask`: los tests usan dobles.
+- La carrera "desaparece entre verify y captura" se prueba con un doble que cambia de respuesta; en
+  hardware real no se reprodujo.
+
 ## 10. Lo que NO está hecho
 
 - **Nada compilado, nada ejecutado.** Siete confirmaciones.
