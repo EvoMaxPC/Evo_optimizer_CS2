@@ -10,7 +10,12 @@ namespace FragForge.Tests.Security;
 /// <summary>
 /// Capa 10.1. La postura es de SOLO LECTURA y lo que no se puede leer es Unknown, nunca Disabled (R-L).
 /// Todos estos tests usan dobles: no tocan WMI, ni el registro, ni manage-bde.
+///
+/// Aun asi, la clase bajo prueba esta marcada <c>[SupportedOSPlatform("windows")]</c>, asi que el test
+/// hereda la marca (mismo patron que NetAdapterPropertiesTests): sin ella, cada acceso daria CA1416 en un
+/// proyecto net10.0. Los dobles no cambian la plataforma del analisis.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class SecurityPostureTests
 {
     private static WindowsSecurityPostureService Create(
