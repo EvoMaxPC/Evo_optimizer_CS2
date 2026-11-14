@@ -57,7 +57,7 @@ public sealed class RealCatalogDenylistTests
     /// el del factory que revienta. Sin esto, un fallo de denylist ensuciaría el assert.
     /// </summary>
     private const string HarmlessTweak = """
-        {"id":"probe.harmless","category":"Debloat","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"Low","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\Software\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
+        {"id":"probe.harmless","category":"Debloat","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"Low","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\\Software\\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
         """;
 
     [Fact]

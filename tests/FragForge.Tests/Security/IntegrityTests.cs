@@ -198,7 +198,7 @@ public sealed class IntegrityTests
 
         // Una definicion minima sin NINGUNO de los cuatro campos nuevos.
         const string jsonViejo = """
-            {"id":"old.one","category":"Cpu","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\Software\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
+            {"id":"old.one","category":"Cpu","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"High","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\\Software\\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
             """;
         var definicion = JsonSerializer.Deserialize<TweakDefinition>(jsonViejo, JsonDefaults.Options)!;
         var hashViejo = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
