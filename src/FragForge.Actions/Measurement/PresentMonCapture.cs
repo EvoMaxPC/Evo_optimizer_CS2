@@ -94,6 +94,18 @@ public sealed class PresentMonFrameCapture(IToolProcessLauncher launcher, ToolVe
         return "FragForge-" + (sanitized.Length == 0 ? "session" : sanitized);
     }
 
+    /// <summary>
+    /// Ruta de configuración explícita del ejecutable. Se consulta ANTES de la allowlist. Es una propiedad
+    /// mutable del componente (no de un servicio compartido) para no cambiar firmas públicas de otros tipos.
+    /// </summary>
+    public string? ConfiguredExecutablePath { get; set; }
+
+    /// <summary>
+    /// Dónde está PresentMon. Orden: configuración explícita → instalación de Intel → no encontrado.
+    /// No ejecuta nada ni valida hash: eso lo decide <see cref="CheckAvailabilityAsync"/>.
+    /// </summary>
+    public PresentMonLocation LocateTool() => PresentMonLocator.Locate(ConfiguredExecutablePath);
+
     public Task<CaptureAvailability> CheckAvailabilityAsync(CancellationToken cancellationToken = default)
     {
         var verification = verifier.Verify(ToolVerifier.PresentMonKey);
@@ -103,6 +115,21 @@ public sealed class PresentMonFrameCapture(IToolProcessLauncher launcher, ToolVe
             ToolStatus.HashPlaceholder => new CaptureAvailability(false, verification.Message, verification.Path, verification.ActualSha256, IsPlaceholderHash: true),
             _ => new CaptureAvailability(false, verification.Message, verification.Path, verification.ActualSha256)
         };
+
+        // Si la allowlist no tiene la herramienta, se intenta el instalador de Intel para dar un mensaje
+        // accionable (ruta y versión) en vez de "falta PresentMon.exe en la carpeta de herramientas".
+        // El hash sigue siendo obligatorio: esta rama NO habilita la captura por sí sola.
+        if (!availability.IsAvailable && verification.Status == ToolStatus.Missing)
+        {
+            var location = LocateTool();
+            if (location.Found)
+                return Task.FromResult(new CaptureAvailability(
+                    false,
+                    $"{verification.Message} Se encontró una instalación de Intel en '{location.Path}'" +
+                    (location.Version is null ? "." : $" (versión {location.Version}).") +
+                    " Añade su SHA-256 a la lista blanca para habilitar la captura."));
+        }
+
         return Task.FromResult(availability);
     }
 
@@ -144,6 +171,9 @@ public sealed class PresentMonFrameCapture(IToolProcessLauncher launcher, ToolVe
                 series = File.Exists(csvPath) ? PresentMonCsvParser.ParseFile(csvPath) with { IsPartial = true } : new FrameSeries { IsPartial = true };
                 return series;
             }
+            // Éxito = archivo existe + encabezado con la columna obligatoria + >=1 fila.
+            // NO se depende del exit code ni del texto de stdout: PresentMon no documenta su exit code
+            // (no observado) y stdout sólo emite el warning inocuo de --no_console_stats.
             if (!File.Exists(csvPath)) return new FrameSeries { IsPartial = false, SourceColumns = $"sin CSV; exit={result.ExitCode}; stderr={Trim(result.StandardError)}" };
             series = PresentMonCsvParser.ParseFile(csvPath);
         }

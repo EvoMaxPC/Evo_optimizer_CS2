@@ -105,6 +105,40 @@ public sealed class PresentMonCaptureTests
     }
 
     [Fact]
+    public async Task SuccessRequiresFileWithRequiredColumn_NotExitCodeOrStdout()
+    {
+        var (capture, launcher, tools) = Create();
+        using var _ = tools;
+        var request = Request();
+        // Exit code distinto de cero y stderr ruidoso, pero el CSV está completo:
+        // el éxito NO depende del exit code (no observado en PresentMon 2.6.0).
+        launcher.Result = new ToolProcessResult(1, false, false, "", "warning: --no_console_stats added because stdout does not support statistics reporting.");
+        launcher.CsvToWrite = CsvParserTests.Real260;
+
+        var series = await capture.CaptureAsync(request);
+
+        Assert.Equal(3, series.FrameCount);
+        Assert.False(series.IsPartial);
+        if (Directory.Exists(request.OutputDirectory)) Directory.Delete(request.OutputDirectory, true);
+    }
+
+    [Fact]
+    public async Task MissingCsv_IsReported_EvenWithExitCodeZero()
+    {
+        var (capture, launcher, tools) = Create();
+        using var _ = tools;
+        var request = Request();
+        launcher.Result = new ToolProcessResult(0, false, false, "PresentMon 2.6.0", "");
+        // No se escribe CSV.
+
+        var series = await capture.CaptureAsync(request);
+
+        Assert.True(series.IsEmpty);
+        Assert.Contains("sin CSV", series.SourceColumns ?? string.Empty);
+        if (Directory.Exists(request.OutputDirectory)) Directory.Delete(request.OutputDirectory, true);
+    }
+
+    [Fact]
     public async Task TooFewFrames_IsReportedInSourceColumns_NotSilentlyAccepted()
     {
         var (capture, launcher, tools) = Create();
