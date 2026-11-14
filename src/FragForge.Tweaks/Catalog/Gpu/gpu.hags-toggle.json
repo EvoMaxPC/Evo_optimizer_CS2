@@ -1,0 +1,70 @@
+{
+  "id": "gpu.hags-toggle",
+  "category": "Gpu",
+  "title": {
+    "es-MX": "Alternar HAGS (programación de GPU por hardware)",
+    "en-US": "Toggle HAGS (hardware-accelerated GPU scheduling)"
+  },
+  "description": {
+    "es-MX": "Escribe HwSchMode en 2 (activado) o 1 (desactivado). Sirve para comparar A/B: no hay evidencia de mejora en la iGPU y puede empeorar la latencia. Requiere reinicio.",
+    "en-US": "Writes HwSchMode to 2 (on) or 1 (off). For A/B comparison only: no evidence of improvement on the iGPU, and it can worsen latency. Requires a reboot."
+  },
+  "evidence": "Low",
+  "risk": "Moderate",
+  "requiresReboot": true,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "Registry",
+      "parameters": {
+        "values": [
+          {
+            "key": "HKLM\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers",
+            "name": "HwSchMode",
+            "kind": "DWord",
+            "value": 2,
+            "mode": "Set"
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "opt-in",
+    "gpu",
+    "measure-ab"
+  ],
+  "profiles": [],
+  "conflictsWith": [],
+  "dependsOn": [],
+  "expectedImpact": {
+    "fps": "Desconocido; no medido en esta iGPU",
+    "1%lows": "Desconocido; puede empeorar",
+    "inputLatency": "Desconocido; puede empeorar",
+    "network": "None",
+    "boot": "None",
+    "thermals": "None"
+  },
+  "references": [
+    "https://devblogs.microsoft.com/directx/hardware-accelerated-gpu-scheduling/",
+    "https://learn.microsoft.com/en-us/windows-hardware/drivers/display/gpu-scheduler"
+  ],
+  "notes": {
+    "es-MX": "HwSchMode=2 activa HAGS, 1 la desactiva; cualquier otro valor se lee como Unknown y el tweak no se aplica. Si el controlador no expone el valor, el estado actual es ausente: eso NO es 'desactivado'. El valor por defecto del tweak es 2; para probar el otro lado, edita el JSON a 1. No se inyecta código ni se toca el proceso del juego.",
+    "en-US": "HwSchMode=2 enables HAGS, 1 disables it; any other value reads as Unknown and the tweak does not apply. If the driver does not expose the value, the current state is absent: that is NOT 'disabled'. The tweak writes 2 by default; to test the other side, edit the JSON to 1. No code injection and no touching the game process."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar sin medir antes y después con el mismo contenido y la misma escena. No es una recomendación por defecto: es una palanca de A/B. Requiere reinicio para surtir efecto y para revertir.",
+    "en-US": "Do not apply without measuring before and after with the same content and scene. It is not a default recommendation: it is an A/B lever. A reboot is required for it to take effect and to revert."
+  }
+}

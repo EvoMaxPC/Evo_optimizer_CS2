@@ -97,14 +97,20 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         var memoryRows = await Query(@"root\cimv2", "Win32_PhysicalMemory", ["Manufacturer", "PartNumber", "BankLabel", "DeviceLocator", "Capacity", "Speed", "ConfiguredClockSpeed", "SMBIOSMemoryType"]);
         var modules = memoryRows.Select(r => new MemoryModuleInfo { Manufacturer = WmiValues.String(r, "Manufacturer"), PartNumber = WmiValues.String(r, "PartNumber"), BankLabel = WmiValues.String(r, "BankLabel"), DeviceLocator = WmiValues.String(r, "DeviceLocator"), CapacityBytes = WmiValues.UInt64(r, "Capacity") ?? 0, SpeedMtPerSecond = WmiValues.Int32(r, "Speed"), ConfiguredSpeedMtPerSecond = WmiValues.Int32(r, "ConfiguredClockSpeed"), SmbiosMemoryType = WmiValues.Int32(r, "SMBIOSMemoryType") }).ToArray();
         var speeds = modules.Select(m => m.ConfiguredSpeedMtPerSecond ?? m.SpeedMtPerSecond).Where(s => s is not null).Distinct().ToArray();
-        var memory = new MemoryInfo { TotalBytes = WmiValues.UInt64(cs, "TotalPhysicalMemory") ?? 0, Modules = modules, Channels = MemoryChannelState.Unknown, ConfiguredSpeedMtPerSecond = speeds.Length == 1 ? speeds[0] : null, ChannelEvidence = "Win32_PhysicalMemory describe módulos, no el entrelazado del controlador. Dos DIMM no prueban dual-channel; verificar con una herramienta de topología de memoria." };
+        var memory = new MemoryInfo { TotalBytes = WmiValues.UInt64(cs, "TotalPhysicalMemory") ?? 0, Modules = modules, Channels = MemoryChannelState.Unknown, ConfiguredSpeedMtPerSecond = speeds.Length == 1 ? speeds[0] : null, ChannelEvidence = DescribeChannels(modules) };
         var gpuRows = await Query(@"root\cimv2", "Win32_VideoController", ["Name", "AdapterCompatibility", "AdapterRAM", "DriverVersion", "CurrentHorizontalResolution", "CurrentVerticalResolution", "CurrentRefreshRate"]);
+        // Capa 6.1: presupuesto de memoria COMPARTIDA de la iGPU, tomado del contador de memoria del
+        // adaptador y no de AdapterRAM (uint32 de firmware que se desborda a 4 GiB). Si el contador no
+        // existe queda null: null es "no se sabe", nunca cero.
+        var gpuMemory = await new FragForge.Actions.Measurement.GpuPerformanceProbe(wmi).ReadAdapterMemoryAsync(cancellationToken);
+        var sharedBudget = gpuMemory.Adapters.Select(a => a.CommittedBytes ?? a.SharedBytes).OfType<ulong>().DefaultIfEmpty(0UL).Max();
+        warnings.AddRange(gpuMemory.Warnings);
         var gpus = gpuRows.Select(r =>
         {
             var name = WmiValues.String(r, "Name") ?? "Unknown";
             var compatibility = WmiValues.String(r, "AdapterCompatibility") ?? "";
             var gpuVendor = compatibility.Contains("Intel", StringComparison.OrdinalIgnoreCase) ? GpuVendor.Intel : compatibility.Contains("NVIDIA", StringComparison.OrdinalIgnoreCase) ? GpuVendor.Nvidia : compatibility.Contains("AMD", StringComparison.OrdinalIgnoreCase) || compatibility.Contains("ATI", StringComparison.OrdinalIgnoreCase) ? GpuVendor.Amd : compatibility.Contains("Microsoft", StringComparison.OrdinalIgnoreCase) ? GpuVendor.Microsoft : GpuVendor.Unknown;
-            return new GpuInfo { Name = name, Vendor = gpuVendor, DriverVersion = WmiValues.String(r, "DriverVersion"), ReportedAdapterRamBytes = WmiValues.UInt64(r, "AdapterRAM"), IsIntegrated = gpuVendor == GpuVendor.Intel && (name.Contains("UHD", StringComparison.OrdinalIgnoreCase) || name.Contains("Iris", StringComparison.OrdinalIgnoreCase) || name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase)), SharedMemoryBudgetBytes = null };
+            return new GpuInfo { Name = name, Vendor = gpuVendor, DriverVersion = WmiValues.String(r, "DriverVersion"), ReportedAdapterRamBytes = WmiValues.UInt64(r, "AdapterRAM"), IsIntegrated = gpuVendor == GpuVendor.Intel && (name.Contains("UHD", StringComparison.OrdinalIgnoreCase) || name.Contains("Iris", StringComparison.OrdinalIgnoreCase) || name.Contains("HD Graphics", StringComparison.OrdinalIgnoreCase)), SharedMemoryBudgetBytes = sharedBudget == 0 ? null : sharedBudget };
         }).ToArray();
         var diskRows = await Query(@"root\cimv2", "Win32_DiskDrive", ["Model", "SerialNumber", "Size", "MediaType", "InterfaceType", "PNPDeviceID", "Status"]);
         var physicalDisks = await Query(@"root\Microsoft\Windows\Storage", "MSFT_PhysicalDisk", ["FriendlyName", "SerialNumber", "Size", "MediaType", "BusType", "HealthStatus", "SpindleSpeed"]);
@@ -375,6 +381,33 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         }
         catch (Exception ex) when (ex is not OperationCanceledException) { warnings.Add("Interactive user SID: " + ex.Message); return null; }
     }
+
+    /// <summary>
+    /// Capa 6.1: frase de canales de RAM calculada desde los módulos, SIN afirmar el entrelazado.
+    ///
+    /// <c>Win32_PhysicalMemory</c> describe módulos instalados; el entrelazado lo decide el controlador de
+    /// memoria y WMI no lo expone. Por eso, como máximo, se puede decir "probable" y marcar que no se puede
+    /// confirmar. Con un solo módulo o con capacidades distintas no se sugiere dual-channel en absoluto.
+    /// </summary>
+    public static string DescribeChannels(IReadOnlyList<MemoryModuleInfo> modules)
+    {
+        if (modules.Count == 0)
+            return "Win32_PhysicalMemory no devolvió módulos; no se puede decir nada sobre los canales.";
+
+        const string BaseText = "Win32_PhysicalMemory describe módulos, no el entrelazado del controlador.";
+
+        if (modules.Count == 1)
+            return $"{BaseText} 1 módulo: single-channel. No se puede confirmar por WMI.";
+
+        var capacities = modules.Select(m => m.CapacityBytes).Distinct().ToArray();
+        var speeds = modules.Select(m => (int?)(m.ConfiguredSpeedMtPerSecond ?? m.SpeedMtPerSecond)).Distinct().ToArray();
+
+        if (capacities.Length != 1 || speeds.Length != 1)
+            return $"{BaseText} {modules.Count} módulos con capacidad o velocidad distinta: no se puede afirmar dual-channel; verificar con una herramienta de topología.";
+
+        return $"{BaseText} {modules.Count} módulos iguales, dual-channel probable, no confirmable por WMI.";
+    }
+
     private static string BusName(int? bus) => bus switch { 3 => "ATA", 7 => "USB", 10 => "SAS", 11 => "SATA", 17 => "NVMe", 18 => "SCM", _ => "Unknown" };
     private static string ChassisName(int type) => type switch { 3 => "Desktop", 4 => "LowProfileDesktop", 8 => "Portable", 9 => "Laptop", 10 => "Notebook", 30 => "Tablet", 31 => "Convertible", 32 => "Detachable", 35 => "MiniPC", _ => $"Type{type}" };
 }

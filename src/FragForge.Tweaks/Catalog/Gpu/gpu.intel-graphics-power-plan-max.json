@@ -1,0 +1,89 @@
+{
+  "id": "gpu.intel-graphics-power-plan-max",
+  "category": "Gpu",
+  "title": {
+    "es-MX": "Plan de energía de gráficos Intel: máximo rendimiento",
+    "en-US": "Intel graphics power plan: maximum performance"
+  },
+  "description": {
+    "es-MX": "Escribe el ajuste «Intel(R) Graphics Power Plan» (GUID 3619c3f2-afb2-4afc-b0e9-e7fef372de36, subgrupo 44f3beca-a7c0-460e-9df2-bb8b99e0cba6) en su valor de máximo rendimiento dentro de un plan existente. La escritura se hace POR GUID: no se busca ninguna etiqueta de texto, así que funciona igual en es-MX y en en-US.",
+    "en-US": "Writes the 'Intel(R) Graphics Power Plan' setting (GUID 3619c3f2-afb2-4afc-b0e9-e7fef372de36, subgroup 44f3beca-a7c0-460e-9df2-bb8b99e0cba6) to its maximum-performance value inside an existing plan. The write is done BY GUID: no text label is matched, so it behaves the same in es-MX and en-US."
+  },
+  "evidence": "Low",
+  "risk": "Moderate",
+  "requiresReboot": false,
+  "requiresAdmin": true,
+  "conditions": [
+    {
+      "type": "windows",
+      "parameters": {
+        "minBuild": 26100,
+        "maxBuild": 26299,
+        "architecture": "X64"
+      }
+    },
+    {
+      "type": "gpuVendor",
+      "parameters": {
+        "vendor": "Intel"
+      }
+    },
+    {
+      "type": "formFactor",
+      "parameters": {
+        "battery": false
+      }
+    }
+  ],
+  "actions": [
+    {
+      "kind": "PowerPlan",
+      "parameters": {
+        "planName": "FragForge Performance",
+        "sourceSchemeGuid": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        "activate": false,
+        "mode": "settingsOnly",
+        "skipUnenumeratedSettings": true,
+        "settings": [
+          {
+            "subgroupGuid": "44f3beca-a7c0-460e-9df2-bb8b99e0cba6",
+            "settingGuid": "3619c3f2-afb2-4afc-b0e9-e7fef372de36",
+            "acValue": 2,
+            "dcValue": 2
+          }
+        ]
+      }
+    }
+  ],
+  "tags": [
+    "opt-in",
+    "gpu",
+    "power",
+    "measure-ab"
+  ],
+  "profiles": [],
+  "conflictsWith": [],
+  "dependsOn": [
+    "power.fragforge-performance"
+  ],
+  "expectedImpact": {
+    "fps": "No prometido; el efecto de este ajuste en la iGPU no está medido",
+    "1%lows": "No medido",
+    "inputLatency": "No medido",
+    "network": "None",
+    "boot": "None",
+    "thermals": "Puede subir el consumo y la temperatura de la iGPU al impedir estados de ahorro"
+  },
+  "references": [
+    "https://learn.microsoft.com/en-us/windows-hardware/customize/power-settings/configure-power-settings",
+    "https://learn.microsoft.com/en-us/windows-hardware/design/device-experiences/oem-gpu"
+  ],
+  "notes": {
+    "es-MX": "NO VERIFICADO en esta PC: los GUID del subgrupo y del ajuste de gráficos Intel no se han enumerado aquí. Si powercfg /qh no los expone, el tweak queda No aplicable y no se escribe nada (skipUnenumeratedSettings + R-L). El valor 2 = máximo rendimiento según el esquema de índices de energía de Windows (0 = batería, 1 = balanceado, 2 = máximo rendimiento); los valores 0 y 1 existen pero este tweak solo escribe el 2. Depende de power.fragforge-performance porque escriben en el mismo plan y comparten dueño del ajuste de energía: este NO duplica el plan, solo añade su ajuste.",
+    "en-US": "NOT VERIFIED on this PC: the Intel graphics subgroup and setting GUIDs have not been enumerated here. If powercfg /qh does not expose them, the tweak becomes Not applicable and nothing is written (skipUnenumeratedSettings + R-L). Value 2 = maximum performance per the Windows power index scheme (0 = battery saver, 1 = balanced, 2 = maximum performance); 0 and 1 exist but this tweak only writes 2. It depends on power.fragforge-performance because both write to the same plan and share the power setting owner: this one does NOT duplicate the plan, it only adds its own setting."
+  },
+  "whenNotToApply": {
+    "es-MX": "No aplicar en un equipo que ya se calienta o hace ruido: forzar el estado de máximo rendimiento de la iGPU impide que baje de frecuencia y sube la temperatura. No aplicar esperando FPS: no hay evidencia de mejora y no está medido.",
+    "en-US": "Do not apply on a machine that already runs hot or loud: forcing the iGPU's maximum-performance state prevents it from dropping clocks and raises temperature. Do not apply expecting FPS: there is no evidence of improvement and it is not measured."
+  }
+}
