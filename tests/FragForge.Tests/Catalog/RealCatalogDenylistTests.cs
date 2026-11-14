@@ -35,6 +35,57 @@ public sealed class RealCatalogDenylistTests
         DiagnosticProbeFactory.CreateDefaults(registry),
         adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
 
+    /// <summary>
+    /// Un proveedor de acciones que revienta NO puede tumbar la app: la excepción se convierte en fallo de
+    /// validación con el id del tweak (Capa 10.4). Antes salía de ValidatePolicy y llegaba al llamador.
+    /// </summary>
+    private sealed class ExplodingActionFactory : ITweakActionFactory
+    {
+        public IReadOnlySet<string> SupportedKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Registry" };
+        public ITweakAction Create(ActionSpec specification) => throw new InvalidOperationException("el proveedor reventó");
+    }
+
+    /// <summary>Un factory que lanza OperationCanceledException: la cancelación no es un fallo de validación.</summary>
+    private sealed class CancellingActionFactory : ITweakActionFactory
+    {
+        public IReadOnlySet<string> SupportedKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Registry" };
+        public ITweakAction Create(ActionSpec specification) => throw new OperationCanceledException("cancelado por el usuario");
+    }
+
+    /// <summary>
+    /// Un tweak de forma válida pero con un destino que NO está en la denylist: así el único error posible es
+    /// el del factory que revienta. Sin esto, un fallo de denylist ensuciaría el assert.
+    /// </summary>
+    private const string HarmlessTweak = """
+        {"id":"probe.harmless","category":"Debloat","title":{"es-MX":"a","en-US":"a"},"description":{"es-MX":"a","en-US":"a"},"evidence":"Low","risk":"Safe","requiresAdmin":true,"expectedImpact":{},"actions":[{"kind":"Registry","parameters":{"values":[{"key":"HKCU\Software\FragForgeTests","name":"V","kind":"DWord","value":1,"mode":"Set"}]}}],"references":["r"]}
+        """;
+
+    [Fact]
+    public void AFactoryThatThrowsAnyException_BecomesAValidationErrorWithTheTweakId()
+    {
+        var definition = JsonSerializer.Deserialize<TweakDefinition>(HarmlessTweak, FragForge.Core.Logging.JsonDefaults.Options)!;
+        var validator = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new ConditionFactory(), new ExplodingActionFactory());
+
+        // No lanza: devuelve el error.
+        var errors = validator.ValidateCatalog([definition]);
+
+        Assert.Contains(errors, e => e.Contains("probe.harmless", StringComparison.Ordinal));
+        Assert.Contains(errors, e => e.Contains("el proveedor reventó", StringComparison.Ordinal));
+        // Y el mensaje aparece UNA sola vez: las dos funciones no lo duplican.
+        Assert.Single(errors, e => e.Contains("el proveedor reventó", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AFactoryThatIsCancelled_PropagatesTheCancellation_InsteadOfCallingItAnInvalidTweak()
+    {
+        var definition = JsonSerializer.Deserialize<TweakDefinition>(HarmlessTweak, FragForge.Core.Logging.JsonDefaults.Options)!;
+        var validator = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new ConditionFactory(), new CancellingActionFactory());
+
+        Assert.Throws<OperationCanceledException>(() => validator.ValidateCatalog([definition]));
+    }
+
     /// <summary>Reproduce el validador de CompositionRoot, incluidos los tiers.</summary>
     private static JsonTweakCatalogLoader ProductionLikeLoader(ITweakActionFactory factory) => new(new TweakCatalogValidator(
         new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
