@@ -187,7 +187,7 @@ public sealed class ScheduledTaskStoreDetectionTests
         var action = new ScheduledTaskAction(store, FragForge.Core.Persistence.ProtectionPolicy.CreateDefault(), Spec.Action("ScheduledTask", new { path = TaskPath, enabled = false }));
 
         // OperationId y Hardware son 'required': el contexto no se puede construir a la ligera.
-        var context = new FragForge.Core.Models.ActionExecutionContext
+        var context = new ActionExecutionContext
         {
             OperationId = "test-op",
             Hardware = TestProfiles.Pn64()
