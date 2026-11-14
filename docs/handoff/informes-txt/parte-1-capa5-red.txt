@@ -1,0 +1,336 @@
+DOCUMENTO : Parte 1 de 7 — Capa 5: RED
+REPOSITORIO: Evo_optimizer_CS2 (FragForge v0.1.0)
+RAMA      : arena/c1a5f702-evo-optimizer-cs2
+COMMITS   : b5bc22a (adapter) · 4b0ec58 (tweaks) · de21287 (diag) · 8d97263 (docs) · 0bd62cc (fix)
+RANGO     : f44ba1d..0bd62cc — 5 commits, 35 ficheros, +2858 / -70, +124 tests (490 -> 614)
+TIPO      : transcripcion completa del informe docs/handoff/FragForge-Capa5-Informe.md
+
+==============================================================================
+AVISO QUE ENCABEZA TODA LA SERIE
+==============================================================================
+
+NADA DE ESTO SE HA COMPILADO NI EJECUTADO. En el entorno donde se escribio el
+proyecto no hay dotnet, ni mono, ni csc, ni PowerShell, ni Inno Setup, ni
+signtool, ni certificado, ni Windows. Los 667 casos de test existen; ninguno se
+ha ejecutado. El instalador, la firma y la UI nunca se han ejecutado.
+
+Lo que si se hizo: auditar cada identificador externo con grep contra el
+repositorio (archivo:linea, en las tablas de este documento) y validar la forma
+de los ficheros. Eso detecta errores de sintaxis, NO de tipos ni de semantica.
+
+==============================================================================
+RESUMEN DE LA CAPA EN UNA PAGINA
+==============================================================================
+
+QUE PEDIA
+  Que los tweaks de red no se aplicaran "al adaptador que se llame asi", sino al
+  adaptador correcto identificado por hardware; un tweak de EEE que no corte la
+  red sin avisar; y diagnostico de red de solo lectura.
+
+QUE SE ENCONTRO AL AUDITAR
+  La ruta de apply identificaba adaptadores POR NOMBRE VISIBLE. Un usuario con
+  dos adaptadores, o que renombre el suyo, podia recibir el tweak en el
+  adaptador equivocado. No era teorico: es lo que pasa al cambiar una tarjeta.
+  Y DOS candidatos de tweak chocaban con la denylist de red
+  (*InterruptModeration, *FlowControl, *RSS). Se descartaron en vez de relajar
+  la politica.
+
+QUE SE HIZO
+  5.1 Interfaz nueva INetworkAdapterResolver; resolucion por GUID o hardware ID
+      (PCI\VEN_8086&DEV_15F3 para el I225-V). El nombre visible quedo ELIMINADO
+      de la ruta de apply. Sin identidad resoluble -> null, nunca "el primero".
+  5.2 Propiedades por RegistryKeyword, no por nombre legible. Mapeo por POSICION
+      de columna con fixtures es-MX y en-US (R-C: nunca por etiqueta localizada).
+  5.3 network.i225v-eee-off rehecho: atado al hardware ID, con
+      RestartsNetworkLink=true, que dispara el aviso de corte ANTES de aplicar y
+      una sola vez por todos los tweaks. NetworkChangePreflight consulta
+      BitLocker en solo lectura antes de tocar la red.
+  5.4 fragforge net diagnose / net probe: mediana, p99 y jitter, con NA cuando no
+      hay medida (NA != 0, con test) y sin emitir veredicto.
+
+QUE NO SE VERIFICO
+  Las ValidRegistryValues reales del I225-V; la duracion del corte de enlace; ni
+  un paquete de ping lanzado; manage-bde no ejecutado; GetBestInterface no
+  ejecutado en esta PC. Detalle completo al final del documento.
+
+==============================================================================
+INFORME ORIGINAL (transcripcion integra)
+==============================================================================
+
+
+==============================================================================
+FRAGFORGE — CAPA 5: RED (ADAPTADOR POR HARDWARE, EEE Y DIAGNÓSTICO)
+==============================================================================
+
+Rama: arena/c1a5f702-evo-optimizer-cs2
+Base: f44ba1d (Capa 6/7)
+Hardware medido: Intel I225-V 2.5G ({D72A2249-535C-4478-9FDD-9B3A439F6395}) y Wi-Fi Intel AX210
+({0F4DC9CC-3733-4C8F-96FD-92AAB123BD6F}). CS2 usa UDP (Steam Datagram Relay): los ajustes de TCP no mejoran
+su red.
+
+> Nada compilado ni ejecutado. Sin dotnet, mono, csc ni PowerShell en el entorno. Todo se auditó con
+> grep real y se cita archivo:línea.
+
+---
+
+------------------------------------------------------------------------------
+5.1 DECISIÓN X3 — INETWORKADAPTERRESOLVER (INTERFAZ NUEVA)
+------------------------------------------------------------------------------
+
+INetworkAdapterController no se tocó (R-A). Se añadió una interfaz nueva en
+src/FragForge.Core/Abstractions/IContracts.cs (al final, aditiva):
+
+  Tipo | Qué hace
+  -----+---------
+  INetworkAdapterResolver | ListAsync() y ResolveAsync(selector) por identidad de hardware.
+  NetworkAdapterIdentity | InterfaceGuid, NetCfgInstanceId, HardwareId (PnPDeviceID), NdisPhysicalMedium, LinkSpeedBitsPerSecond, Kind, State, IsDefaultRoute, Eee.
+  NetworkAdapterSelector | InterfaceGuid, NetCfgInstanceId, HardwareIdContains, y HasHardwareIdentity.
+
+Implementación src/FragForge.Actions/Network/WindowsNetworkAdapterResolver.cs:
+
+* MSFT_NetAdapter en root\StandardCimv2, reutilizando
+  WindowsHardwareProfiler.NetAdapterProperties (src/FragForge.Actions/Platform/HardwareProfiler.cs:260-273)
+  más cuatro propiedades (PnPDeviceID, InterfaceIndex, MaxSpeed, MediaConnectState), todas presentes
+  en las 103 propiedades reales medidas en NetAdapterPropertiesTests.cs.
+* NetCfgInstanceId se lee de
+  HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\<NNNN>, recorriendo solo
+  subclaves de cuatro dígitos.
+* Un adaptador sin InterfaceGuid no entra en la lista: sin identidad no hay ruta de apply.
+* ResolveAsync devuelve null si no hay una coincidencia única; con dos candidatos no elige.
+
+>> La identificación por nombre visible quedó eliminada de la ruta de apply
+
+NetAdapterPropertyAction aceptaba adapterName con el token {AdapterDescription:I225-V} y resolvía con
+Description.Contains(...) sobre el perfil. Ese parámetro ya no existe: el record
+NetworkParameters solo tiene InterfaceGuid y HardwareIdContains. Si ninguno está presente, es
+CatalogValidationException; no hay ninguna vía que caiga al nombre.
+
+---
+
+------------------------------------------------------------------------------
+5.2 PROPIEDADES POR REGISTRYKEYWORD
+------------------------------------------------------------------------------
+
+src/FragForge.Actions/Network/NetworkAdvancedPropertyReader.cs.
+
+* Lee con Get-NetAdapterAdvancedProperty -InterfaceGuid <guid> -RegistryKeyword <kw>.
+* La salida se parsea como objeto JSON (ConvertTo-Json), nunca por texto de consola.
+* Mapeo RegistryValue ↔ DisplayValue por POSICIÓN entre ValidRegistryValues y ValidDisplayValues: es
+  la única forma de traducir sin leer etiquetas localizadas (R-C). Hay tests que dan la misma propiedad con
+  textos en es-MX y en en-US y comprueban que el comportamiento es idéntico.
+* WriteAsync se niega a escribir un valor que no esté en ValidRegistryValues (R-L): lanza
+  ActionNotApplicableException antes de tocar el proceso.
+* Propiedad inexistente → Exists = false → ActionNotApplicableException en el preflight. El tweak es
+  No aplicable.
+
+---
+
+------------------------------------------------------------------------------
+5.3 NETWORK.I225V-EEE-OFF REHECHO
+------------------------------------------------------------------------------
+
+  Antes | Ahora
+  ------+------
+  conditions: adapter{descriptionContains: I225-V} | adapter{hardwareIdContains: DEV_15F3}
+  adapterName: "{AdapterDescription:I225-V}" | hardwareIdContains: DEV_15F3
+  evidence: Medium | evidence: Low (sin medición)
+  Sin aviso de corte | restartsNetworkLink: true + aviso en motor, UI y CLI
+
+DEV_15F3 está verificado como el device ID del I225-V (PCI\VEN_8086&DEV_15F3), no de memoria.
+
+R-J — BitLocker y aviso de corte:
+
+* src/FragForge.Core/Preflight/NetworkChangePreflight.cs: consulta manage-bde -status y el único argumento
+  que pasa es -status. Hay un test que falla si aparece -off, -on, -suspend, -resume o -protectors.
+* Se activa desde PreflightService solo si el catálogo tiene algún tweak con RestartsNetworkLink.
+* Ningún estado de BitLocker bloquea: informa. Con cifrado activo sale un Warning que pide guardar la clave
+  de recuperación.
+* El aviso del corte lo emite el motor (TweakEngine) antes de aplicar, y la UI lo pregunta en su propio
+  diálogo antes de continuar.
+* Modo sesión: GameSessionService.EligibleIds filtra además !d.RestartsNetworkLink. Un tweak de red no
+  entra en una sesión aunque alguien lo marque elegible por error. Hay test.
+
+---
+
+------------------------------------------------------------------------------
+5.4 CANDIDATOS, UNO POR UNO
+------------------------------------------------------------------------------
+
+  Candidato | Efecto técnico | Decisión
+  ----------+----------------+---------
+  *InterruptModeration off | Interrupción por paquete en vez de por lote. | Denylist → descartado
+  *FlowControl off | Sin tramas PAUSE. | Denylist → descartado
+  RSC (Set-NetOffloadGlobalSetting) | Solo TCP; CS2 es UDP. | Descartado
+  LSO (*LsoV2IPv4/6) | Segmentación TCP en envío. | Descartado
+  Wi-Fi AX210 power/roaming | Solo si la ruta por defecto es Wi-Fi. | Descartado; queda recomendación en texto
+  TcpAckFrequency / TCPNoDelay | TCP. CS2 es UDP. | Descartado
+  NetworkThrottlingIndex | Folclore sin fuente. | Descartado
+  DNS | No es latencia de flujo. | Descartado
+  QoS DSCP | Depende del router. | Descartado
+
+"Ethernet para jugar" se muestra siempre, no solo cuando la ruta por defecto resulta ser Wi-Fi. 5.4 pide
+mostrarla siempre y el CLI lo hace así: net diagnose imprime la recomendación en todas las ejecuciones en que
+haya adaptador resuelto, con independencia del tipo de medio detectado. Es texto, no un veredicto calculado: no
+depende del ping ni de la velocidad de enlace.
+
+>> Lo importante: dos candidatos chocaban con la denylist
+
+denylist.json protege en networkPropertyKeywords: *DeviceSleepOnDisconnect, *WakeOnMagicPacket,
+*WakeOnPattern, *NetworkAddress, *FlowControl, *RSS, *RscIPv4, *RscIPv6,
+*InterruptModeration.
+
+Implementé los dos tweaks y los eliminé al comprobarlo: habrían hecho fallar RealCatalog_PassesTheRealDenylist
+y la denylist no se debilita. *EEE no está en la lista, que es por lo que 5.3 sí se puede implementar. Hay
+un test que fija el rechazo keyword por keyword y otro que confirma que *EEE pasa.
+
+---
+
+------------------------------------------------------------------------------
+5.5 DIAGNÓSTICO (SOLO LECTURA)
+------------------------------------------------------------------------------
+
+src/FragForge.Actions/Measurement/NetworkProbe.cs.
+
+* Adaptador por la ruta por defecto: GetBestInterface, no la puerta de enlace. Se pregunta a iphlpapi
+  por el índice de la mejor interfaz hacia 192.0.2.1 (TEST-NET-1, no se envía tráfico) y se cruza con el
+  índice IPv4 del adaptador (NetworkInterface.GetIPv4Properties().Index). Ver
+  src/FragForge.Actions/Measurement/DefaultRouteProbe.cs.
+  * Por qué no la puerta de enlace: se implementó primero "el único adaptador activo con gateway". En esta PC
+    el I225-V y la AX210 pueden tener ambos gateway, así que ese criterio devolvía null siempre. La puerta
+    de enlace dice que el adaptador puede enrutar; no dice que el stack lo esté haciendo. Eso solo lo
+    responde GetBestInterface.
+  * BestInterfaceIndex es nulo si GetBestInterface falla (sin ruta, sin red). 0 tampoco es un índice válido:
+    ambos casos dan Adapter = null con nota distinta, para no confundir "no hay ruta" con "no se miró".
+  * Los candidatos con gateway siguen informándose en Candidates, a título comparativo. Ya no deciden.
+* Tipo de medio por NdisPhysicalMedium con el mapeo existente 14 = Ethernet / 9 = Wi-Fi, que se muestra
+  junto al valor crudo y con la etiqueta NO VERIFICADO en esta NIC.
+* Velocidad de enlace real (Speed, cayendo a MaxSpeed solo si falta).
+* EEE actual: sí se lee (5.5 lo pide explícitamente). NetworkProbe recibe un NetworkAdvancedPropertyReader
+  opcional y consulta *EEE en solo lectura sobre el adaptador elegido; el valor va a
+  NetworkAdapterIdentity.Eee y el CLI lo imprime como EEE actual (*EEE): …. Si la propiedad no existe en el
+  adaptador, si el adaptador no tiene InterfaceGuid o si la lectura falla, Eee queda null y el CLI imprime
+  NA: null no es "desactivado". Hay tres tests para esos tres caminos (existe / no existe / lanza).
+
+Ping: NetworkProbe.MeasureAsync(host, count) con System.Net.NetworkInformation.Ping.
+* El host lo elige el usuario; sin --host el comando devuelve error de uso. No hay hosts por defecto.
+* Mediana, p99 (rango más cercano), jitter = desviación media absoluta respecto a la mediana, mín/máx y pérdida.
+* Con cero respuestas: HasSamples = false y mediana/p99/jitter/mín/máx en null. La pérdida es 100%. NA no
+  es 0.
+* Sin veredicto: hay un test que comprueba que el resultado no tiene propiedades Verdict, Rating ni Score.
+
+CLI: fragforge net probe --host <h> --count <n> y fragforge net diagnose, con lista cerrada de verbos como
+cs2.
+
+---
+
+------------------------------------------------------------------------------
+5.6 SNAPSHOT Y ROLLBACKFAILED
+------------------------------------------------------------------------------
+
+* CaptureAsync guarda todas las propiedades que se van a tocar, con su valor previo, antes de escribir
+  nada.
+* El revert reescribe por el GUID guardado en el snapshot, no por el del parámetro: si el adaptador cambia
+  de índice o de nombre, el revert sigue apuntando al mismo dispositivo.
+* Si al revertir el valor ya no está enumerado o el adaptador desapareció, la acción lanza y el motor marca
+  RollbackFailed. No se traga el error. Hay test.
+
+---
+
+------------------------------------------------------------------------------
+TABLA DE AUDITORÍA DE IDENTIFICADORES
+------------------------------------------------------------------------------
+
+  Identificador | Archivo:línea | Uso
+  --------------+---------------+----
+  INetworkAdapterController | src/FragForge.Core/Abstractions/IContracts.cs:87-91 | no se cambió (R-A)
+  INetworkAdapterResolver (nueva) | src/FragForge.Core/Abstractions/IContracts.cs:140 | 5.1
+  NetworkAdapterIdentity (nuevo) | src/FragForge.Core/Abstractions/IContracts.cs:159 | identidad de hardware
+  NetworkAdapterIdentity.Eee | src/FragForge.Core/Abstractions/IContracts.cs:185 | EEE actual (solo lectura), null = NA
+  DefaultRouteProbe.GetBestInterfaceIndex | src/FragForge.Actions/Measurement/DefaultRouteProbe.cs:41 | ruta por defecto real
+  GetBestInterface (P/Invoke) | src/FragForge.Actions/Measurement/DefaultRouteProbe.cs:56-57 | iphlpapi, System32
+  NetworkProbe ctor (5 parámetros, 3 opcionales) | src/FragForge.Actions/Measurement/NetworkProbe.cs:30-35 | reader + inyección para tests
+  NetworkProbe.DiagnoseAdapterAsync | src/FragForge.Actions/Measurement/NetworkProbe.cs:71-72 | elige por índice, no por gateway
+  NetworkProbe.ReadEeeAsync | src/FragForge.Actions/Measurement/NetworkProbe.cs:120 | *EEE, null si falla
+  NetworkAdapterDiagnosis.Adapter | src/FragForge.Actions/Measurement/NetworkProbe.cs:279 | Eee incluido
+  NetCommands → reader por DI | src/FragForge.Cli/NetCommands.cs:44 | GetService, opcional
+  CLI imprime EEE | src/FragForge.Cli/NetCommands.cs:81 | NA ≠ desactivado
+  CLI recomendación Ethernet | src/FragForge.Cli/NetCommands.cs:83 | 5.4, siempre
+  NetworkAdapterSelector (nuevo) | src/FragForge.Core/Abstractions/IContracts.cs:186 | selector
+  IWmiQuery.QueryAsync | src/FragForge.Core/Abstractions/IContracts.cs:19-22 | firma del doble
+  IRegistry.* | src/FragForge.Core/Abstractions/IRegistry.cs:3-12 | NetCfgInstanceId
+  WindowsHardwareProfiler.NetAdapterProperties | src/FragForge.Actions/Platform/HardwareProfiler.cs:260-273 | reutilizada
+  WindowsHardwareProfiler.MapPhysicalMedium | src/FragForge.Actions/Platform/HardwareProfiler.cs:287-292 | 14/9
+  NetAdapterScope / NetAdapterClass | src/FragForge.Actions/Platform/HardwareProfiler.cs:32-33 | root\StandardCimv2
+  RealMsftNetAdapterProperties (103) | tests/FragForge.Tests/Core/NetAdapterPropertiesTests.cs | fixture medido
+  NetworkAdapterInfo | src/FragForge.Core/Models/HardwareProfile.cs:101-111 | campos añadidos aditivos
+  MemoryModuleInfo (patrón) | src/FragForge.Core/Models/HardwareProfile.cs:64-74 | estilo de record
+  AdapterParameters | src/FragForge.Core/Conditions/ConditionFactory.cs:48 | extendido
+  AdapterCondition | src/FragForge.Core/Conditions/ConditionFactory.cs:108-121 | evalúa hardware ID
+  TweakActionFactory ctor | src/FragForge.Actions/DependencyInjection/TweakActionFactory.cs:15 | IWmiQuery? wmi opcional
+  TweakActionFactory.Create | .../TweakActionFactory.cs:23-41 | construye resolutor
+  PreflightService ctor | src/FragForge.Core/Preflight/PreflightService.cs:6 | NetworkChangePreflight? opcional
+  PreflightCheck | src/FragForge.Core/Models/Results.cs:77 | severidad
+  PreflightReport.Passed | src/FragForge.Core/Models/Results.cs:80 | no bloquea
+  TweakDefinition.SessionEligible | src/FragForge.Core/Models/TweakDefinition.cs:53 | patrón del campo nuevo
+  TweakDefinition.RestartsNetworkLink | src/FragForge.Core/Models/TweakDefinition.cs:54-63 | nuevo, aditivo
+  ProfileSelector.Select | src/FragForge.Core/Engine/ProfileSelector.cs:34 | conteos
+  GameSessionService.EligibleIds | src/FragForge.Core/Sessions/GameSessionService.cs:54-59 | filtro de red
+  TweakEngine rollback | src/FragForge.Core/Engine/TweakEngine.cs:237, :335 | RollbackFailed ya existía
+  ProcessRequest / ProcessResult | src/FragForge.Core/Abstractions/IProcessRunner.cs:7-18 | PowerShell y manage-bde
+  ActionNotApplicableException | src/FragForge.Core/Models/FragForgeException.cs:13 | No aplicable
+  ProtectedTargetException | src/FragForge.Core/Models/FragForgeException.cs:12 | denylist de red
+  EnsureNetworkPropertyAllowed | src/FragForge.Core/Persistence/ProtectionPolicy.cs:87-93 | R-D
+  denylist.networkPropertyKeywords | src/FragForge.Core/Persistence/denylist.json | 9 keywords
+  CommandLineParser.Flags/ValueOptions | src/FragForge.Cli/CommandLine.cs:14-15 | --host, --count
+  ExitCodes | src/FragForge.Cli/CommandLine.cs:34-42 | Usage, MeasurementInvalid
+  ParsedArgs | src/FragForge.Cli/CommandLine.cs:3-11 | Value/Has
+  FakeProcessRunner | tests/FragForge.Tests/Fakes/FakeProcessRunner.cs:5-16 | doble
+  FakeRegistry | tests/FragForge.Tests/Fakes/FakeRegistry.cs:5-42 | doble
+  Tweak.Create | tests/FragForge.Tests/Fakes/TestSupport.cs:18 | with { RestartsNetworkLink }
+
+Sobre InternalsVisibleTo: sigue sin existir en el repo. Por eso NormalizeGuid se declaró public
+(el perfil y el resolutor lo comparten) y NetworkAdvancedPropertyReader es public no sealed con
+ReadAsync/WriteAsync virtual, que es lo que permite a los tests de la acción sustituirlo sin PowerShell.
+
+---
+
+------------------------------------------------------------------------------
+TESTS AÑADIDOS
+------------------------------------------------------------------------------
+
+  Archivo | Qué fija
+  --------+---------
+  tests/FragForge.Tests/Network/NetworkAdapterResolverTests.cs | resolución por GUID y por hardware ID; funciona con nombre y descripción renombrados; sin identidad → null; GUID normalizado; NetCfgInstanceId
+  tests/FragForge.Tests/Network/NetworkAdvancedPropertyReaderTests.cs | mapeo por posición con fixtures es-MX y en-US; no escribe valores no enumerados; solo -InterfaceGuid, nunca -Name
+  tests/FragForge.Tests/Network/NetworkProbeTests.cs | mediana/p99/jitter; NA≠0; sin host no mide; sin veredicto; mapeo 14/9
+  tests/FragForge.Tests/Network/BitLockerPreflightTests.cs | solo -status; sin cifrado ≠ desconocido; nunca bloquea
+  ActionTests.NetworkPropertyActionTests | captura completa antes de escribir; R-L; denylist keyword por keyword; revert que falla lanza
+  EngineTests | aviso de corte antes de aplicar; sin aviso si no reinicia
+  GameSessionServiceTests | un tweak que reinicia red no entra en sesión
+  NetAdapterPropertiesTests | el resolutor solo pide propiedades que existen
+
+---
+
+------------------------------------------------------------------------------
+QUÉ NO SE VERIFICÓ
+------------------------------------------------------------------------------
+
+* Nada compilado ni ejecutado. Sin compilador ni PowerShell.
+* ValidRegistryValues reales del I225-V: no se enumeraron. No se sabe si el driver expone *EEE, cuántos
+  valores acepta, ni si "0" es "desactivado". Si no lo expone, el tweak es No aplicable, que es el
+  comportamiento implementado.
+* Comportamiento del reinicio del adaptador: no se comprobó cuánto dura el corte ni si el enlace vuelve solo.
+  El aviso se implementó asumiendo lo que documenta el driver, no una medición.
+* Mapeo NdisPhysicalMedium: el 14 = Ethernet / 9 = Wi-Fi no se midió en estas NICs. La fuente del driver
+  del I225-V confirma *PhysicalMediaType = 14 en su .inf, pero el valor que devuelve MSFT_NetAdapter en
+  esta PC no se leyó. Marcado NO VERIFICADO en el código y en el CLI.
+* NetCfgInstanceId: no se comprobó que coincida con InterfaceGuid en esta máquina. El código tolera que
+  no esté (queda null) y la resolución por GUID sigue funcionando.
+* BitLocker: no se ejecutó manage-bde; los fixtures son del formato documentado, no de esta PC.
+* Ping: no se lanzó ni un paquete. La estadística se validó con dobles y con cálculos en Python.
+* Wi-Fi AX210: no se enumeraron sus propiedades reales (ahorro de energía, roaming). Por eso queda como
+  recomendación de texto y no como tweak.
+* GetBestInterface en esta PC: no se ejecutó. Se asume que devuelve el índice del I225-V mientras el cable
+  esté puesto, y el de la AX210 si se desconecta. La lógica está probada con dobles; el valor real no se leyó.
+* *EEE real del I225-V: el diagnóstico lo lee, pero nadie lo ha ejecutado contra la NIC. Si el driver no
+  expone *EEE, el CLI imprime NA y el diagnóstico sigue funcionando (hay test para ese camino).
