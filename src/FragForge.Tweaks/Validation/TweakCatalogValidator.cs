@@ -83,14 +83,18 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
         foreach (var condition in definition.Conditions) { try { conditions.Create(condition); } catch (Exception ex) { errors.Add($"{definition.Id}: condición inválida: {ex.Message}"); } }
         foreach (var action in definition.Actions)
         {
-            // Un destino PROTEGIDO no es una acción mal formada: es politica, y lo reporta ValidatePolicy con
-            // su propio mensaje. Aqui se deja pasar a proposito, porque si se capturara como "accion invalida"
-            // la MISMA definicion saldria DOS veces en el informe de rechazos (una por cada funcion), que es
-            // lo que se veia como "ext.debugger duplicado". Las dos rutas que usan ValidateSingle -la estricta
-            // via ValidateCatalog y la resiliente (TweakCatalog.cs)- llaman a ValidatePolicy a continuacion,
-            // asi que la excepcion siempre tiene quien la recoja.
+            // Un destino PROTEGIDO no es una accion mal formada: es politica, y lo reporta ValidatePolicy con su
+            // propio mensaje. Se CAPTURA aqui y NO se reporta, para que la definicion no salga dos veces en el
+            // informe de rechazos (una por cada funcion).
+            //
+            // Capturar es obligatorio, no una precaucion: con `when (ex is not ProtectedTargetException)` la
+            // excepcion NO se capturaba y se propagaba, asi que esta funcion no llegaba a RETORNAR y las dos
+            // rutas -estricta (ValidateCatalog:47) y resiliente (TweakCatalog.cs:204)- nunca alcanzaban el
+            // ValidatePolicy que va despues. Resultado: ProtectedTargetException escapaba hasta el test.
+            // "ValidatePolicy va despues" solo vale si hay retorno; por eso aqui se captura y se descarta.
             try { actions.Create(action); }
-            catch (Exception ex) when (ex is not ProtectedTargetException) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
+            catch (ProtectedTargetException) { /* lo reporta ValidatePolicy */ }
+            catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
             if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
             {
                 var service = ImpactSimulator.ExtractServiceName(action);
