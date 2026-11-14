@@ -58,8 +58,8 @@
     "https://learn.microsoft.com/en-us/windows/win32/directshow/ireferenceclocktimercontrol"
   ],
   "notes": {
-    "es-MX": "La documentación oficial describe timeBeginPeriod y el cambio de Windows 10 2004/Windows 11; esta clave concreta no está documentada como contrato público. Evidence Medium se refiere al mecanismo del timer, no a una ganancia probada en CS2. Puede aumentar interrupciones/consumo.",
-    "en-US": "Official docs describe timeBeginPeriod and the Windows 10 2004/Windows 11 change; this specific value is not a documented public contract. Medium evidence refers to the timer mechanism, not a proven CS2 gain. It may increase interrupts/power."
+    "es-MX": "Restaura el comportamiento ANTERIOR a Windows 10 2004 / Windows 11: hasta esa versión, un proceso podía subir la resolución del temporizador global; desde entonces el cambio es por proceso y esta clave vuelve a permitir la solicitud global. La documentación oficial describe timeBeginPeriod y el cambio de 2004/11; la clave concreta no está documentada como contrato público. Evidence Medium se refiere al MECANISMO del timer, no a una ganancia probada en CS2: el efecto en CS2 NO se ha medido. Puede aumentar interrupciones y consumo.",
+    "en-US": "Restores the behaviour from BEFORE Windows 10 2004 / Windows 11: until that version a process could raise the global timer resolution; since then the change is per-process and this key allows the global request again. Official docs describe timeBeginPeriod and the 2004/11 change; the key itself is not documented as a public contract. Evidence Medium refers to the timer MECHANISM, not to a proven gain in CS2: the effect in CS2 has NOT been measured. It can raise interrupts and power use."
   },
   "whenNotToApply": {
     "es-MX": "No aplicar sin línea base A/B. Evitar si aumenta temperatura, consumo o DPC/ISR, o si el juego ya solicita resolución adecuada.",

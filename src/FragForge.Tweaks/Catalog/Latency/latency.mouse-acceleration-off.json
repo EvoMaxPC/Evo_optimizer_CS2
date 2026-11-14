@@ -6,10 +6,10 @@
     "en-US": "Disable desktop mouse acceleration"
   },
   "description": {
-    "es-MX": "Establece MouseSpeed y umbrales en 0 y curvas lineales 1:1 en el hive del usuario interactivo.",
-    "en-US": "Sets MouseSpeed and thresholds to 0 and linear 1:1 curves in the interactive user hive."
+    "es-MX": "Establece MouseSpeed y los dos umbrales en 0 (REG_SZ) y escribe las curvas de puntero lineales 1:1 en el hive del usuario interactivo.",
+    "en-US": "Sets MouseSpeed and both thresholds to 0 (REG_SZ) and writes linear 1:1 pointer curves in the interactive user hive."
   },
-  "evidence": "High",
+  "evidence": "Low",
   "risk": "Safe",
   "requiresReboot": true,
   "requiresAdmin": true,
@@ -82,7 +82,7 @@
   "expectedImpact": {
     "fps": "None",
     "1%lows": "None",
-    "inputLatency": "Consistencia del puntero; no garantiza menor latencia en CS2 con raw input",
+    "inputLatency": "Escritorio: puntero lineal sin aceleración. CS2 con raw input (m_rawinput 1): efecto no medido, probablemente ninguno. No se promete menor latencia.",
     "network": "None",
     "boot": "None",
     "thermals": "None"
@@ -92,11 +92,11 @@
     "https://fleexlab.blogspot.com/2020/08/setting-arbitrarily-precise-mouse.html"
   ],
   "notes": {
-    "es-MX": "Afecta a todo el escritorio y a aplicaciones que usan el puntero de Windows. CS2 puede usar raw input y no verse afectado. Los cambios de registro requieren cerrar sesión/reiniciar; no se inyecta ni se modifica cs2.exe.",
-    "en-US": "Affects the entire desktop and applications using the Windows pointer. CS2 may use raw input and be unaffected. Registry changes require sign-out/reboot; cs2.exe is not injected or modified."
+    "es-MX": "Afecta a todo el escritorio y a las aplicaciones que usan el puntero de Windows. CS2 usa raw input (m_rawinput 1), que lee el movimiento del ratón directamente del dispositivo: por eso el efecto de este tweak es de ESCRITORIO y no se puede afirmar que cambie el apuntado dentro de CS2. No se inyecta ni se modifica cs2.exe. Los cambios de registro requieren cerrar sesión o reiniciar. Las curvas SmoothMouseXCurve/SmoothMouseYCurve se guardan como 5 puntos de 8 bytes en formato 16.16 fixed-point (los 4 bytes altos en cero); la curva lineal 1:1 tiene pendiente constante 1.0, y es la que se escribe. Una pendiente distinta de 1.0 multiplicaría la sensibilidad del puntero.",
+    "en-US": "Affects the whole desktop and applications using the Windows pointer. CS2 uses raw input (m_rawinput 1), which reads mouse movement straight from the device: the effect of this tweak is therefore a DESKTOP effect and it cannot be claimed to change aiming inside CS2. cs2.exe is not injected or modified. Registry changes require sign-out or reboot. SmoothMouseXCurve/SmoothMouseYCurve are 5 points of 8 bytes in 16.16 fixed-point (the high 4 bytes are zero); the linear 1:1 curve has a constant slope of 1.0, and that is what this tweak writes. A slope other than 1.0 would multiply the pointer sensitivity."
   },
   "whenNotToApply": {
-    "es-MX": "No aplicar si dependes de Precisión mejorada del puntero o de una curva personalizada. Guarda tu configuración actual; la reversión restaura bytes exactos.",
-    "en-US": "Do not apply if you rely on Enhance pointer precision or a custom curve. The revert restores exact bytes."
+    "es-MX": "No esperar mejora de apuntado en CS2: con m_rawinput 1 el juego no pasa por este ajuste. No aplicar si otra aplicación del escritorio depende de la aceleración del puntero.",
+    "en-US": "Do not expect better aiming in CS2: with m_rawinput 1 the game does not go through this setting. Do not apply if a desktop application relies on pointer acceleration."
   }
 }
