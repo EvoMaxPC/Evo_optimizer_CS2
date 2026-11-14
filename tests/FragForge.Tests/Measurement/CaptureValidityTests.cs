@@ -85,8 +85,14 @@ public sealed class CaptureValidityTests
 
         var report = CaptureValidityGate.Evaluate(series);
 
-        Assert.Equal(CaptureValidity.Suspect, report.Validity);
-        Assert.Contains(report.Reasons, reason => reason.Contains("formato de CSV no estándar", StringComparison.Ordinal));
+        Assert.True(
+            report.Validity == CaptureValidity.Suspect,
+            $"esperaba Suspect, dio {report.Validity}. IsNonStandardLayout={series.IsNonStandardLayout}; " +
+            $"frames={series.FrameCount}; motivos=[{string.Join(" | ", report.Reasons)}]");
+        Assert.True(
+            report.Reasons.Any(reason => reason.Contains("formato de CSV no estándar", StringComparison.Ordinal)),
+            $"faltó el motivo de formato no estándar. Motivos: [{string.Join(" | ", report.Reasons)}]; " +
+            $"IsNonStandardLayout={series.IsNonStandardLayout}");
     }
 
     [Fact]

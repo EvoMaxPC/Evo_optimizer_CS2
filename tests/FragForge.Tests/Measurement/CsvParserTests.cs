@@ -321,10 +321,15 @@ public sealed class CsvParserTests
                   "dwm.exe,100,0x1,DXGI,1,0,0,1.5,0.4,16.6,1,Hardware: Legacy Flip,1.0,16.7,16.8,0.5,1.0,2.0,NA\n";
         var series = PresentMonCsvParser.Parse(new StringReader(csv));
 
-        Assert.Equal(1, series.FrameCount);
-        Assert.Equal(16.6, series.FrameTimesMs[0], 6);
-        Assert.True(series.IsNonStandardLayout);
-        Assert.Contains(series.Warnings, w => w.Contains("formato de CSV no estándar", StringComparison.Ordinal));
+        Assert.True(series.FrameCount == 1, $"esperaba 1 fila, hay {series.FrameCount}; columnas: {string.Join(",", series.HeaderColumns)}");
+        Assert.True(Math.Abs(series.FrameTimesMs[0] - 16.6) < 1e-6, $"frame time {series.FrameTimesMs[0]}, esperaba 16.6");
+        Assert.True(
+            series.IsNonStandardLayout,
+            $"el layout --v1_metrics debe marcarse no estándar (trae Runtime+msBetweenPresents, no PresentRuntime). " +
+            $"HeaderColumns: {string.Join(",", series.HeaderColumns)}; SourceColumns: {series.SourceColumns}");
+        Assert.True(
+            series.Warnings.Any(w => w.Contains("formato de CSV no estándar", StringComparison.Ordinal)),
+            $"faltó el aviso de formato no estándar. Warnings: [{string.Join(" | ", series.Warnings)}]");
     }
 
     [Fact]
@@ -334,10 +339,14 @@ public sealed class CsvParserTests
                   "dwm.exe,100,0x1,DXGI,1,0,0,Independent Flip,1.0,16.6,3.9,0.5,1.0,2.0,2.1,0.3,1.0,16.7,0.0,0.0,NA,9.0,NA\n";
         var series = PresentMonCsvParser.Parse(new StringReader(csv));
 
-        Assert.Equal(1, series.FrameCount);
-        Assert.Equal(16.6, series.FrameTimesMs[0], 6);
-        Assert.True(series.IsNonStandardLayout);
-        Assert.Equal(3.9, series.CpuBusyMs[0]!.Value, 6);
+        Assert.True(series.FrameCount == 1, $"esperaba 1 fila, hay {series.FrameCount}");
+        Assert.True(Math.Abs(series.FrameTimesMs[0] - 16.6) < 1e-6, $"frame time {series.FrameTimesMs[0]}, esperaba 16.6 (columna FrameTime)");
+        Assert.True(
+            series.IsNonStandardLayout,
+            $"el layout --v2_metrics debe marcarse no estándar. HeaderColumns: {string.Join(",", series.HeaderColumns)}");
+        Assert.True(
+            series.CpuBusyMs[0] is { } cpu && Math.Abs(cpu - 3.9) < 1e-6,
+            $"CPUBusy {series.CpuBusyMs[0]?.ToString() ?? "null"}, esperaba 3.9");
     }
 
     [Fact]

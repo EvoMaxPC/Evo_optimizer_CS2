@@ -92,7 +92,7 @@ public static class PresentMonCsvParser
         }
 
         var idx = new ColumnMap(headers);
-        var isNonStandardLayout = !headers.Any(h => string.Equals(h.Trim(), FrameTimeColumn, StringComparison.OrdinalIgnoreCase));
+        var isNonStandardLayout = !IsDefaultLayout(headers);
 
         // Cada swapchain acumula sus PROPIAS filas. Nunca se mezclan: promediar dos flujos de
         // presentación distintos (~104 ms y ~16.5 ms en la captura real) daría un número que no
@@ -162,7 +162,7 @@ public static class PresentMonCsvParser
         var gpuUnavailable = idx.GpuBusy >= 0 && series.GpuBusy.All(value => value is null or 0d);
         if (gpuUnavailable) warnings.Add("GPU no disponible en la swapchain elegida: todas las filas de MsGPUBusy son 0 o NA");
 
-        if (isNonStandardLayout) warnings.Add("formato de CSV no estándar: no está la columna MsBetweenPresents");
+        if (isNonStandardLayout) warnings.Add("formato de CSV no estándar: el encabezado no es el de PresentMon 2.6.0 por defecto (falta MsBetweenPresents o PresentRuntime); el frame time se toma como fallback");
 
         var dominantApplication = application.Count == 0
             ? null
@@ -198,6 +198,31 @@ public static class PresentMonCsvParser
             HeaderColumns = headers,
             SourceColumns = BuildSourceColumns(headers, idx)
         };
+    }
+
+    /// <summary>
+    /// ¿Es el layout por defecto de PresentMon 2.6.0 (sin <c>--v1_metrics</c> / <c>--v2_metrics</c>)?
+    ///
+    /// Se ancla en DOS columnas, no en una:
+    /// <list type="bullet">
+    /// <item><c>MsBetweenPresents</c>: nombre del frame time en el layout por defecto.</item>
+    /// <item><c>PresentRuntime</c>: columna que SOLO existe en el layout por defecto.</item>
+    /// </list>
+    ///
+    /// Hace falta la segunda porque el layout <c>--v1_metrics</c> **también** trae
+    /// <c>msBetweenPresents</c>: mirar solo el frame time marcaba v1 como estándar (era el bug que
+    /// dejaba <c>IsNonStandardLayout</c> en false para v1). v1 usa <c>Runtime</c> en su lugar.
+    ///
+    /// No se comparan los 28 nombres uno a uno a propósito: una versión futura de PresentMon puede
+    /// añadir columnas y el layout seguiría siendo el estándar para nuestros fines (el frame time se
+    /// lee por nombre). Lo que se detecta es "esto no es la salida por defecto conocida".
+    /// </summary>
+    private static bool IsDefaultLayout(string[] headers)
+    {
+        static bool Has(string[] all, string name) =>
+            all.Any(h => string.Equals(h.Trim(), name, StringComparison.OrdinalIgnoreCase));
+
+        return Has(headers, FrameTimeColumn) && Has(headers, "PresentRuntime");
     }
 
     private static string Format(double? value) => value is null ? "NA" : value.Value.ToString("0.####", CultureInfo.InvariantCulture);
