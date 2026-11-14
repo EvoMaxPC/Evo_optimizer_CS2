@@ -1,334 +1,192 @@
-# FragForge — Capa 1: diagnóstico, línea base y comparación A/B
+# Capa 1 — Ajuste al contrato real de PresentMon 2.6.0
 
-**Fecha:** 2026-11-13
 **Rama:** `arena/c1a5f702-evo-optimizer-cs2`
-**Base:** `434aec0` (Capa 0 cerrada, 139 archivos rastreados, 103 pruebas)
-**Estado:** código y pruebas escritos y commiteados; **compilación y ejecución de pruebas NO verificadas en este entorno** (ver §0).
+**HEAD de partida:** `caa9ece` · **build de partida:** 0 errores, 404 tests
+**Estado:** implementado, **sin compilar** (no hay `dotnet` en el entorno de trabajo)
 
 ---
 
-## 0. Advertencia previa: aquí no se compiló nada
+## Contrato real de PresentMon 2.6.0
 
-Este entorno de trabajo **no tiene el SDK de .NET**. Cuatro comprobaciones independientes:
+### Encabezado
 
-| Comprobación | Resultado |
-|---|---|
-| `which dotnet` / `find / -name dotnet.dll` | nada |
-| `/usr/share/dotnet`, `/usr/lib/dotnet` | no existen |
-| `apt-cache policy dotnet-sdk-10.0` | paquete inexistente |
-| `mono` en `/usr/lib/mono` | no existe |
+28 columnas, en este orden, capturado en la PC objetivo con flags por defecto
+(sin `--v1_metrics` / `--v2_metrics`):
 
-Además, las salidas de red hacia `builds.dotnet.microsoft.com`, `dotnetcli.azureedge.net`, `release-assets.githubusercontent.com` y `api.nuget.org` devuelven código de conexión 000 (bloqueadas). PyPI **no** ofrece el SDK (`dotnetcore2` es solo runtime).
+```
+Application, ProcessID, SwapChainAddress, PresentRuntime, SyncInterval, PresentFlags,
+AllowsTearing, PresentMode, TimeInMs, MsBetweenSimulationStart, MsBetweenPresents,
+MsBetweenDisplayChange, MsInPresentAPI, MsRenderPresentLatency, MsUntilDisplayed,
+CPUStartTimeInMs, MsBetweenAppStart, MsCPUBusy, MsCPUWait, MsGPULatency, MsGPUTime,
+MsGPUBusy, MsGPUWait, MsAnimationError, AnimationTime, MsFlipDelay,
+MsAllInputToPhotonLatency, MsClickToPhotonLatency
+```
 
-**Consecuencia honesta:** de la Capa 1 hay **diseño, código y pruebas**, pero **cero evidencia de ejecución**. Todo lo que sigue está escrito como *lo que el código hace*, no como *lo que se observó al correrlo*. Las fases 1–6 se marcan como **NO EJECUTADO AQUÍ**. Lo único que se pudo validar por medios estáticos fue:
+### Valores ausentes
 
-- Equilibrio de llaves/paréntesis/corchetes en los 118 archivos `.cs` (script de verificación propio), sin desbalances atribuibles a código nuevo.
-- Búsqueda de APIs prohibidas (`OpenProcess`, `ReadProcessMemory`, `WriteProcessMemory`, `CreateRemoteThread`, `VirtualAllocEx`, `.MainModule`, `.Modules[`) en `src/`: **0 coincidencias**.
-- Búsqueda de `Arguments = "` (concatenación de línea de comandos) en `src/`: **0 coincidencias**.
-- Búsqueda de `HttpClient`, `WebClient`, `DownloadFile`, `DownloadStringAsync`, `Invoke-WebRequest` en `src/`: **0 coincidencias** (la única aparición de esos tokens está en el *denylist* de PowerShell, que es donde deben estar).
+Se escriben **`NA`**, no vacío. Los decimales usan punto y llegan a 14 dígitos
+(ruido de float). Se parsea con `CultureInfo.InvariantCulture`.
 
-Los tres últimos puntos están además congelados como pruebas (`SourceHygieneTests`), de modo que la primera ejecución en un equipo con SDK los vuelve a comprobar.
+### Columnas que usa FragForge
 
----
-
-## 1. Discrepancias entre el encargo y el código (el código gana)
-
-Revisadas antes de escribir nada, según la regla de la Capa 1.
-
-| # | El encargo decía | El código dice | Decisión |
-|---|---|---|---|
-| a | `FragForgePaths` debía tener `Experiments`/`Tools`/`Facts` | No los tenía | Añadidos + `ExperimentLockFile` y `LocalEvidence` (Fase 0.4) |
-| b | Sondas de diagnóstico como servicios independientes | Estaban como una lista preconstruida (`DiagnosticProbeFactory.CreateDefaults`) | Reemplazado por `Registrations` con una entrada de contenedor por sonda (Fase 0.2) |
-| c | Una sola `IProtectionPolicy` | Se registraba **dos veces** (CompositionRoot y AddFragForgeActions) | Queda una sola, la cargada de disco (Fase 0.3) |
-| d | Los hooks del usuario debían llegar al motor | Había un `AddSingleton<IEnumerable<IExperimentHook>>([])` vacío que los eclipsaba | Eliminado; cada hook es un registro propio (Fase 0.1) |
-| e | «`ICpuTopologyProbe` de `Abstractions/`» | Vive en `FragForge.Actions/Platform/CpuTopology.cs`, no en `Abstractions/` | No se movió: renombrar/mover está fuera del alcance de la Capa 1 |
-| f | `BenchmarkSession` con `schemaVersion` | Existe en `Core/Models/Results.cs` **sin** versión de esquema | No se tocó. Los artefactos nuevos (sesiones de experimento, facts, evidencia local) sí llevan `SchemaVersion` |
-| g | `EnvironmentSnapshotHook` recibía `IHardwareProfiler` | Lo recibía pero no lo usaba (el perfil llega en `ExperimentContext`) | Dependencia eliminada; el contenedor lo construye sin argumentos |
-
-Ninguna otra discrepancia: el catálogo (10 tweaks) y los tipos de `ConditionFactory` están intactos desde la Capa 0.
-
----
-
-## 2. Fases y estado real
-
-| Fase | Contenido | Estado |
+| Columna | Campo | Obligatoria |
 |---|---|---|
-| 0 | Prep del motor (4 cambios + gate) | **Escrito**, 8 pruebas |
-| 1 | Núcleo puro `Core/Experiments` | **Escrito**, 30 pruebas |
-| 2 | Captura, sensores y sondas | **Escrito**, 16 pruebas |
-| 2b | ETW DPC/ISR (opcional) | **No implementado** — decisión explícita, ver §7 |
-| 3 | `IExperimentRunner` | **Escrito**, 12 pruebas |
-| 4 | Persistencia e informe HTML | **Escrito**, 13 pruebas |
-| 5 | CLI (y GUI) | **CLI escrito**; **GUI no** — decisión explícita, ver §7 |
-| 6 | Pruebas | **113 pruebas nuevas, 203 en total** |
-| 7 | Este informe | Hecho |
+| `MsBetweenPresents` | `FrameTimesMs` | **sí** |
+| `MsCPUBusy` | `CpuBusyMs` | no |
+| `MsCPUWait` | `CpuWaitMs` | no |
+| `MsGPUBusy` | `GpuBusyMs` | no |
+| `MsGPUTime` | `GpuTimeMs` | no |
+| `MsBetweenDisplayChange` | `DisplayChangeMs` | no |
+| `MsUntilDisplayed` | `UntilDisplayedMs` | no |
+| `MsInPresentAPI` | `PresentApiMs` | no |
+| `PresentMode` | `PresentModes` | no |
+| `Application` | `ApplicationName` | no |
+| `ProcessID` | `ProcessId` | no |
+| `SwapChainAddress` | `SwapChainAddress` | no |
+| `TimeInMs` | `TimesMs` | no |
+| `SyncInterval` | `SyncIntervals` | no |
+| `AllowsTearing` | `AllowsTearing` | no |
+
+`MsAllInputToPhotonLatency` y `MsClickToPhotonLatency` **no se leen**: vienen `NA`
+salvo instrumentación especial, y no se usan para nada todavía.
+
+### Qué NO se verificó (y por tanto no se afirma en código ni en tests)
+
+- Comportamiento de `--session_name` / `--stop_existing_session`.
+- Columnas que aparecen con `--v1_metrics` / `--v2_metrics`.
+- Valores posibles de `PresentMode` en una partida real.
+- Si `MsGPUBusy` da datos reales en la iGPU Intel.
+- **Exit code de PresentMon**: no se observó. Por eso el éxito se decide por archivo.
+- Causa de los ~8,6 FPS de la captura de referencia (probable ventana sin foco o
+  pantalla de carga; **no confirmado**).
 
 ---
 
-## 3. Decisiones de medición que el código deja fijadas
+## Qué cambió
 
-### 3.1 Métricas (definiciones exactas, no «aproximadas»)
+### 1. Parser (`PresentMonCsvParser`)
 
-| Métrica | Definición implementada |
-|---|---|
-| `avgFps` | frames ÷ tiempo transcurrido, **después** del recorte de calentamiento |
-| `p1Low` | 1000 ÷ media de los frametimes del peor 1 % (los más altos) |
-| `p01Low` | igual con el peor 0.1 % |
-| `frameTimeP50/P99/P999` | percentil con interpolación lineal |
-| `jitterMs` | `P99 − P50` (dispersión robusta, no depende de la media) |
-| `frameTimeCv` | desviación estándar muestral ÷ media |
-| `stutterPct` | % de frames con frametime > 2 × mediana móvil de ±60 frames |
-| `cpuBusyP95` / `gpuBusyP95` | P95 del tiempo ocupado, solo si el CSV trae `CPUBusy`/`GPUBusy` |
-| `presentMode` | distribución porcentual + modo dominante |
+Reescrito contra el contrato. Todo por **nombre de columna**, `OrdinalIgnoreCase`,
+nunca por posición.
 
-**Recorte de calentamiento:** 10 s por defecto (`FrameMetricsCalculator.DefaultWarmupSeconds`), y el valor efectivo se guarda en cada corrida (`WarmupSkippedSeconds`) para que el informe no mienta sobre qué ventana se analizó.
+**Corrección de fondo.** `MsInPresentAPI` estaba como candidato de **CPU**. En la
+captura real no existe `CPUBusy` ni `MsCPUBusy`, así que el parser caía en
+`MsInPresentAPI` y reportaba **1.62 ms de "CPU ocupada"** cuando la CPU ocupada
+real era **113.78 ms** (columna `MsCPUBusy`). Ahora `MsInPresentAPI` se expone como
+`PresentApiMs` y nunca se usa como CPU.
 
-**Regla dura:** una métrica sin datos es `null` (=Unknown). Nunca 0. Un `p1Low = 0` significaría «fluidez infinita»; inventarlo sería mentir. Hay pruebas para el caso de columna ausente tanto en el parser como en las métricas.
+Otros defectos corregidos:
+- `MsBetweenDisplayChange` ya no es candidato de frametime. En 2.6.0 viene `NA`
+  sin seguimiento de display; tomarla como frametime convertiría "no medido" en
+  "infinita fluidez".
+- `SyncInterval` ya no es candidato de `PresentMode` (es un entero, no un modo).
 
-### 3.2 Estadística
+Comportamiento nuevo:
+- Columna obligatoria ausente ⇒ serie vacía marcada **con la lista de columnas
+  encontradas** (`HeaderColumns`).
+- `NA` y vacío ⇒ `null`. **Nunca 0.**
+- Swapchains múltiples: se analiza la dominante por número de filas, las demás se
+  reportan en `Warnings`. No se mezclan.
+- GPU "no disponible": había columna pero todas las celdas fueron 0 o `NA` ⇒
+  `GpuUnavailable = true`, no "GPU = 0".
+- Fila truncada: se descarta entera, no se usa a medias.
 
-- Bootstrap de diferencia de medianas, **2000 iteraciones, semilla fija 20260101**: misma entrada ⇒ mismo resultado, bit a bit, en la misma versión del runtime.
-- Test de permutación **exacto** cuando n ≤ 8 por brazo (enumeración de todas las particiones); Monte Carlo con semilla cuando n es mayor.
-- Delta de Cliff para tamaño de efecto ordinal.
-- **Vectores dorados verificados a mano en las pruebas:** percentil lineal sobre 1..10 ⇒ P25=3.25, P50=5.5, P90=9.1, P99=9.91; peor-1 % de 99 frames de 10 ms + 1 de 100 ms ⇒ 10.0 FPS; 200 Hz uniforme ⇒ jitter = 0; 3 vs 3 totalmente separados ⇒ p exacto = 0.1 (C(6,3)=20 particiones).
+### 2. Localización del exe (`PresentMonLocator`)
 
-### 3.3 Tabla de veredictos (la que está implementada)
+Orden: configuración explícita → `%ProgramFiles%\Intel\PresentMon\PresentMonConsoleApplication\PresentMon-*-x64.exe`
+(la versión mayor más alta) → error claro. **Nunca PATH.**
+
+La versión se obtiene de la primera línea de `--help` (`PresentMon 2.6.0`), sin gate
+de versión: el contrato se valida en runtime por columnas.
+
+Se comprobó que la ruta real es
+`C:\Program Files\Intel\PresentMon\PresentMonConsoleApplication\PresentMon-2.6.0-x64.exe`
+y que el exe no está en PATH.
+
+### 3. Comando de captura
+
+Se mantiene con `List<string>` → `ArgumentList` (sin shell, rutas con espacios
+intactas):
 
 ```
-Regresión por jitter > piso                      → Empeora  (prima sobre todo lo demás)
-IC95 de p1Low excluye 0 a favor
-  AND |efecto| > piso de p1Low
-  AND avgFps no cae más que su piso              → Mejora
-  AND avgFps cae más que su piso                 → Inconcluso (intercambio, no mejora limpia)
-IC95 de p1Low excluye 0 en contra                → Empeora
-TODO el IC95 (en % de la base) dentro del piso
-  AND al menos 3 corridas por brazo              → Sin diferencia
-Cualquier otro caso                              → Inconcluso
+--process_name <exe> --output_file <ruta> --timed <N> --terminate_after_timed --no_console_stats
 ```
 
-**Piso de ruido:** `NoiseFloor.ConservativeDefault` = **5 % p1Low / 2 % avgFps / 5 % jitter**, con `IsEstimated = false`. Mientras no haya calibración A/A, el veredicto **nunca** puede ser «Confirmado». Un piso inventado a la ligera sería peor que no tener veredicto.
+`--no_console_stats` va **explícito** para que no aparezca el warning de stderr.
 
-**Umbral de confirmación:** 5 corridas por brazo (`MinimumConfirmedRunsPerArm`). Con 3 vs 3 el p en el mejor caso es 0.1: afirmar «Confirmado» con esa muestra es estadísticamente imposible, y el código lo impide.
+**`--stop_existing_session` no se implementó.** Ver `docs/descartados.md`.
 
-**Equivalencia honesta:** declarar «Sin diferencia» exige que *todo* el IC95, convertido a % de la mediana base, quepa dentro del piso, y al menos 3 corridas por brazo. Es un criterio de equivalencia práctica, no un «no encontré diferencias».
+### 4. Puerta de validez (`CaptureValidityGate`)
 
-### 3.4 Aislamiento y anti-confusión
+Campo aditivo `RunResult.Validity`:
 
-- **Agenda ABAB intercalada** con el brazo inicial aleatorizado por semilla. El modo bloque existe pero se marca como confundido con la deriva térmica en el informe.
-- **El runner nunca toma el `IExecutionGate` del motor.** No lo recibe en el constructor (hay una prueba por reflexión que lo fija), aplica y revierte con `ITweakEngine`, y mide entre llamadas. Así una captura de 2 minutos no bloquea al motor ni deja el sistema a medias si el usuario cancela.
-- **Lock propio:** `%ProgramData%\FragForge\.fragforge-experiment.lock`, distinto del lock del motor. Dos mediciones no se solapan; una medición no impide aplicar un tweak.
-- **Verificación de estado:** después de cada Apply/Revert se consulta `GetStateAsync` para cada tweak. Si el estado no es el esperado, el experimento se **invalida** en lugar de medir una mentira.
-- **Entorno comparable:** se capturan build, plan de energía, refresco real, resolución, reinicio pendiente y servicing. Si cambian entre el inicio y la reanudación, se invalida.
-
----
-
-## 4. PresentMon: cómo se invoca y qué no se hace
-
-- Ubicación fija: `%ProgramData%\FragForge\tools\PresentMon.exe`.
-- **Verificación por SHA-256 contra una allowlist embebida que se entrega con `sha256: null`.**
-  - Fichero ausente ⇒ `Missing`, captura deshabilitada, mensaje que dice que **FragForge no descarga binarios**.
-  - Fichero presente con hash vacío ⇒ `HashPlaceholder`; el mensaje incluye el SHA-256 real calculado para que el usuario lo pegue en la allowlist tras verificarlo por su cuenta.
-  - Hash distinto ⇒ `HashMismatch`; el binario **no se ejecuta**.
-- **Sin hashes inventados.** La prueba `EmbeddedAllowlist_HasNoInventedHash` falla si alguien rellena el campo con cualquier cosa.
-- Argumentos (`ProcessStartInfo.ArgumentList`, nunca cadena concatenada):
-  `--process_name cs2.exe --output_file <csv> --session_name FragForge-<runId> --timed <s> --terminate_after_timed --no_console_stats`
-- **No se usa la opción de detener sesión existente:** mataría sesiones ETW de otras herramientas del usuario.
-- **Cancelación:** se mata el árbol de procesos (`Kill(entireProcessTree: true)`), se conserva el CSV parcial y la corrida se marca inválida.
-- `Parser`: localiza columnas **por nombre**; soporta `FrameTime`/`MsBetweenPresents`, `CPUBusy`/`msInPresentAPI`, `GPUBusy`/`GPUTime`, `PresentMode`. CSV con comillas y comas internas soportado. Cualquier `<= 0` se descarta.
-
-**Lo que no hay que confundir:** el parser está probado con CSV **sintéticos** que reproducen la forma de columna de 1.x y 2.x. No hay ni una captura real en este repositorio.
-
----
-
-## 5. Sensores, ratón y memoria
-
-### 5.1 Sensores (PDH)
-
-- 14 contadores candidatos, descubiertos en **runtime**: si un contador no existe, se reporta como ausente y la métrica queda `null`.
-- `cpuPackageTemp` **no es legible sin driver**. PawnIO está en el equipo y **NO se usa**. La zona térmica ACPI (`Thermal Zone Information`) se reporta como **proxy de confianza baja**, nunca como temperatura de núcleo.
-- `Energy Meter` (RAPL) solo existe si Windows lo expone; en muchos equipos no está, y eso se dice en lugar de rellenar con 0.
-
-### 5.2 `mouseRate`
-
-- Ventana `HWND_MESSAGE` (solo mensajes, invisible, fuera de Alt+Tab), `RegisterRawInputDevices` con usage page 1 / usage 2 y `RIDEV_INPUTSINK`.
-- **Solo se guardan timestamps de `QueryPerformanceCounter` y conteos.** Las coordenadas no se leen, ni se guardan, ni se registran.
-- Resultado: mediana de Hz, p5, jitter (P99−P50) e histograma de intervalos.
-- Válido solo con ≥ 100 intervalos; si no, se dice que muevas el ratón, no se inventa una cifra.
-
-### 5.3 `memBandwidth`
-
-- Buffer de 256 MiB recorrido con 1, 2 y 4 hilos; GB/s efectivos.
-- Se combina con evidencia SMBIOS (localizadores distintos, capacidades iguales).
-- **«Dual» solo con confianza Alta** (señal SMBIOS clara **y** dispersión < 12 %). En cualquier otro caso el veredicto de canal es `Unknown` con nota. Nunca se declara «Single» sin evidencia.
-- Se persiste en `facts.json` como `{valor, confianza, método, fecha}`.
-
----
-
-## 6. Persistencia
-
-```
-%ProgramData%\FragForge\
-├─ .fragforge.lock                  (motor)
-├─ .fragforge-experiment.lock       (medición)
-├─ facts.json                       (hechos medidos)
-├─ tools\PresentMon.exe             (verificado por hash)
-└─ experiments\
-   ├─ local-evidence.json           (sugerencias por tweak)
-   └─ <sessionId>\
-      ├─ session.json               (schemaVersion, plan, corridas, veredicto)
-      └─ runs\
-         ├─ run-01.csv              (frametimes crudos)
-         └─ run-01-sensors.csv      (sensores)
-```
-
-- Escritura **atómica** (temporal + `File.Move`), sin `.tmp` huérfanos; hay prueba.
-- Identificador de sesión validado por regex `^[A-Za-z0-9_-]{1,80}$`: `../../etc`, espacios y cadenas de 81 caracteres son rechazados antes de tocar el disco.
-- JSON **estricto**: `UnmappedMemberHandling.Disallow`. Un campo desconocido en `session.json` es un error, no se ignora.
-- El informe HTML es autocontenido: CSS y SVG propios, sin `<script>`, sin `<link>`, sin CDN. Todo texto del usuario pasa por `WebUtility.HtmlEncode` (probado con `<script>alert('x')</script>`). La línea de **5.00 ms está rotulada como referencia**, no como objetivo.
-
----
-
-## 7. Lo que deliberadamente NO se hizo
-
-| Elemento | Por qué |
-|---|---|
-| **GUI `MeasurementViewModel`** | El repositorio tiene 7 proyectos y ninguno es la GUI: no hay proyecto de interfaz donde colgarla. Crear un proyecto nuevo violaría la restricción de 7 proyectos. La lógica de medición es consumible tal cual desde el futuro host de UI. |
-| **ETW DPC/ISR (fase 2b)** | Marcada como SHOULD. Requiere `Microsoft.Diagnostics.Tracing.TraceEvent` y una sesión ETW propia; sin compilador ni Windows no se puede validar ni lo más básico (creación de sesión, permisos). Se deja fuera antes que entregar código que no se puede ni ejecutar. |
-| **Calibración A/A automática** | La estructura existe (`AaCalibration`, `NoiseFloor.IsEstimated`), pero calibrar el piso requiere ejecuciones reales. El piso por defecto es conservador y **bloquea «Confirmado»**, que es la decisión segura. |
-| **Modo «aplicar tweak automáticamente»** | El runner aplica y revierte con el motor existente, con verificación de estado. No se añadió ninguna vía nueva de escritura en Windows. |
-
----
-
-## 8. Comandos (los que el usuario ejecutará en el PN64)
-
-```powershell
-# 1. Verificación de la herramienta (esperando HashPlaceholder la primera vez)
-fragforge tools verify
-
-# 2. Refresco real del monitor (EnumDisplaySettings, no WMI)
-fragforge probe monitorRefresh
-
-# 3. Frecuencia real del ratón (10 s moviéndolo)
-fragforge mouse-test
-
-# 4. Línea base: 3 corridas de 120 s con 10 s de calentamiento
-fragforge baseline --duration 120 --runs 3
-
-# 5. Comparación A/B de un tweak
-fragforge ab latency.game-mode-on --runs 5
-
-# 6. Revisión y reanudación
-fragforge experiment list
-fragforge experiment show <sessionId>
-fragforge experiment resume <sessionId>
-fragforge experiment report <sessionId>
-```
-
-**Primer arranque esperado:** `tools verify` devolverá código **6** (medición inválida) con `HashPlaceholder` hasta que el usuario pegue el SHA-256 del binario oficial en `presentmon-allowlist.json`. Eso es el comportamiento correcto, no un fallo.
-
-Códigos de salida: `0` éxito · `1` fallo · `2` uso · `3` preflight/catálogo · `4` cancelado · `5` rollback crítico · `6` **medición inválida** (nuevo en Capa 1).
-
----
-
-## 9. Pruebas
-
-| Archivo | Pruebas |
-|---|---|
-| `Experiments/StatisticsTests.cs` | 11 |
-| `Experiments/FrameMetricsTests.cs` | 9 |
-| `Experiments/VerdictTests.cs` | 10 |
-| `Experiments/ExperimentPlanAndStoreTests.cs` | 15 |
-| `Experiments/ExperimentRunnerTests.cs` | 12 |
-| `Experiments/ReportAndLocalizationTests.cs` | 13 |
-| `Experiments/DiagnosticsAndDiTests.cs` | 15 |
-| `Experiments/SourceHygieneAndAnalysisTests.cs` | 12 |
-| `Measurement/CsvParserTests.cs` | 10 |
-| `Measurement/PresentMonCaptureTests.cs` | 6 |
-| **Nuevas** | **113** |
-| **Previas (Capa 0, intactas)** | **103** |
-| **Total de métodos de prueba** | **203** |
-| **Casos al ejecutar xUnit** | **≈216** (un `[Theory]` con 14 `[InlineData]` cuenta como 14) |
-
-> Las 103 pruebas de la Capa 0 no se tocaron; las 113 nuevas viven en carpetas separadas (`Experiments/`, `Measurement/`). **Ninguna de las 203 se ha ejecutado aquí.**
-
-Cobertura conceptual (no línea a línea): tabla de veredictos completa, vectores dorados de estadística, fixtures 1.x/2.x, columna ausente ⇒ Unknown, allowlist sin hash, ruta `HashPlaceholder` sin descarga, regex de id, escritura atómica y sin temporales, JSON estricto, runner sin gate, invalidación por estado no verificado, entorno cambiado, captura parcial, reanudación idempotente, render escapado y autocontenido, sugerencia de evidencia sin tocar catálogo, y escaneo estático de APIs prohibidas.
-
----
-
-## 10. NO validado en el PN64
-
-Lista literal de lo que **no** se ha comprobado en el equipo real (ASUS MiniPC PN64, i3-1220P, iGPU UHD, Win11 Pro 26200):
-
-1. **Compilación.** No hay SDK en este entorno. Cualquier error de tipos o de resolución de sobrecargas es posible; el código se revisó a mano contra las firmas reales de `Abstractions/`, pero eso no sustituye a un `dotnet build`.
-2. **Ejecución de las 216 pruebas.** Escritas, no ejecutadas.
-3. **PresentMon.** No se ha ejecutado nunca. Los nombres de argumento (`--process_name`, `--output_file`, `--session_name`, `--timed`, `--terminate_after_timed`, `--no_console_stats`) se eligieron por documentación, no por comprobación en el binario. **El primer `fragforge baseline` puede fallar por un nombre de argumento distinto en la versión instalada.**
-4. **Forma real del CSV de PresentMon 2.x** (orden, nombres exactos, presencia de `CPUBusy`). El parser está preparado para varias familias de nombres, pero no se ha enfrentado a un archivo auténtico.
-5. **Contadores PDH.** No se sabe cuáles existen realmente en el PN64; `Energy Meter` y `Thermal Zone` son los más dudosos.
-6. **`EnumDisplaySettings`** y el refresco real del monitor conectado.
-7. **Raw Input** con el ratón del usuario: ni tasa real, ni que `RIDEV_INPUTSINK` reciba eventos con la ventana de solo mensajes en su configuración.
-8. **`memBandwidth`**: ningún valor de referencia; el criterio de «dispersión < 12 % ⇒ estable» es un umbral de diseño, no medido.
-9. **Latencia del propio runner**: el enfriamiento por defecto es de 30 s; no está calibrado contra el comportamiento térmico del PN64 (28 W compartidos entre CPU e iGPU).
-10. **Comportamiento con Atlas Playbook v0.5.0 aplicado**: el precheck lee plan de energía y servicing, pero no se ha verificado que el plan activo tras Atlas sea el que el experimento espera.
-11. **GUI**: no existe (ver §7).
-12. **ETW/DPC/ISR**: no existe (ver §7).
-
----
-
-## 11. Archivos de la Capa 1
-
-### Nuevos (21)
-
-| Ruta | Líneas | Función |
+| Validez | Cuándo | Efecto |
 |---|---|---|
-| `src/FragForge.Core/Experiments/Statistics.cs` | 201 | Percentiles, LowFps, Cliff, bootstrap, permutación |
-| `src/FragForge.Core/Experiments/FrameMetrics.cs` | 178 | Métricas de corrida y recorte de calentamiento |
-| `src/FragForge.Core/Experiments/Verdict.cs` | 185 | Tabla de veredictos y estimación de efecto |
-| `src/FragForge.Core/Experiments/ExperimentModel.cs` | 182 | Plan, agenda, estado, entorno, facts |
-| `src/FragForge.Core/Experiments/IMeasurement.cs` | 119 | Contratos de captura, sensores y hechos |
-| `src/FragForge.Core/Experiments/Analysis.cs` | 113 | Cuello de botella y throttling |
-| `src/FragForge.Core/Experiments/ExperimentStore.cs` | 136 | Almacén, lock de experimentos, facts |
-| `src/FragForge.Core/Experiments/ExperimentRunner.cs` | 253 | Orquestador A/B |
-| `src/FragForge.Core/Experiments/EnvironmentSnapshotHook.cs` | 53 | `environment-<fase>.json` |
-| `src/FragForge.Core/Experiments/LocalEvidenceStore.cs` | 68 | `local-evidence.json` |
-| `src/FragForge.Core/Experiments/ExperimentReport.cs` | 179 | Informe HTML autocontenido |
-| `src/FragForge.Actions/Measurement/PresentMonCsvParser.cs` | 114 | Parser por nombre de columna |
-| `src/FragForge.Actions/Measurement/PresentMonCapture.cs` | 175 | Invocación de PresentMon |
-| `src/FragForge.Actions/Measurement/ToolManifest.cs` | 72 | Allowlist + verificación SHA-256 |
-| `src/FragForge.Actions/Measurement/presentmon-allowlist.json` | 13 | Allowlist con hash vacío |
-| `src/FragForge.Actions/Measurement/SensorSampler.cs` | 162 | PDH runtime |
-| `src/FragForge.Actions/Measurement/DisplayProbe.cs` | 161 | `monitorRefresh` + sondas |
-| `src/FragForge.Actions/Measurement/MouseRateProbe.cs` | 227 | Raw Input sin coordenadas |
-| `src/FragForge.Actions/Measurement/MemoryBandwidthExperiment.cs` | 138 | Ancho de banda + SMBIOS |
-| `src/FragForge.Actions/Measurement/EnvironmentProbe.cs` | 102 | Precheck de entorno |
-| `src/FragForge.Composition/Layer1Registration.cs` | 68 | Cableado DI |
-| `src/FragForge.Cli/MeasurementCommands.cs` | 248 | Verbos de medición |
+| `Invalid` | sin columna obligatoria, o 0 filas | no entra en el veredicto |
+| `Suspect` | FPS mediana < 30; todo `PresentMode=Other` o display todo `NA`; GPU no disponible; >1 swapchain; <50 % de frames esperados | se guarda y se informa; **no bloquea** |
+| `Valid` | resto | normal |
 
-### Modificados (9)
-
-`FragForgePaths.cs`, `ServiceCollectionExtensions.cs`, `DiagnosticProbes.cs`, `CompositionRoot.cs`, `FragForge.Actions.csproj`, `Directory.Packages.props`, `CommandLine.cs`, `Program.cs`, `FragForgeException.cs`.
-
-### Dependencia añadida
-
-`System.Diagnostics.PerformanceCounter` 10.0.11 — la única permitida para la fase 2. `Microsoft.Diagnostics.Tracing.TraceEvent` **no** se añadió porque la fase 2b no se implementó.
+`ExperimentArm.IsValid` incluye `Validity.IsUsable`, de modo que `Verdict.Evaluate`
+no declara mejora si alguna corrida es `Invalid`. El reporte HTML muestra la
+validez de cada corrida con sus motivos.
 
 ---
 
-## 12. Siguiente paso concreto
+## Archivos tocados
 
-En un equipo con SDK 10.0.400:
+| Archivo | Cambio |
+|---|---|
+| `src/FragForge.Core/Experiments/FrameMetrics.cs` | +14 campos aditivos en `FrameSeries` |
+| `src/FragForge.Core/Experiments/CaptureValidity.cs` | **nuevo** — enum, reporte y puerta |
+| `src/FragForge.Core/Experiments/ExperimentModel.cs` | `RunResult.Validity`; `ExperimentArm.IsValid` |
+| `src/FragForge.Core/Experiments/ExperimentRunner.cs` | evalúa la puerta y la guarda |
+| `src/FragForge.Core/Experiments/ExperimentReport.cs` | columna de validez con motivos |
+| `src/FragForge.Actions/Measurement/PresentMonCsvParser.cs` | reescrito |
+| `src/FragForge.Actions/Measurement/PresentMonLocator.cs` | **nuevo** |
+| `src/FragForge.Actions/Measurement/PresentMonCapture.cs` | localización + criterio de éxito |
+| `tests/.../Measurement/CsvParserTests.cs` | fixtures reales + 7 tests nuevos |
+| `tests/.../Measurement/CaptureValidityTests.cs` | **nuevo** — 10 tests |
+| `tests/.../Measurement/PresentMonLocatorTests.cs` | **nuevo** — 5 tests |
+| `tests/.../Measurement/PresentMonCaptureTests.cs` | +2 tests de criterio de éxito |
+| `docs/descartados.md` | por qué no se implementó `--stop_existing_session` |
 
-```bash
-dotnet build FragForge.sln -c Release
-dotnet test tests/FragForge.Tests/FragForge.Tests.csproj -c Release
-```
+---
 
-Esperar un primer pase con errores de compilación (es lo normal con 4,900 líneas escritas a ciegas) y corregirlos antes de tocar el PN64. Después, en el PN64, en este orden y parando en el primer fallo:
+## Tests que fallarían sin el cambio (red-first)
 
-```powershell
-fragforge tools verify          # esperar 6 + HashPlaceholder
-fragforge probe monitorRefresh  # debe dar las Hz reales
-fragforge mouse-test            # debe dar ~1000 Hz en un ratón de 1000 Hz
-fragforge baseline --duration 120 --runs 3
-```
+| Test | Por qué falla antes |
+|---|---|
+| `Real260_CpuComesFromMsCPUBusy_NotFromMsInPresentAPI` | el parser tomaba `MsInPresentAPI` (1.62) como CPU |
+| `V1CpuColumnIsAbsent_SoCpuIsNull_NotTakenFromMsInPresentAPI` | sin `MsCPUBusy` devolvía 0.40 en vez de null |
+| `Real260_NaCells_BecomeNull_AndNeverZero` | no había tratamiento explícito de `NA` |
+| `Real260_GpuAllZero_IsReportedUnavailable` | `GpuUnavailable` no existía |
+| `Real260_ColumnOrderCanBePermuted_AndStillParses` | — (ya pasaba, ahora es regresión) |
+| `TruncatedRow_IsDiscarded_NotPartiallyUsed` | ya pasaba; se conserva |
+| `MultipleSwapChains_AnalysesDominant_AndWarns` | no se detectaban swapchains |
+| `MissingRequiredColumn_ListsTheColumnsFound` | el mensaje no listaba columnas |
+| `Real260Capture_IsSuspect_NotValid_NotInvalid` | la puerta no existía |
+| `Validity_IsAdditiveInJson_AndOldDocumentsStillLoad` | el campo no existía |
+| `Validity_RoundTripsThroughJson` | el campo no existía |
+| `SuccessRequiresFileWithRequiredColumn_NotExitCodeOrStdout` | no estaba el criterio documentado |
+| `MissingCsv_IsReported_EvenWithExitCodeZero` | idem |
+| `ConfiguredPathWins_WhenItExists` | el localizador no existía |
+| `MissingConfiguredPath_ReportsIt_AndDoesNotFallBackSilently` | idem |
 
-Si `baseline` produce tres corridas con `p1Low` dentro del ±5 % entre sí, el piso de ruido por defecto es razonable para este equipo y se puede calibrar A/A con datos. Si no, el piso conservador ya está evitando que se declare una mejora inexistente.
+---
+
+## Lo que NO se pudo verificar
+
+1. **No hay `dotnet` en el entorno.** Nada se compiló ni se ejecutó. El único chequeo
+   automático aplicado fue el parser de sintaxis (tree-sitter) sobre los 12 archivos
+   tocados: los 12 están sintácticamente válidos. Eso **no** es compilar.
+2. **El comportamiento de PresentMon no se reprodujo aquí.** Todas las afirmaciones
+   sobre 2.6.0 vienen de la captura que aportaste; no de una ejecución mía.
+3. **`--stop_existing_session`** y las columnas de `--v1_metrics`/`--v2_metrics`
+   siguen sin verificar.
+4. **No hay test de integración real**: `PresentMonFrameCapture` se prueba con un
+   lanzador falso. Una captura real de extremo a extremo no se ejecutó.
+5. **La heurística de la puerta no está calibrada contra partidas reales.** Los
+   umbrales (30 FPS, 50 % de frames) son cotas razonables, no resultados medidos.
+
+**Siguiente paso obligatorio:** `dotnet build` en tu máquina con SDK 10.0.403 y
+`dotnet test`. Si algo no compila, con la salida real lo corrijo.

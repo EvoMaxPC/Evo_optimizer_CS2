@@ -128,3 +128,28 @@ Al añadirlo, hay que volver a incluir su id en la tabla `ProfileMembership` del
 Si un tweak aparece aquí, **no** debe añadirse al catálogo sin cumplir la sección "para reabrirlo". El
 test `ProfileMembership_MatchesTheDeclaredTable_ForEveryCatalogId` obliga a declarar perfiles para todo
 id del catálogo; este documento obliga a justificar por qué algunos ids no existen.
+
+---
+
+## `--stop_existing_session` de PresentMon (rechazado en la ronda de Capa 1, contrato 2.6.0)
+
+El contrato de PresentMon 2.6.0 de esa ronda pedía añadir `--stop_existing_session` al comando de captura.
+**No se implementó.** Tres motivos, en orden de peso:
+
+1. **Choca con R-M.** La opción mata sesiones ETW existentes. FragForge no mata nada ajeno sin
+   confirmación explícita, y una sesión ETW puede pertenecer a LatencyMon, a un profiler del usuario o a
+   Intel PresentMon Service. El test `PresentMonIsNeverInvokedWithStopExistingSession`
+   (`SourceHygieneAndAnalysisTests`) lo prohíbe de forma deliberada para cualquier `.cs` de `src/`.
+
+2. **No tendría efecto útil con el diseño actual.** La opción opera sobre el nombre de sesión. FragForge
+   genera un nombre único por corrida (`FragForge-<runId>`, `PresentMonFrameCapture.SessionName`), así que
+   **no existe una sesión previa con ese nombre** que detener. Sería un no-op que solo añade riesgo.
+
+3. **Comportamiento no verificado.** Qué hace exactamente la opción cuando hay una sesión con el mismo
+   nombre, y si afecta a sesiones de otros nombres, no se observó en la PC objetivo. R-L prohíbe actuar
+   sobre lo no verificado.
+
+**Para reabrirlo:** hacerlo con un nombre de sesión fijo y documentado, cambiar primero el test de higiene
+(de forma consciente y explicada), probar en la PC objetivo qué ocurre con una sesión ajena activa, y
+exigir confirmación interactiva al usuario. Mientras tanto, la captura falla de forma limpia si hay una
+sesión con el mismo nombre, que es el comportamiento seguro.
