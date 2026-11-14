@@ -36,7 +36,7 @@ public sealed class PowerPlanAction : ITweakAction
         // Plan del que se leen los valores AC antes de escribir:
         //  - modo normal: el plan de ORIGEN (el FragForge puede no existir todavía);
         //  - modo settingsOnly: el plan destino, que tiene que existir (no se duplica nada).
-        var queryGuid = _parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase)
+        var queryGuid = _parameters.IsSettingsOnly
             ? (FindPlan(plans) ?? throw new ActionNotApplicableException($"El plan '{_parameters.PlanName}' no existe en este equipo; settingsOnly no crea planes.")).Guid
             : (FindSourcePlan(plans) ?? throw new ActionNotApplicableException($"El plan base {_parameters.SourceSchemeGuid} no existe en este equipo; no se puede duplicar.")).Guid;
 
@@ -75,7 +75,7 @@ public sealed class PowerPlanAction : ITweakAction
         //    y el revert tiene algo real que restaurar.
         //  - settingsOnly: SOLO del plan destino; si no existe, no hay nada que capturar (Preflight ya
         //    lo habrá marcado NotApplicable).
-        var capturePlan = _parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase)
+        var capturePlan = _parameters.IsSettingsOnly
             ? existing
             : existing ?? FindSourcePlan(plans);
 
@@ -133,7 +133,7 @@ public sealed class PowerPlanAction : ITweakAction
     {
         var plan = FindPlan(await ListPlansAsync(cancellationToken));
         if (plan is null) return VerificationResult.Missing("El plan FragForge no existe.");
-        var settingsOnly = _parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase);
+        var settingsOnly = _parameters.IsSettingsOnly;
         // Una sola consulta de /qh para decidir qué variantes no se escribieron (no una por ajuste).
         IReadOnlyList<PowerSettingQuery>? enumerated = null;
         if (_parameters.SkipUnenumeratedSettings) enumerated = await QuerySettingsAsync(plan.Value.Guid, cancellationToken);
@@ -159,7 +159,7 @@ public sealed class PowerPlanAction : ITweakAction
         var state = (PowerPlanActionState)before;
 
         // ---- settingsOnly: revierte SOLO sus valores. Nunca borra el plan, nunca cambia el activo. ----
-        if (_parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase))
+        if (_parameters.IsSettingsOnly)
         {
             var target = FindPlan(await ListPlansAsync(cancellationToken));
             if (target is null)
@@ -202,7 +202,7 @@ public sealed class PowerPlanAction : ITweakAction
     {
         var state = (PowerPlanActionState)before;
 
-        if (_parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase))
+        if (_parameters.IsSettingsOnly)
         {
             var target = FindPlan(await ListPlansAsync(cancellationToken));
             // Plan ausente = nada que revertir: éxito con nota, no fallo.
@@ -232,7 +232,7 @@ public sealed class PowerPlanAction : ITweakAction
         var existing = FindPlan(await ListPlansAsync(cancellationToken));
         var settings = string.Join(", ", _parameters.Settings.Select(s => $"{s.SettingGuid} AC={s.AcValue} DC={s.DcValue}"));
 
-        if (_parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase))
+        if (_parameters.IsSettingsOnly)
             return existing is null
                 ? $"El plan '{_parameters.PlanName}' no existe: no se crea (settingsOnly). No se escribirá nada."
                 : $"Escribir solo valores en el plan existente '{_parameters.PlanName}' ({existing.Value.Guid}): {settings}. No duplica, no borra y no cambia el plan activo; revert restaura solo estos valores.";
@@ -245,7 +245,7 @@ public sealed class PowerPlanAction : ITweakAction
         if (string.IsNullOrWhiteSpace(_parameters.PlanName) || _parameters.PlanName.Contains('(') || _parameters.PlanName.Contains(')') || _parameters.PlanName.Length > 80) throw new CatalogValidationException("Invalid power plan name.", [_parameters.PlanName]);
         if (!Guid.TryParseExact(_parameters.SourceSchemeGuid, "D", out _)) throw new CatalogValidationException("Invalid source scheme GUID.", [_parameters.SourceSchemeGuid]);
         if (_parameters.Settings.Count == 0) throw new CatalogValidationException("Power plan requires settings.", ["settings"]);
-        if (_parameters.Mode is not null && !_parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase))
+        if (_parameters.Mode is not null && !_parameters.IsSettingsOnly)
             throw new CatalogValidationException("Modo de PowerPlan desconocido; solo se admite 'settingsOnly'.", [_parameters.Mode]);
         foreach (var setting in _parameters.Settings)
         {
@@ -318,6 +318,13 @@ internal sealed record PowerPlanParameters
     /// existe: no duplica, no borra y no cambia el plan activo (lo usan los tweaks de settings).
     /// </summary>
     public string? Mode { get; init; }
+
+    /// <summary>
+    /// ¿El plan solo escribe valores en un plan que ya existe? <c>Mode</c> es NULLABLE: el modo
+    /// histórico no trae <c>mode</c> en el JSON, así que comparar <c>Mode.Equals(...)</c> directamente
+    /// es un NullReferenceException en el tweak más antiguo del catálogo. Toda la clase pregunta aquí.
+    /// </summary>
+    public bool IsSettingsOnly => string.Equals(Mode, "settingsOnly", StringComparison.OrdinalIgnoreCase);
     /// <summary>
     /// Si es true, las variantes de un mismo ajuste que el sistema NO enumere se omiten en vez de
     /// hacer fallar el tweak entero (siempre que al menos una esté enumerada). Es lo que necesita un

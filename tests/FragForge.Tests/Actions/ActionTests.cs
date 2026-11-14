@@ -285,6 +285,51 @@ public sealed class PowerPlanActionTests
         Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
     }
 
+    // ---------- Regresión: Mode es nullable y el modo histórico no lo trae ----------
+
+    [Fact]
+    public async Task WithoutMode_TheHistoricalBehaviorStillWorks_AndDoesNotThrow()
+    {
+        // power.fragforge-performance NO trae "mode" en el JSON, así que Mode = null. La clase lo
+        // comparaba con _parameters.Mode.Equals(...), que es un NullReferenceException. Este test
+        // fija el caso: sin mode se duplica el plan, no se trata como settingsOnly.
+        var simulator = new PowerCfgSimulator();
+        var action = new PowerPlanAction(simulator.Runner, Spec_());
+
+        await action.PreflightAsync(Context());
+        var captured = await action.CaptureAsync(Context());
+        await action.ApplyAsync(captured, Context());
+
+        Assert.False(((PowerPlanActionState)captured).PlanExisted, "sin mode: el plan se duplica");
+        Assert.True(simulator.HasCommand("/duplicatescheme"), "debe duplicar el plan de origen");
+    }
+
+    [Fact]
+    public async Task WithSettingsOnly_DoesNotDuplicateThePlan()
+    {
+        // El mismo escenario pero con mode: comportamiento distinto, lo que demuestra que la bandera
+        // se lee de verdad y que null no se confunde con settingsOnly.
+        var spec = new ActionSpec
+        {
+            Kind = "PowerPlan",
+            Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new
+            {
+                planName = "FragForge Performance",
+                sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+                mode = "settingsOnly",
+                settings = new[] { new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = 0, dcValue = 0 } }
+            })
+        };
+        var simulator = new PowerCfgSimulator { PlanExists = true };
+        var action = new PowerPlanAction(simulator.Runner, spec);
+
+        var captured = await action.CaptureAsync(Context());
+        await action.ApplyAsync(captured, Context());
+
+        Assert.True(((PowerPlanActionState)captured).PlanExisted);
+        Assert.False(simulator.HasCommand("/duplicatescheme"), "settingsOnly NO duplica");
+    }
+
     // ---------- B1: validador "entero >= 0" y rango real contra /qh ----------
 
     [Fact]
