@@ -22,7 +22,10 @@ public sealed class CatalogTests
         var tasks = new FakeScheduledTaskStore();
         var network = new FakeNetworkAdapterController();
         var runner = new FakeProcessRunner();
-        var factory = new TweakActionFactory(registry, policy, services, tasks, network, runner, DiagnosticProbeFactory.CreateDefaults(registry));
+        var factory = new TweakActionFactory(registry, policy, services, tasks, network, runner, DiagnosticProbeFactory.CreateDefaults(registry),
+            // El catalogo real trae network.i225v-eee-off (NetAdapterProperty) y el validador construye TODAS
+            // las acciones al cargar: sin resolutor, el catalogo no carga.
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         var validator = new TweakCatalogValidator(schema, new ConditionFactory(), factory);
         return (new JsonTweakCatalogLoader(validator), schema);
     }

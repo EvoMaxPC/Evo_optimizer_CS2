@@ -174,7 +174,8 @@ public sealed class MainViewModelTests
         var factory = new FragForge.Actions.DependencyInjection.TweakActionFactory(
             registry, FragForge.Core.Persistence.ProtectionPolicy.CreateDefault(),
             new FakeServiceController(), new FakeScheduledTaskStore(), new FakeNetworkAdapterController(),
-            new FakeProcessRunner(), FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry));
+            new FakeProcessRunner(), FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         return new FragForge.Tweaks.Validation.TweakCatalogValidator(
             new FragForge.Tweaks.Validation.JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
             new FragForge.Core.Conditions.ConditionFactory(), factory);

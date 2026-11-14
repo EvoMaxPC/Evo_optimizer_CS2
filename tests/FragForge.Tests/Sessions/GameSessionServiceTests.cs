@@ -298,7 +298,10 @@ public sealed class GameSessionServiceTests : IDisposable
         var factory = new FragForge.Actions.DependencyInjection.TweakActionFactory(
             registry, FragForge.Core.Persistence.ProtectionPolicy.CreateDefault(), new FakeServiceController(),
             new FakeScheduledTaskStore(), new FakeNetworkAdapterController(), new FakeProcessRunner(),
-            FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry));
+            FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry),
+            // El catalogo real trae network.i225v-eee-off y el validador construye TODAS las acciones al
+            // cargar: sin resolutor, el catalogo entero no carga.
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         var validator = new FragForge.Tweaks.Validation.TweakCatalogValidator(schema, new FragForge.Core.Conditions.ConditionFactory(), factory);
         return await new FragForge.Tweaks.JsonTweakCatalogLoader(validator).LoadEmbeddedAsync();
     }

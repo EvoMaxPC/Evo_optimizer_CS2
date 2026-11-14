@@ -31,7 +31,8 @@ public sealed class TierValidatorIntegrationTests
             new FakeScheduledTaskStore(),
             new FakeNetworkAdapterController(),
             new FakeProcessRunner(),
-            DiagnosticProbeFactory.CreateDefaults(registry));
+            DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         return new TweakCatalogValidator(
             new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
             new ConditionFactory(),

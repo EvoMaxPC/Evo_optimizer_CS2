@@ -32,7 +32,8 @@ public sealed class RealCatalogDenylistTests
         new FakeScheduledTaskStore(),
         new FakeNetworkAdapterController(),
         new FakeProcessRunner(),
-        DiagnosticProbeFactory.CreateDefaults(registry));
+        DiagnosticProbeFactory.CreateDefaults(registry),
+        adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
 
     /// <summary>Reproduce el validador de CompositionRoot, incluidos los tiers.</summary>
     private static JsonTweakCatalogLoader ProductionLikeLoader(ITweakActionFactory factory) => new(new TweakCatalogValidator(

@@ -189,7 +189,8 @@ public sealed class TweakCountTextTests
         var registry = new FakeRegistry();
         var factory = new TweakActionFactory(
             registry, ProtectionPolicy.CreateDefault(), new FakeServiceController(), new FakeScheduledTaskStore(),
-            new FakeNetworkAdapterController(), new FakeProcessRunner(), DiagnosticProbeFactory.CreateDefaults(registry));
+            new FakeNetworkAdapterController(), new FakeProcessRunner(), DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         var validator = new TweakCatalogValidator(schema, new ConditionFactory(), factory);
         return await new JsonTweakCatalogLoader(validator).LoadEmbeddedAsync();
     }

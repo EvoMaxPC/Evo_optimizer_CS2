@@ -178,7 +178,8 @@ public sealed class ApplyFlowTests
         var factory = new FragForge.Actions.DependencyInjection.TweakActionFactory(
             registry, FragForge.Core.Persistence.ProtectionPolicy.CreateDefault(),
             new FakeServiceController(), new FakeScheduledTaskStore(), new FakeNetworkAdapterController(),
-            new FakeProcessRunner(), FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry));
+            new FakeProcessRunner(), FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         var validator = new FragForge.Tweaks.Validation.TweakCatalogValidator(schema, new FragForge.Core.Conditions.ConditionFactory(), factory);
         return new JsonTweakCatalogLoader(validator);
     }

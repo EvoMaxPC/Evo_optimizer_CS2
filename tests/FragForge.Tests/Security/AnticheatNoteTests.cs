@@ -110,7 +110,8 @@ public sealed class AnticheatNoteTests
         var factory = new FragForge.Actions.DependencyInjection.TweakActionFactory(
             registry, policy, new FakeServiceController(), new FakeScheduledTaskStore(),
             new FakeNetworkAdapterController(), new FakeProcessRunner(),
-            FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry));
+            FragForge.Actions.Diagnostics.DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         return new TweakCatalogValidator(schema, new FragForge.Core.Conditions.ConditionFactory(), factory);
     }
 }

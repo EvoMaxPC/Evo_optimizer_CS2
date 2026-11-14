@@ -33,7 +33,8 @@ public sealed class ExternalCatalogResilienceTests
         var factory = new TweakActionFactory(
             registry, policy, new FakeServiceController(), new FakeScheduledTaskStore(),
             new FakeNetworkAdapterController(), new FakeProcessRunner(),
-            DiagnosticProbeFactory.CreateDefaults(registry));
+            DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new FragForge.Actions.Network.UnsupportedNetworkAdapterResolver());
         return new JsonTweakCatalogLoader(new TweakCatalogValidator(schema, new ConditionFactory(), factory));
     }
 

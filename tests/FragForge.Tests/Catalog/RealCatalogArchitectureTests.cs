@@ -1,5 +1,6 @@
 using FragForge.Actions.DependencyInjection;
 using FragForge.Actions.Diagnostics;
+using FragForge.Actions.Network;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Conditions;
 using FragForge.Core.Engine;
@@ -29,9 +30,14 @@ public sealed class RealCatalogArchitectureTests
         var schema = new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema());
         var registry = new FakeRegistry();
         var policy = ProtectionPolicy.CreateDefault();
+        // Resolutor SIN SOPORTE, como el que el contenedor registra fuera de Windows. Se pasa explicitamente
+        // porque el catalogo real incluye network.i225v-eee-off (NetAdapterProperty) y el validador construye
+        // TODAS las acciones al cargar: sin resolutor, la accion no se puede construir y el catalogo entero
+        // queda incargable.
         var factory = new TweakActionFactory(
             registry, policy, new FakeServiceController(), new FakeScheduledTaskStore(),
-            new FakeNetworkAdapterController(), new FakeProcessRunner(), DiagnosticProbeFactory.CreateDefaults(registry));
+            new FakeNetworkAdapterController(), new FakeProcessRunner(), DiagnosticProbeFactory.CreateDefaults(registry),
+            adapterResolver: new UnsupportedNetworkAdapterResolver());
         var validator = new TweakCatalogValidator(schema, new ConditionFactory(), factory);
         return await new JsonTweakCatalogLoader(validator).LoadEmbeddedAsync();
     }
@@ -159,6 +165,26 @@ public sealed class RealCatalogArchitectureTests
         var safe = ProfileSelector.Select(catalog.Definitions, TweakProfile.Safe).Select(d => d.Id).ToArray();
 
         Assert.Equal(["diagnostics.system-inspect", "latency.game-mode-on", "latency.mouse-acceleration-off"], safe);
+    }
+
+    /// <summary>
+    /// Regresion de la ronda 3: el catalogo real tiene al menos un tweak NetAdapterProperty, y el validador
+    /// construye todas las acciones al cargar. Si la fabrica no puede construir esa accion, el catalogo entero
+    /// no carga: se cae el arranque, no el tweak. Con un resolutor sin soporte la accion debe CONSTRUIRSE
+    /// (el "no aplica" es cosa del apply, via ActionNotApplicableException, no del arranque).
+    /// </summary>
+    [Fact]
+    public async Task RealCatalog_WithAnUnsupportedNetworkResolver_StillLoads()
+    {
+        var catalog = await LoadRealCatalogAsync();
+
+        var network = catalog.Definitions
+            .Where(d => d.Actions.Any(a => a.Kind.Equals("NetAdapterProperty", StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+
+        // Si esto falla, el catalogo ya no ejercita el camino que cubre este test: revisa si sigue habiendo
+        // un tweak de red por propiedades de adaptador antes de borrarlo.
+        Assert.NotEmpty(network);
     }
 
     private static ConditionResult EvaluateAll(TweakDefinition definition, HardwareProfile profile)
