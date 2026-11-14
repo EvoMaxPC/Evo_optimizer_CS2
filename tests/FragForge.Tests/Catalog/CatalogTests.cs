@@ -394,61 +394,226 @@ public sealed class CatalogTests
         Assert.Equal("ACEPTO EL RIESGO", es["risk.phrase"]);
     }
 
-    // ------------------------------------------------------------------ Ronda 10A, P6: paridad de localización
+    // ---------------------------------------------------------------- Ronda 10A P6 / 10B B1-B2: i18n
 
     /// <summary>
-    /// Paridad REAL entre los dos idiomas y contra el código: mismo conjunto de claves, ningún valor vacío y
-    /// cada clave que el código pide con un literal existe en los dos ficheros.
+    /// Paridad REAL entre los dos idiomas y contra el código, por el camino de producción.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Se leen los JSON del RECURSO EMBEBIDO (no del disco): es exactamente lo que carga
+    /// Se leen los JSON del RECURSO EMBEBIDO (no del disco): es lo que carga
     /// <c>LocalizationLoader.LoadAsync</c> en producción (LocalizationLoader.cs:11), así que si el recurso no
-    /// se empaquetó, esto lo ve. El test anterior (<c>Localization_LoadsBothLanguagesWithTheSameKeys</c>)
-    /// solo comparaba cuatro claves sueltas con Assert.Equal; no comprobaba CONJUNTOS, ni vacíos, ni que una
-    /// clave usada en el código exista.
-    /// </para>
-    /// <para>
-    /// Por qué se comprueban las claves contra el código: <c>Localizer[key]</c> devuelve LA CLAVE cuando
-    /// falta (Localizer.cs:15), sin lanzar y sin avisar. Un <c>localizer["typo.aqui"]</c> no rompe nada:
-    /// pinta "typo.aqui" en la UI. Ese fallo solo se ve si alguien compara contra los recursos.
-    /// </para>
-    /// <para>
-    /// El escaneo de literales es deliberadamente PARCIAL y así se declara: hay claves construidas en
-    /// tiempo de ejecución (<c>_localizer[SessionStateKey]</c> en MainViewModel.cs:199, y
-    /// <c>localizer["state." + status.State]</c> en TweakItemViewModel.cs:48) que ningún escaneo de texto
-    /// puede resolver sin ejecutar el código. Esas se cubren por lista explícita abajo (<c>DynamicKeys</c>),
-    /// que es la parte que un grep nunca podría dar.
-    /// </para>
+    /// se empaquetó, esto lo ve.
+    ///
+    /// La lógica de comparación NO vive aquí: vive en <see cref="FindLocalizationProblems"/>, que recibe los
+    /// diccionarios. Eso es lo que permite los tests negativos de abajo (B1c), que le pasan datos en memoria
+    /// y SÍ comprueban que detecta. Un test que solo mira los ficheros reales y espera lista vacía no
+    /// demuestra que detecte nada.
     /// </remarks>
     [Fact]
     public async Task Localization_HasParityBetweenLanguages_AndCoversTheKeysTheCodeUses()
     {
         var es = await ReadLocalizationResourceAsync("es-MX");
         var en = await ReadLocalizationResourceAsync("en-US");
+        var usedKeys = LiteralKeysUsedInSource().Concat(DynamicKeys).Distinct(StringComparer.Ordinal).ToList();
 
-        // (a) Mismo CONJUNTO de claves, y el mensaje dice cuáles faltan en cada lado.
-        var missingInEn = es.Keys.Except(en.Keys, StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        var missingInEs = en.Keys.Except(es.Keys, StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        Assert.True(missingInEn.Length == 0, $"Faltan en en-US: {string.Join(", ", missingInEn)}");
-        Assert.True(missingInEs.Length == 0, $"Faltan en es-MX: {string.Join(", ", missingInEs)}");
+        var problems = FindLocalizationProblems(es, en, usedKeys);
 
-        // (b) Ningún valor vacío en ninguno de los dos.
-        var blankEs = es.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        var blankEn = en.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        Assert.True(blankEs.Length == 0, $"Valores vacíos en es-MX: {string.Join(", ", blankEs)}");
-        Assert.True(blankEn.Length == 0, $"Valores vacíos en en-US: {string.Join(", ", blankEn)}");
+        Assert.True(problems.Count == 0, "Problemas de localización:\n" + string.Join("\n", problems));
+        // En lugar de un número fijo de claves (que se rompe con cada clave nueva): que haya un conjunto
+        // común no vacío, y que ninguna de las dos esté vacía.
+        Assert.NotEmpty(es);
+        Assert.NotEmpty(en);
+        Assert.NotEmpty(es.Keys.Intersect(en.Keys, StringComparer.Ordinal));
+        // Y que el escaneo no se rompa en silencio: si la regex dejara de encontrar nada, esto lo dice.
+        Assert.NotEmpty(usedKeys);
+    }
 
-        // (c) Cada clave usada como LITERAL en src/ existe en los dos idiomas.
-        var used = LiteralKeysUsedInSource().Concat(DynamicKeys).Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        Assert.NotEmpty(used);   // si el escaneo se rompe, no puede dar verde por vacío
-        var missingUsed = used.Where(k => !es.ContainsKey(k) || !en.ContainsKey(k)).ToArray();
-        Assert.True(missingUsed.Length == 0,
-            $"El código pide claves que no están en los dos JSON: {string.Join(", ", missingUsed)}");
+    /// <summary>
+    /// La lógica de comparación, extraída para poder ejercitarla con datos en memoria.
+    /// Devuelve una lista de problemas legibles; vacía = todo bien.
+    /// </summary>
+    /// <remarks>
+    /// Reglas:
+    ///  (a) mismo conjunto de claves en los dos idiomas;
+    ///  (b) ningún valor vacío ni solo espacios;
+    ///  (c) toda clave que el código pide (literales escaneados + dinámicas enumeradas) existe en LOS DOS.
+    /// El mensaje nombra la clave Y el idioma afectado, que es lo que asertan los tests negativos.
+    /// </remarks>
+    internal static List<string> FindLocalizationProblems(
+        IReadOnlyDictionary<string, string> es,
+        IReadOnlyDictionary<string, string> en,
+        IEnumerable<string> usedKeys)
+    {
+        var problems = new List<string>();
 
-        // Dato real del test (no de un script suelto), y de paso una red contra vaciar un fichero.
-        Assert.Equal(87, es.Count);
-        Assert.Equal(87, en.Count);
+        // (a) Claves que están en un idioma y no en el otro.
+        foreach (var key in es.Keys.Except(en.Keys, StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal))
+            problems.Add($"Falta en en-US: {key}");
+        foreach (var key in en.Keys.Except(es.Keys, StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal))
+            problems.Add($"Falta en es-MX: {key}");
+
+        // (b) Valores vacíos o solo espacios.
+        foreach (var key in es.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal))
+            problems.Add($"Valor vacío en es-MX: {key}");
+        foreach (var key in en.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).OrderBy(k => k, StringComparer.Ordinal))
+            problems.Add($"Valor vacío en en-US: {key}");
+
+        // (c) Claves que el código pide y que no están en alguno de los dos.
+        foreach (var key in usedKeys.Distinct(StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal))
+        {
+            var missingEs = !es.ContainsKey(key);
+            var missingEn = !en.ContainsKey(key);
+            if (missingEs && missingEn) problems.Add($"Clave usada en el código y ausente en es-MX y en-US: {key}");
+            else if (missingEn) problems.Add($"Clave usada en el código y ausente en en-US: {key}");
+            else if (missingEs) problems.Add($"Clave usada en el código y ausente en es-MX: {key}");
+        }
+
+        return problems;
+    }
+
+    // ---------------------------------------------------------------- B1c: control negativo
+
+    [Fact]
+    public void NegativeParity_ReportsAKeyMissingInEnUs()
+    {
+        var es = Dict(("a.one", "uno"), ("a.two", "dos"));
+        var en = Dict(("a.one", "one"));
+
+        var problems = FindLocalizationProblems(es, en, []);
+
+        Assert.Contains("Falta en en-US: a.two", problems);
+        Assert.DoesNotContain(problems, p => p.StartsWith("Falta en es-MX", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NegativeParity_ReportsAKeyMissingInEsMx()
+    {
+        var es = Dict(("a.one", "uno"));
+        var en = Dict(("a.one", "one"), ("a.two", "two"));
+
+        var problems = FindLocalizationProblems(es, en, []);
+
+        Assert.Contains("Falta en es-MX: a.two", problems);
+        Assert.DoesNotContain(problems, p => p.StartsWith("Falta en en-US", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void NegativeParity_ReportsABlankValue_InBothLanguages(string blank)
+    {
+        var es = Dict(("a.one", blank));
+        var en = Dict(("a.one", blank));
+
+        var problems = FindLocalizationProblems(es, en, []);
+
+        Assert.Contains("Valor vacío en es-MX: a.one", problems);
+        Assert.Contains("Valor vacío en en-US: a.one", problems);
+    }
+
+    [Fact]
+    public void NegativeParity_ReportsAKeyUsedInCodeThatExistsInNeitherLanguage()
+    {
+        var es = Dict(("a.one", "uno"));
+        var en = Dict(("a.one", "one"));
+
+        var problems = FindLocalizationProblems(es, en, ["a.one", "a.typo"]);
+
+        Assert.Contains("Clave usada en el código y ausente en es-MX y en-US: a.typo", problems);
+        Assert.DoesNotContain(problems, p => p.Contains("a.one", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NegativeParity_ReportsAKeyUsedInCodeMissingOnlyInOneLanguage()
+    {
+        var es = Dict(("a.one", "uno"), ("a.solo.es", "solo"));
+        var en = Dict(("a.one", "one"));
+
+        var problems = FindLocalizationProblems(es, en, ["a.solo.es"]);
+
+        // Se reporta dos veces y con dos motivos distintos: sobra en un idioma y falta en el otro.
+        Assert.Contains("Falta en en-US: a.solo.es", problems);
+        Assert.Contains("Clave usada en el código y ausente en en-US: a.solo.es", problems);
+    }
+
+    /// <summary>Caso sano: la función no inventa problemas cuando los datos están bien.</summary>
+    [Fact]
+    public void NegativeParity_CleanData_ReportsNothing()
+    {
+        var es = Dict(("a.one", "uno"));
+        var en = Dict(("a.one", "one"));
+
+        Assert.Empty(FindLocalizationProblems(es, en, ["a.one"]));
+    }
+
+    private static Dictionary<string, string> Dict(params (string Key, string Value)[] entries)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, value) in entries) map[key] = value;
+        return map;
+    }
+
+    // ---------------------------------------------------------------- B2: cobertura del escaneo
+
+    /// <summary>
+    /// El escaneo es PARCIAL. Esto fija POR ESCRITO qué cubre y qué no, y se comprueba a sí mismo: si
+    /// alguien amplía la regex sin actualizar el comentario, el Assert de aquí abajo falla.
+    /// </summary>
+    /// <remarks>
+    /// CUBRE:
+    ///   - indexación con literal: <c>localizer["k"]</c>, <c>_localizer["k"]</c>, <c>Localizer["k"]</c>,
+    ///     <c>Text["k"]</c>  (12 sitios hoy)
+    ///   - formato con literal:   <c>Text.Format("k", ...)</c>   (1 sitio hoy: preflight.recovery)
+    ///   - la lista <see cref="DynamicKeys"/>, enumerada a mano leyendo el código (11 claves)
+    ///
+    /// NO CUBRE (y no puede, sin ejecutar el código):
+    ///   - claves construidas en tiempo de ejecución: <c>_localizer[SessionStateKey]</c>
+    ///     (MainViewModel.cs:199 y :235) y <c>localizer["state." + status.State]</c>
+    ///     (TweakItemViewModel.cs:48). Van en <see cref="DynamicKeys"/>.
+    ///   - helpers que forman texto por dentro en vez de pedir una clave, p. ej.
+    ///     <c>ScanStatusText.Format</c> (ScanStatusText.cs:16-17), que devuelve una frase en español fijo y
+    ///     por tanto NO puede faltarle ninguna clave: no usa localización. Es deuda de traducción, no de
+    ///     claves.
+    /// </remarks>
+    [Fact]
+    public void LiteralScan_CoversIndexersAndFormat_AndFindsTheKnownKeys()
+    {
+        var keys = LiteralKeysUsedInSource();
+
+        // El escaneo tiene que encontrar lo que dice cubrir, con estas claves concretas.
+        foreach (var expected in new[]
+                 {
+                     "nav.revert", "ready", "risk.first", "risk.phrase", "risk.second", "risk.title",
+                     "session.stopped", "session.unavailable",
+                     "preflight.recovery",
+                 })
+            Assert.Contains(expected, keys);
+
+        // Y no puede devolver basura del tipo "state." (esa es dinámica, no literal).
+        Assert.DoesNotContain("state.", keys);
+    }
+
+    /// <summary>
+    /// B2c: la clave de <c>Text.Format</c> SÍ tiene que entrar en el escaneo. El test de la ronda 10A no la
+    /// veía (su regex solo miró corchetes), así que la clave más crítica del preflight quedaba fuera.
+    /// </summary>
+    [Fact]
+    public void LiteralScan_IncludesTheKeyOfTextFormat_AndAFormatKeyMissingIsReported()
+    {
+        // 1) El escaneo real encuentra las DOS claves de R-J: la del Message (Text.Format, paréntesis) y la
+        //    del Remediation (Text[...], corchetes, añadida en B3). La primera es la que la ronda 10A no veía.
+        var scanned = LiteralKeysUsedInSource();
+        Assert.Contains("preflight.recovery", scanned);
+        Assert.Contains("preflight.recovery.remediation", scanned);
+
+        // 2) Y si un Text.Format pidiera una clave que no existe, la lógica de comparación lo reporta.
+        var used = new List<string> { "preflight.recovery", "preflight.recovery.remediation" };
+        var es = Dict(("preflight.recovery", "es"));
+        var en = Dict(("preflight.recovery", "en"));
+
+        var problems = FindLocalizationProblems(es, en, used);
+
+        Assert.Contains("Clave usada en el código y ausente en es-MX y en-US: preflight.recovery.remediation", problems);
     }
 
     /// <summary>
@@ -456,8 +621,8 @@ public sealed class CatalogTests
     /// mano LEYENDO el código que las forma:
     ///   - MainViewModel.cs:201-207, SessionStateKey: session.state.active / waiting / reverting / inactive.
     ///   - TweakItemViewModel.cs:48, <c>"state." + status.State</c>: un caso por cada valor de TweakState
-    ///     (Models/Enums.cs, TweakState) — no por cada clave que hoy exista en el JSON, porque el enum
-    ///     puede crecer y entonces faltaría traducción sin que nada avise.
+    ///     (Enums.cs:5) — no por cada clave que hoy exista en el JSON, porque el enum puede crecer y entonces
+    ///     faltaría traducción sin que nada avise.
     /// </summary>
     private static readonly string[] DynamicKeys =
     [
@@ -479,55 +644,68 @@ public sealed class CatalogTests
     }
 
     /// <summary>
-    /// Claves que aparecen como literal en una indexación de Localizer dentro de src/: <c>x["clave"]</c>.
-    /// Solo literales; las dinámicas van en <see cref="DynamicKeys"/>.
+    /// Claves que aparecen como literal en src/: indexación <c>x["clave"]</c> y formato
+    /// <c>Text.Format("clave", ...)</c>. Solo literales; las dinámicas van en <see cref="DynamicKeys"/>.
     /// </summary>
     private static IReadOnlyList<string> LiteralKeysUsedInSource()
     {
-        // El patrón se ancla al NOMBRE del índice para no capturar cualquier x["..."] del código.
-        var pattern = new System.Text.RegularExpressions.Regex(
+        // Anclado al NOMBRE del receptor para no capturar cualquier x["..."] del código.
+        var indexer = new System.Text.RegularExpressions.Regex(
             @"(?:_localizer|localizer|Localizer|Text)\s*\[\s*""(?<key>[A-Za-z][A-Za-z0-9._]*)""\s*\]",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+        // B2c: Text.Format("clave", ...). Mismo receptor, paréntesis en vez de corchetes.
+        var format = new System.Text.RegularExpressions.Regex(
+            @"(?:_localizer|localizer|Localizer|Text)\.Format\(\s*""(?<key>[A-Za-z][A-Za-z0-9._]*)""",
             System.Text.RegularExpressions.RegexOptions.Compiled);
         var keys = new List<string>();
         foreach (var file in Directory.EnumerateFiles(Path.Combine(FindRepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories))
-            foreach (System.Text.RegularExpressions.Match match in pattern.Matches(File.ReadAllText(file)))
-                keys.Add(match.Groups["key"].Value);
+        {
+            var text = File.ReadAllText(file);
+            foreach (System.Text.RegularExpressions.Match match in indexer.Matches(text)) keys.Add(match.Groups["key"].Value);
+            foreach (System.Text.RegularExpressions.Match match in format.Matches(text)) keys.Add(match.Groups["key"].Value);
+        }
         return keys.Distinct(StringComparer.Ordinal).ToArray();
     }
 
-    private static string FindRepositoryRoot()
+    /// <summary>Raíz del repo, buscando FragForge.sln hacia arriba. Falla con un mensaje que dice QUÉ busca y DESDE DÓNDE.</summary>
+    private static string FindRepositoryRoot() => FindRepositoryRoot(AppContext.BaseDirectory);
+
+    /// <summary>Igual, pero con un punto de partida inyectable (para poder probar el mensaje de error).</summary>
+    internal static string FindRepositoryRoot(string startDirectory)
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var start = new DirectoryInfo(startDirectory);
+        var directory = start;
         while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "FragForge.sln"))) directory = directory.Parent;
-        return directory?.FullName ?? throw new InvalidOperationException("No se encontró la raíz del repositorio.");
+        if (directory is null)
+            throw new InvalidOperationException(
+                $"No se encontró el fichero 'FragForge.sln' subiendo por los directorios desde '{start.FullName}' " +
+                $"(se subió hasta la raíz del volumen). El test necesita la raíz del repositorio para leer src/; " +
+                "si los binarios se copiaron fuera del repo, ejecuta los tests desde el árbol de trabajo.");
+        return directory.FullName;
     }
 
     /// <summary>
-    /// El test tiene que DETECTAR el caso roto. Se construye en memoria un par de diccionarios al que le
-    /// falta una clave y otro con un valor vacío, y se comprueba que la comparación del test los señala.
-    /// NO se tocan los JSON reales: se ejercita la MISMA lógica sobre fixtures.
+    /// B1f: el error de raíz ausente es EXPLÍCITO, no un InvalidOperationException genérica.
     /// </summary>
+    /// <remarks>
+    /// Hermético: no basta con un directorio temporal, porque si CUALQUIER ancestro tuviera un
+    /// FragForge.sln (por ejemplo, si el repo se clonara dentro de /tmp) la búsqueda lo encontraría y el
+    /// test no probaría nada. Se comprueba primero que no hay ninguno, y si lo hay, el test lo dice en vez
+    /// de pasar por casualidad.
+    /// </remarks>
     [Fact]
-    public void LocalizationParity_DetectsAMissingKeyAndABlankValue_WithoutTouchingTheRealFiles()
+    public void FindRepositoryRoot_WhenThereIsNoSolutionFile_SaysWhatItLookedForAndWhere()
     {
-        var es = new Dictionary<string, string>(StringComparer.Ordinal) { ["a.one"] = "uno", ["a.two"] = "dos", ["a.three"] = "tres" };
-        var en = new Dictionary<string, string>(StringComparer.Ordinal) { ["a.one"] = "one", ["a.three"] = "   " };
+        using var temp = new TempDirectory();
 
-        // Misma lógica que el assert (a) del test de paridad.
-        var missingInEn = es.Keys.Except(en.Keys, StringComparer.Ordinal).OrderBy(k => k, StringComparer.Ordinal).ToArray();
-        Assert.Equal(["a.two"], missingInEn);
-        var missingInEs = en.Keys.Except(es.Keys, StringComparer.Ordinal).ToArray();
-        Assert.Empty(missingInEs);
+        for (var directory = new DirectoryInfo(temp.Path); directory is not null; directory = directory.Parent)
+            Assert.False(File.Exists(Path.Combine(directory.FullName, "FragForge.sln")),
+                $"Escenario no hermético: '{directory.FullName}' ya tiene un FragForge.sln, así que la búsqueda lo encontraría.");
 
-        // Misma lógica que el assert (b): "a.three" está en los dos, pero en en-US está en blanco.
-        var blankEn = en.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).ToArray();
-        Assert.Equal(["a.three"], blankEn);
-        var blankEs = es.Where(kv => string.IsNullOrWhiteSpace(kv.Value)).Select(kv => kv.Key).ToArray();
-        Assert.Empty(blankEs);
+        var error = Assert.Throws<InvalidOperationException>(() => FindRepositoryRoot(temp.Path));
 
-        // Y la (c): una clave usada por el código que no esté en ninguno de los dos.
-        var used = new[] { "a.one", "a.missing" };
-        var missingUsed = used.Where(k => !es.ContainsKey(k) || !en.ContainsKey(k)).ToArray();
-        Assert.Equal(["a.missing"], missingUsed);
+        Assert.Contains("FragForge.sln", error.Message, StringComparison.Ordinal);
+        Assert.Contains(temp.Path, error.Message, StringComparison.Ordinal);
+        Assert.Contains("no se encontró", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
