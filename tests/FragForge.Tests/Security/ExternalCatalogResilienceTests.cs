@@ -162,6 +162,51 @@ public sealed class ExternalCatalogResilienceTests
         Assert.Contains(catalog.LoadReport.Rejected, r => r.Reason.Contains("duplicado", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// C2: un externo NO puede declarar los campos que deciden comportamiento. Se rechaza (no se ignora),
+    /// con motivo, y sin llevarse por delante el resto del catálogo.
+    /// </summary>
+    [Theory]
+    [InlineData("sessionEligible", true)]
+    [InlineData("restartsNetworkLink", true)]
+    [InlineData("profiles", false)]
+    public void AnExternalTweakCannotDeclareReservedBehaviourFields(string field, bool isBool)
+    {
+        var loader = Loader();
+        var good = RegistryTweak("ext.bueno", @"HKLM\Software\FragForgeTests", "V");
+        var brute = RegistryTweak("ext.bruto", @"HKLM\Software\FragForgeTests", "W");
+        // Se inyecta el campo reservado justo antes de la llave final del objeto.
+        var suffix = isBool
+            ? $$""", "{{field}}": true }"""
+            : $$""", "{{field}}": ["Safe"] }""";
+        var marcado = brute.TrimEnd('}', ',', ' ', '\n', '\r') + suffix;
+
+        var catalog = loader.LoadDocumentsResilient([("bruto.json", marcado), ("bueno.json", good)]);
+
+        // El que declara el campo reservado NO entra, y se dice por que.
+        Assert.DoesNotContain(catalog.Definitions, d => d.Id == "ext.bruto");
+        Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.bruto" && r.Reason.Contains(field, StringComparison.Ordinal));
+        // Y el resto del catálogo carga: el rechazo es por ENTRADA, no global.
+        Assert.Contains(catalog.Definitions, d => d.Id == "ext.bueno");
+    }
+
+    /// <summary>El catálogo embebido SÍ puede declararlos: no se le aplica la restricción de externos.</summary>
+    [Fact]
+    public async Task TheEmbeddedCatalog_StillDeclaresItsReservedFields()
+    {
+        var loader = Loader();
+        var embedded = await loader.LoadEmbeddedAsync();
+
+        // Los 3 de sesión siguen marcados, con sus campos.
+        var deSesion = embedded.Definitions.Where(d => d.SessionEligible).Select(d => d.Id).OrderBy(x => x, StringComparer.Ordinal).ToArray();
+        Assert.Equal(["cpu.core-parking-off", "cpu.epp-performance", "power.fragforge-performance"], deSesion);
+        // Y ninguna entrada externa pudo quitarlos: el embebido carga entero. No se fija un numero (R-N):
+        // se compara contra los recursos JSON del propio ensamblado, como RealCatalogDenylistTests.
+        var recursos = typeof(JsonTweakCatalogLoader).Assembly.GetManifestResourceNames()
+            .Count(n => n.StartsWith("FragForge.Tweaks.Catalog.", StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal));
+        Assert.Equal(recursos, embedded.Definitions.Count);
+    }
+
     /// <summary>Un catálogo externo vacío es válido: solo significa que el usuario no añadió nada.</summary>
     [Fact]
     public void AnEmptyExternalCatalog_IsNotAnError()
