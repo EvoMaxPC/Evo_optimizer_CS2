@@ -58,6 +58,17 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
     private const string EmbeddedResourcePrefix = "FragForge.Tweaks.Catalog.";
 
     /// <summary>
+    /// Campos que un catalogo EXTERNO no puede declarar (ver el rechazo en LoadDocumentsResilient).
+    /// </summary>
+    /// <remarks>
+    /// Son tres y no cuatro: <c>anticheatNote</c> NO esta aqui a proposito. Es un aviso de UI
+    /// (TweakItemViewModel.cs:32) que no cambia lo que se aplica ni cuando; el riesgo de que un externo lo
+    /// escriba es que el texto sea malo, no que salte una barrera. Si manana se usara para decidir algo, se
+    /// anade aqui. Los otros tres si deciden comportamiento.
+    /// </remarks>
+    private static readonly string[] ReservedFields = ["profiles", "sessionEligible", "restartsNetworkLink"];
+
+    /// <summary>
     /// Ids que ya ocupa el catálogo EMBEBIDO, con el nombre del recurso que los aporta. Se leen del binario,
     /// no de una lista paralela que se pudiera quedar desactualizada. Un documento ilegible se ignora aquí: su
     /// validación es asunto de la ruta estricta, que es la que debe lanzar si el catálogo de la entrega se rompe.
@@ -169,6 +180,8 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
         // a sí mismos. En las dos situaciones la regla es la misma: el PRIMERO que llega se queda el id, y un
         // externo que lo repita se cae.
         var present = documents.Select(d => d.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Nombres de recurso REALES del ensamblado: la unica prueba de origen que el usuario no controla.
+        var embeddedResourceNames = EmbeddedIdsByResource().Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var ids = new HashSet<string>(
             EmbeddedIdsByResource().Where(pair => !present.Contains(pair.Key)).Select(pair => pair.Value),
             StringComparer.OrdinalIgnoreCase);
@@ -176,6 +189,14 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
         foreach (var (name, json) in documents)
         {
             TweakDefinition definition;
+            // D4d: se decide por PRESENCIA de la clave, no por valor distinto del default. Hay que leerla
+            // ANTES de deserializar: el modelo no distingue "ausente" de "false" (bool sin nullable), asi
+            // que despues ya no se puede saber. Y por presencia porque el sentido del rechazo es "un
+            // externo no declara estas marcas, las ponga en el valor que las ponga": con
+            // `"sessionEligible": false` el autor tambien esta diciendo algo que no le toca, y como el
+            // default ya es false, el valor no cambia nada pero la intencion si revela que esperaba que
+            // se leyera.
+            var declaredReserved = new List<string>();
             try
             {
                 using var document = JsonDocument.Parse(json);
@@ -185,6 +206,8 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
                     rejected.AddRange(structural.Select(e => new CatalogRejection(name, null, e)));
                     continue;
                 }
+                foreach (var reserved in ReservedFields)
+                    if (document.RootElement.TryGetProperty(reserved, out _)) declaredReserved.Add(reserved);
                 definition = JsonSerializer.Deserialize<TweakDefinition>(json, JsonDefaults.Options) ?? throw new JsonException("Documento nulo.");
             }
             catch (Exception ex) when (ex is JsonException or InvalidDataException or CatalogValidationException)
@@ -201,34 +224,28 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
                 continue;
             }
 
-            // C2: los campos que DECIDEN COMPORTAMIENTO no se aceptan desde un catalogo externo.
+            // C2 + D4: los campos que DECIDEN COMPORTAMIENTO no se aceptan desde un catalogo externo.
             //
-            // sessionEligible mete un tweak en la sesion de juego (GameSessionService.cs:58);
-            // restartsNetworkLink dispara el preflight de red y el aviso al aplicar
-            // (PreflightService.cs:18, TweakEngine.cs:134). Un externo que los declarara se saltaria
-            // barreras que el catalogo auditado pone a proposito. Y no hace falta que los declare para
-            // funcionar: son marcas de NUESTROS 32 tweaks, no algo que un tweak del usuario necesite.
+            //   profiles            membresia Safe/Balanced/Competitive/Advanced, la fija el catalogo auditado
+            //   sessionEligible     mete el tweak en la sesion de juego (GameSessionService.cs:58)
+            //   restartsNetworkLink dispara el preflight de red y el aviso (PreflightService.cs:18,
+            //                       TweakEngine.cs:134)
+            //
+            // Un externo que los declare se salta barreras que el catalogo auditado pone a proposito. Y no
+            // los necesita: son marcas de NUESTROS tweaks, no algo que un tweak del usuario requiera.
             //
             // Se RECHAZA (no se ignora): ignorarlos dejaria al autor creyendo que su tweak entra en las
-            // sesiones o avisa del corte de red, cuando no es asi. Un rechazo con motivo se ve; un campo
-            // ignorado en silencio, no.
+            // sesiones o avisa del corte de red, cuando no. Un rechazo con motivo se ve; un campo ignorado
+            // en silencio, no.
             //
-            // Se distingue externo por el NOMBRE, que es la unica informacion de origen que hay aqui: los
-            // embebidos se llaman como su recurso (FragForge.Tweaks.Catalog.*), los externos como su ruta.
-            var esExterno = !name.StartsWith(EmbeddedResourcePrefix, StringComparison.Ordinal);
-            if (esExterno && (definition.SessionEligible || definition.RestartsNetworkLink))
-            {
-                var campos = new List<string>();
-                if (definition.SessionEligible) campos.Add("sessionEligible");
-                if (definition.RestartsNetworkLink) campos.Add("restartsNetworkLink");
-                rejected.Add(new CatalogRejection(name, definition.Id,
-                    $"'{definition.Id}': un catálogo externo no puede declarar {string.Join(" ni ", campos)}; son marcas reservadas al catálogo embebido. Quita el campo y el resto de la entrada se cargará."));
-                continue;
-            }
-            if (esExterno && definition.Profiles is not null)
+            // D4b: el origen NO se decide con un StartsWith sobre el nombre. Eso era un bypass (un externo
+            // podia llamarse "FragForge.Tweaks.Catalog.x.json" y colarse como embebido). Se decide con la
+            // lista de recursos REALES del ensamblado, que el usuario no puede modificar.
+            var esExterno = !embeddedResourceNames.Contains(name);
+            if (esExterno && declaredReserved.Count > 0)
             {
                 rejected.Add(new CatalogRejection(name, definition.Id,
-                    $"'{definition.Id}': un catálogo externo no puede declarar 'profiles'; la membresía de perfiles es del catálogo embebido. Quita el campo y el resto de la entrada se cargará."));
+                    $"'{definition.Id}': un catálogo externo no puede declarar {string.Join(", ", declaredReserved)}; son marcas reservadas al catálogo embebido. Quita el campo y el resto de la entrada se cargará."));
                 continue;
             }
 
