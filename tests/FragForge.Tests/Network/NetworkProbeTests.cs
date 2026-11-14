@@ -97,25 +97,83 @@ public sealed class NetworkProbeTests
 
     // Los valores esperados que estaban escritos NO coincidian con el comentario de al lado ni con la
     // implementacion: Median redondea con MidpointRounding.AwayFromZero.
+    //
+    // DEFINICION (la que implementa NetworkProbe.cs:261-266):
+    //   - numero IMPAR de muestras: el elemento central, sorted[n/2].
+    //   - numero PAR: el PROMEDIO de las dos centrales, redondeado a long con AwayFromZero
+    //     (2.5 -> 3, 3.5 -> 4). No se elige "el inferior": se promedia y se redondea al alza en .5.
+    //   - devuelve `long`, nunca null. Con 0 muestras NO se llama: lanzaria (ver el test de abajo).
     [Theory]
-    [InlineData(new long[] { 1, 2, 3, 4 }, 3)]        // par → media de las dos centrales (2+3)/2 = 2.5 → 3
-    [InlineData(new long[] { 1, 2, 3, 4, 5 }, 3)]     // impar → central exacta
-    [InlineData(new long[] { 5 }, 5)]
-    [InlineData(new long[] { 1, 2, 3, 4, 5, 6 }, 4)]  // (3+4)/2 = 3.5 → 4
+    [InlineData(new long[] { 7 }, 7)]                 // impar de 1: el propio valor
+    [InlineData(new long[] { 1, 2, 3 }, 2)]           // impar: central exacta
+    [InlineData(new long[] { 1, 2, 3, 4, 5 }, 3)]     // impar: central exacta
+    [InlineData(new long[] { 1, 2, 3, 4 }, 3)]        // par → (2+3)/2 = 2.5 → 3  (AwayFromZero)
+    [InlineData(new long[] { 1, 2, 3, 4, 5, 6 }, 4)]  // par → (3+4)/2 = 3.5 → 4
+    [InlineData(new long[] { 10, 20 }, 15)]           // par → (10+20)/2 = 15 exacto
     public void Median_HandlesEvenAndOddCounts(long[] values, long expected)
     {
         Assert.Equal(expected, NetworkProbeResult.Median(values.OrderBy(v => v).ToArray()));
     }
 
+    /// <summary>
+    /// Mediana sin muestras: NO hay valor, y no se inventa 0 (R-L). Se exige igual que Percentile:
+    /// el contrato es que el llamador no la invoque con una lista vacía, y si lo hace, es un error
+    /// de programacion, no un dato.
+    /// </summary>
+    [Fact]
+    public void Median_WithNoSamples_ThrowsInsteadOfInventingZero()
+    {
+        Assert.Throws<ArgumentException>(() => NetworkProbeResult.Median([]));
+    }
+
+    // DEFINICION (NetworkProbe.cs:268-278): nearest-rank.
+    //   rank = ceil(p/100 * n), 1-based  ->  indice = clamp(rank-1, 0, n-1)
+    //   Es "el valor minimo que deja al menos el p% de las muestras por debajo": no interpola.
     [Theory]
-    [InlineData(99, 99)]   // con 100 muestras, p99 es la 99.ª (rank=ceil(99)=99 -> indice 98 -> valor 99)
-    [InlineData(50, 50)]
-    [InlineData(100, 100)]
+    [InlineData(0, 1)]      // p0   -> rank 0 -> clamp a indice 0 -> el minimo
+    [InlineData(50, 50)]    // p50  -> rank 50 -> indice 49
+    [InlineData(99, 99)]    // p99  -> rank 99 -> indice 98 -> valor 99
+    [InlineData(100, 100)]  // p100 -> rank 100 -> indice 99 -> el maximo
     public void Percentile_UsesNearestRank(int percentile, long expected)
     {
         var sorted = Enumerable.Range(1, 100).Select(i => (long)i).ToArray();
 
         Assert.Equal(expected, NetworkProbeResult.Percentile(sorted, percentile));
+    }
+
+    /// <summary>
+    /// Los mismos percentiles sobre una lista corta, para que el rank se vea a mano:
+    /// con n=3, p50 -> ceil(1.5)=2 -> indice 1 -> 2; p99 -> ceil(2.97)=3 -> indice 2 -> 3.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(50, 2)]
+    [InlineData(99, 3)]
+    [InlineData(100, 3)]
+    public void Percentile_OnThreeSamples_MatchesTheHandComputedRank(int percentile, long expected)
+    {
+        Assert.Equal(expected, NetworkProbeResult.Percentile([1, 2, 3], percentile));
+    }
+
+    /// <summary>Sin muestras no hay percentil: lanza, no devuelve 0 (R-L).</summary>
+    [Fact]
+    public void Percentile_WithNoSamples_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => NetworkProbeResult.Percentile([], 99));
+    }
+
+    /// <summary>
+    /// Y el conjunto: sin muestras recibidas el resultado NO tiene valores de latencia (null), no ceros.
+    /// Es el camino real por el que se llega a "sin muestras": Create retorna antes de calcular nada.
+    /// </summary>
+    [Fact]
+    public void Create_WithNoReceivedSamples_LeavesLatencyNull()
+    {
+        var result = NetworkProbeResult.Create("host", sent: 4, samples: [], failures: 4);
+
+        Assert.False(result.HasSamples);
+        Assert.Null(result.MedianMs);
+        Assert.Null(result.P99Ms);
     }
 
     /// <summary>Con una sola muestra, mediana y p99 son esa muestra y el jitter es 0 (no null).</summary>
