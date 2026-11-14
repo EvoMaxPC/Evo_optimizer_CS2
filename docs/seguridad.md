@@ -291,13 +291,18 @@ puede comprobar es que el backup no haya sido alterado *después* de crearse, po
 del original guardado en ningún sitio. Es una verificación de integridad de la copia restaurada, no una
 garantía de que el contenido sea el que había antes. Tampoco hay manifiesto.
 
-**Un fallo de disco al escribir deja el autoexec sin tocar y con mensaje, pero solo para E/S y permisos.**
-El exportador y `restore-autoexec` capturan `UnauthorizedAccessException` e `IOException` alrededor de la
-escritura, devuelven un mensaje en español con la ruta que falló y dicen explícitamente que
-`autoexec.cfg` no se modificó; si el fallo ocurre después de crear el backup, esa copia se retira para que
-`restore-autoexec` no la elija como «la última». Cualquier **otra** excepción sigue llegando al
-`catch (Exception)` de `Program.cs:180`, que imprime `Error inesperado: <tipo>: <mensaje>` y sale con
-código 1: no hay stack trace, pero tampoco un mensaje que explique qué ruta falló.
+**Un fallo de disco al escribir deja mensaje, pero solo para E/S y permisos, y solo en dos de las tres
+etapas se puede afirmar que el autoexec quedó igual.** El exportador y `restore-autoexec` capturan
+`UnauthorizedAccessException` e `IOException`. La escritura se hace en tres etapas, y el mensaje cambia
+según dónde falle: (1) si falla la **copia de seguridad**, se dice que `autoexec.cfg` no se ha modificado y
+que se aborta sin tocarlo; (2) si falla el **temporal**, igual, porque el archivo real aún no se ha tocado;
+(3) si falla el **movimiento final**, NO se afirma nada sobre el autoexec: el mensaje pide verificarlo y dice
+dónde está la copia de seguridad, porque en esa etapa el archivo puede haber quedado a medias. El temporal
+se retira en (2) y (3); **ninguna copia de seguridad se borra nunca**, ni siquiera la que se acaba de crear,
+porque es el único original recuperable y una copia idéntica al autoexec actual es inofensiva. Cualquier
+**otra** excepción sigue llegando al `catch (Exception)` de `Program.cs:180`, que imprime
+`Error inesperado: <tipo>: <mensaje>` y sale con código 1: no hay stack trace, pero tampoco un mensaje que
+explique qué ruta falló.
 
 **La precedencia entre `autoexec.cfg` y los convars guardados por la cuenta no está verificada.** Cuando
 el valor de `autoexec` y el que Steam guarda en `cs2_convars.vcfg` discrepan, `Cs2ProfileComparer` informa
