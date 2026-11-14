@@ -1,0 +1,261 @@
+# FragForge — Informe integrador de cambios: Capas 5 → 11
+
+**Rama** `arena/c1a5f702-evo-optimizer-cs2` · **Versión** 0.1.0
+**Rango cubierto** Capa 5c (red) hasta Capa 11 (UI, instalador, firma, CI, E2E), incluidas las capas 6, 7, 8, 9 y 10.
+
+---
+
+## 0. Advertencia que encabeza todo
+
+**Nada de lo que cuentan estos siete capítulos ha sido compilado ni ejecutado.** En el entorno donde se escribió
+el proyecto no hay `dotnet`, ni `mono`, ni `csc`, ni PowerShell, ni Inno Setup, ni `signtool`, ni certificado, ni
+Windows. Por lo tanto:
+
+| Elemento | Verificado |
+|---|---|
+| Compilación | **No.** Cero builds en todo el proyecto. |
+| Tests | **No ejecutados.** Los 667 casos existen; no se sabe si pasan. |
+| Instalador Inno Setup | **No compilado, no ejecutado.** |
+| `publish.ps1` / `sign.ps1` | **Nunca ejecutados.** |
+| Firma de código | **Nunca ejecutada.** |
+| UI WPF | **Nunca abierta.** |
+| CI | **Nunca ejecutado.** |
+
+Lo que se hizo en su lugar: auditar cada identificador externo con `grep` contra el repositorio (archivo:línea en
+cada informe) y validar la forma de ficheros `.cs`/`.xaml`/`.json`/`.yml` con herramientas que sí existen. Eso
+detecta errores de sintaxis; **no** de tipos ni de semántica.
+
+Si lees un solo párrafo de este documento, que sea este.
+
+---
+
+## 1. Resumen ejecutivo
+
+| # | Capa | Commits | Ficheros | Líneas | Tests nuevos | Total al cerrar | Eje |
+|---|---|---|---|---|---|---|---|
+| 5 | Red: resolución por hardware, EEE, diagnóstico | 5 (`b5bc22a`…`0bd62cc`) | 35 | +2858 / −70 | +124 | 614 | No fiarse del nombre del adaptador |
+| 6 | iGPU Intel y memoria | 1 (`12bfa82`) | 6 | +643 / −2 | +14 | 544 | Diagnóstico de solo lectura antes que tweak |
+| 7 | Auditoría de `latency.*` | 1 (`aebafee`) | 3 | +293 / −10 | +10 | 554 | Corregir la evidencia antes de añadir nada |
+| 8 | CS2: resolución, inspector, proceso | 1 (`4dd2000`) | 14 | +1683 | +25 | 515 | Lo pedido ya existía: se construyó lo que faltaba |
+| 9 | Modo sesión reversible | 1 (`b8a6087`) | 17 | +1190 / −3 | +15 | 530 | Sobrevivir a que maten el proceso |
+| 10 | Seguridad: postura, integridad, privilegios | 4 (`2e24434`…`07f7b9d`) | 28 | +2138 / −7 | +37 | 651 | `Unknown` es una respuesta válida |
+| 11 | UI testeable, instalador, firma, CI, E2E | 7 (`9d92f96`…`0fe7068`) | 37 | +2346 / −144 | +16 | 667 | Que lo no verificado sea explícito |
+
+> **Cómo leer la columna de tests.** No sigas la numeración de las capas: los commits no están en orden numérico
+> (§8). El orden real de construcción fue **8 → 9 → 6 → 7 → 5 → 10 → 11**, y por eso "total al cerrar" **baja** al
+> pasar de la Capa 5 a la 6. "Tests nuevos" es la diferencia contra el commit anterior de la cadena, medida con
+> `git grep` en cada commit: no es una estimación.
+
+**Estado final del repositorio**: 8 proyectos, 16 634 líneas en `src/`, 12 603 en `tests/`, 32 tweaks en el
+catálogo, 667 casos de test. Conteos por perfil verificados hoy: **Safe 3 / Balanced 7 / Competitive 9 /
+Advanced 12**; 25 de los 32 tweaks son `opt-in`, es decir, solo se aplican por id explícito.
+
+---
+
+## 2. Cómo leer este informe en partes
+
+El mismo contenido está partido en `docs/handoff/informes/`, un fichero por capa:
+
+| Parte | Fichero | Contenido |
+|---|---|---|
+| 1 | `parte-1-capa5-red.md` | Red: identidad de hardware, EEE, diagnóstico |
+| 2 | `parte-2-capa6-igpu.md` | iGPU Intel, memoria, HAGS |
+| 3 | `parte-3-capa7-latencia.md` | Auditoría `latency.*` y evidencia de mouse |
+| 4 | `parte-4-capa8-cs2.md` | Resolución de cs2.exe, inspector, detección |
+| 5 | `parte-5-capa9-sesion.md` | Modo sesión y recuperación |
+| 6 | `parte-6-capa10-seguridad.md` | Postura, integridad, privilegios |
+| 7 | `parte-7-capa11-ui.md` | UI testeable, instalador, firma, CI, E2E |
+
+Cada parte sigue la misma estructura: **qué pedía → qué se encontró al auditar → qué se hizo → qué se decidió no
+hacer → qué no se verificó**. Los informes originales por capa siguen en `docs/handoff/FragForge-CapaN-Informe.md`
+y son la fuente de detalle (tablas de auditoría archivo:línea completas); este integrador los resume y añade la
+lectura de conjunto.
+
+---
+
+## 3. El hilo común: cinco patrones que se repiten en las siete capas
+
+### 3.1 Auditar antes de escribir
+
+En **cuatro** de las siete capas el hallazgo principal fue "esto ya estaba hecho":
+
+- **Capa 8**: `cs2.cpu-priority-high` y `cs2.fullscreen-optimizations-off` ya existían y hacían exactamente lo
+  que pedía el enunciado. No se duplicaron. Lo que faltaba de verdad era resolver `cs2.exe`, el inspector y la
+  detección de proceso.
+- **Capa 7**: los cuatro tweaks `latency.*` ya existían. La capa fue una auditoría: **una** corrección real
+  (`latency.mouse-acceleration-off` tenía `evidence: High` y pasa a `Low`) y un error de auditoría propio,
+  corregido.
+- **Capa 11**: la app ya pedía `requireAdministrator` en ambos manifiestos; el trabajo era decidir y documentar,
+  no implementar. Y el motor ya devolvía los cambios planificados del dry-run: la UI simplemente no los mostraba.
+- **Capa 6**: los tres tweaks candidatos se evaluaron uno a uno y **dos se descartaron** por falta de evidencia
+  o por chocar con la denylist.
+
+### 3.2 `Unknown` antes que adivinar (R-L)
+
+Es la regla que más veces cambió una decisión de diseño:
+
+- **Capa 5**: si no se puede resolver el adaptador por GUID o hardware ID, el resultado es `null`, nunca el
+  primer adaptador "que parezca". Un tweak de red sobre el adaptador equivocado es peor que no aplicarlo.
+- **Capa 6**: si la clase WMI de la iGPU no existe o devuelve 0 filas, el resultado es `Unknown` **con un aviso
+  que nombra la clase consultada**, no un cero que parezca una medición.
+- **Capa 10**: Secure Boot en BIOS heredado → `Unknown` (no `Disabled`); valor de registro ausente → `Unknown`;
+  driver no comprobable → `null` (no `false`). BitLocker con protección suspendida → `Unknown`, porque no está
+  cifrado pero tampoco en claro.
+
+### 3.3 La denylist no se negocia
+
+Las capas 5 y 10 se toparon con ella y **ambas cedieron**:
+
+- **Capa 5**: dos candidatos de red chocaban con keywords protegidas (`*InterruptModeration`, `*FlowControl`,
+  `*RSS`). Se descartaron en vez de relajar la política.
+- **Capa 10**: el tweak estrella (HVCI off) se **descartó con tres motivos escritos**, no por falta de tiempo.
+  El informe recomienda explícitamente que `DeviceGuard` siga en la denylist.
+
+`RealCatalog_PassesTheRealDenylist` sigue pasando en todas las capas: es el test que impide que el catálogo real
+toque lo que la política protege.
+
+### 3.4 Nada de promesas de rendimiento (R-K)
+
+Ninguna de las siete capas añadió un tweak prometiendo FPS. Lo que se hizo fue lo contrario:
+
+- **Capa 7** *bajó* la evidencia de un tweak existente (`High` → `Low`) porque la justificación no aguantaba una
+  lectura crítica.
+- **Capa 6** implementó un tweak (`gpu.intel-graphics-power-plan-max`) y lo marcó **no verificado**.
+- **Capa 11** documenta en `CHANGELOG.md` y en el README que el proyecto **no promete FPS**.
+
+### 3.5 Lo no verificado, por escrito y en el mismo documento
+
+Cada capa cierra con una sección "Qué NO se verificó" que no es un trámite. Ejemplos reales:
+
+- Capa 5: **no se enumeraron** las propiedades reales del I225-V, así que no se sabe si el driver expone `*EEE`.
+- Capa 8: **no se ejecutó** `fragforge cs2 inspect` contra una instalación de Steam real.
+- Capa 9: **no se mató el proceso de verdad** para probar la recuperación.
+- Capa 10: **no se probó ningún anticheat real**, ni se afirma nada sobre VAC o FACEIT.
+
+---
+
+## 4. Cambios en el motor y en el modelo (transversal a varias capas)
+
+Los cambios que tocaron el núcleo y por tanto afectan a más de una capa:
+
+| Capa | Cambio en `Core` | Por qué importa |
+|---|---|---|
+| 5 | `INetworkAdapterResolver` (interfaz nueva) + `NetworkChangePreflight` | El apply deja de identificar adaptadores por nombre visible |
+| 5 | `TweakDefinition` gana campos de red y `RestartsNetworkLink` | El aviso de corte de enlace se dispara **antes** de aplicar |
+| 5 | `TweakEngine` avisa del corte de red antes de escribir | Un aviso después del hecho no sirve de nada |
+| 8 | `Cs2Process`, `Cs2Resolution`, `Cs2Inspection`, `Cs2ConfigParser` | Todo en **Core** (sin WPF) para poder testearlo |
+| 9 | `TweakDefinition.sessionEligible` (aditivo, `false` por defecto) | Ver §5 |
+| 9 | `GameSessionService` | Modo sesión sin depender de la UI |
+| 10 | `TweakDefinition.anticheatNote` + `AnticheatNote` | Aviso por tweak, sin afirmar nada del proveedor |
+| 10 | `SecurityPosture` + `ISecurityPostureService` | Postura de solo lectura |
+| 10 | `TweakEngine.VerifySnapshotDefinitions` | Cierra un hueco real de integridad (§6) |
+| 11 | `AssemblyInfoText` | Título con nombre + versión, sin hash |
+
+**Regla respetada en todas las capas (R-A)**: no se cambió el constructor de `TweakEngine` ni las firmas de
+`Abstractions` existentes. Cuando hizo falta un punto de inyección (Capa 11), se añadió un **tercer parámetro
+opcional** a `CompositionRoot.BuildAsync`, que no es `Abstractions`, y los 14 llamadores siguieron compilando.
+
+**Regla respetada (campos persistidos aditivos)**: `sessionEligible` (Capa 9) y `anticheatNote` (Capa 10) se
+añadieron con valor por defecto y al esquema. Sin tocar el esquema, el catálogo **no habría cargado**
+(`additionalProperties: false`). Ese detalle se cazó en la Capa 9 antes de romper nada.
+
+---
+
+## 5. Capa 9: el caso `sessionEligible`
+
+Merece un apartado porque es el mejor ejemplo de cómo se decidió en este proyecto: **primero el criterio, después
+el código**.
+
+Criterio para que un tweak entre en el modo sesión: efecto **inmediato** (sin reinicio), **totalmente
+reversible**, y que no deje el equipo en un estado que necesite reiniciar para arreglarse.
+
+De 32 tweaks, calificaron **3**: `power.fragforge-performance`, `cpu.epp-performance`, `cpu.core-parking-off`.
+Quedaron fuera, con motivo escrito, los otros 29 — entre ellos `cs2.cpu-priority-high`, porque IFEO solo aplica al
+crear el proceso (si CS2 ya corre, no surte efecto) y no se puede revertir "al cerrar el juego" de forma limpia.
+
+Y además del criterio en el JSON, hay una **segunda barrera en código** (`GameSessionService.EligibleIds` filtra
+`!RequiresReboot`): si un JSON se marcara por error, sigue quedando fuera. Con test.
+
+---
+
+## 6. Capa 10: el hueco que se encontró
+
+El hallazgo técnico más importante de las siete capas.
+
+`TweakEngine` guardaba un `DefinitionSha256` en cada snapshot y **nadie lo comprobaba**. El revert saca los
+parámetros de la definición guardada en el snapshot, así que editar `snapshot.json` a mano permitía revertir a lo
+que dijera el archivo. Ahora `VerifySnapshotDefinitions` lo comprueba **antes de tocar nada** y el revert falla
+con `snapshot_definition_tampered`.
+
+Se comprobó que la serialización usada al verificar es **idéntica** a la usada al calcular (`JsonDefaults.Create(false)`
+en ambos sitios); si no, el revert fallaría siempre. Un snapshot histórico **sin** hash se acepta: romper la
+recuperación de datos antiguos sería lo contrario de lo que hace falta.
+
+**Y una corrección de vocabulario**: el journal **no es "firmado"**. Es *tamper-evident* (cadena SHA-256), no
+autenticado: sin clave, quien edite una línea y recalcule la cadena obtiene un journal "válido". En la entrega
+anterior se llamó "firmado"; **esa palabra era incorrecta y quedó corregida** en el informe de la Capa 10, con un
+test que demuestra la forja (`TheJournal_IsTamperEvident_ButNotAuthenticated`).
+
+---
+
+## 7. Capa 11: qué se rompió por dentro para poder probar la UI
+
+Esta capa tiene la explicación más "de ingeniería" de las siete, y por eso se detalla.
+
+**El problema**: los ViewModels vivían en `FragForge.App`, que es `net10.0-windows` con `UseWPF`. El proyecto de
+tests es `net10.0`. Consecuencia directa: **la UI no tenía ni un solo test** en once capas. Las capas anteriores
+lo habían parcheado a medias sacando lógica pura a `Core` (`TweakCountFormatter`, `ScanStatusText`); la Capa 11
+termina el trabajo.
+
+**La solución**: `src/FragForge.UI.Core`, `net10.0`, **sin `UseWPF`**. Los dos ViewModels se movieron con
+`git mv` (historial intacto). Las interfaces `IConfirmationService`/`IFileDialogService` se fueron con ellos; en
+la App quedaron solo las implementaciones WPF. Resultado: **11 tests nuevos** sobre la UI (6 en 11.2 + 5 en 11.3), más los 4 de
+`AssemblyInfoTextTests` de 11.1.
+
+**Decisión registrada**: `Tweaks` no dispara `PropertyChanged` a propósito (es una `ObservableCollection`; la UI
+se entera por `CollectionChanged`). El test comprueba el **contenido**, no una notificación decorativa. Se
+detectó escribiendo el test: la primera versión asertaba `PropertyChanged("Tweaks")` y habría fallado siempre.
+
+---
+
+## 8. Tabla de capas → commits (para verificar)
+
+| Capa | Commits | Rango |
+|---|---|---|
+| 5 | `b5bc22a`, `4b0ec58`, `de21287`, `8d97263`, `0bd62cc` | `f44ba1d..0bd62cc` |
+| 6 | `12bfa82` | `b8a6087..12bfa82` |
+| 7 | `aebafee` | `12bfa82..aebafee` |
+| — | `f44ba1d` (informes de 6 y 7) | — |
+| 8 | `4dd2000` | `de20167..4dd2000` |
+| 9 | `b8a6087` | `4dd2000..b8a6087` |
+| 10 | `2e24434`, `d53c80e`, `500b5f9` (+ `07f7b9d`, informe) | `0bd62cc..500b5f9` |
+| 11 | `9d92f96`, `85088bb`, `a04893f`, `d3c6437`, `41f2dcd`, `7059d01`, `0fe7068` | `07f7b9d..0fe7068` |
+
+**El historial es lineal**: cada capa se construyó sobre la anterior, sin ramas paralelas. Se comprobó con
+`git log --graph` antes de escribir esta tabla. (Aviso: el orden de *commits* no coincide con el orden numérico de
+las capas —8 y 9 se commitearon antes que 6 y 7—, pero el árbol es una sola línea.)
+
+---
+
+## 9. Lo que queda por hacer, en orden
+
+1. **Compilar.** Todo. Es lo primero y desbloquea lo demás.
+2. **Ejecutar los 667 tests.** Especialmente los 11 de UI y los de composición hermética, escritos sin compilador.
+3. **Verificar el objetivo 0 warnings.** El CI lo intentará con `-warnaserror` en el job de Linux.
+4. **Compilar y probar el instalador en una VM**, incluido el desinstalador respondiendo **NO** a borrar
+   `%ProgramData%\FragForge`.
+5. **Firma**: hace falta un certificado. Sin él, SmartScreen avisará (es lo esperable, y está documentado).
+6. **E2E manual** completo en el equipo de referencia (i3-1220P, Windows 11 25H2 es-MX): `docs/handoff/e2e-manual.md`.
+
+## 10. Documentos de referencia
+
+| Documento | Qué contiene |
+|---|---|
+| `docs/handoff/FragForge-CapaN-Informe.md` (5–11) | Detalle por capa, con tabla de auditoría archivo:línea |
+| `docs/handoff/informes/parte-N-*.md` | Este mismo informe, partido |
+| `docs/handoff/e2e-manual.md` | Guion manual completo (Capa 11.8) |
+| `docs/descartados.md` | Lo que se decidió NO hacer, capa por capa |
+| `docs/seguridad.md` | Principios, amenazas y límites (Capa 10) |
+| `docs/elevacion.md` | Por qué `requireAdministrator` (Capa 11.4) |
+| `docs/firma.md` | Firma, SmartScreen y lo que no arregla (Capa 11.6) |
+| `docs/manual-revert.md` | Reversión de emergencia sin el programa |
