@@ -157,16 +157,60 @@ public sealed class EngineTests
     }
 
     [Fact]
-    public async Task UnknownConditions_AreNotTreatedAsMet()
+    public async Task UnknownConditions_AreNotTreatedAsMet_AndAreReportedAsUnknown_NotAsNotApplicable()
     {
+        // Hotfix PARTE A: una condición DESCONOCIDA no es una condición incumplida. Antes se
+        // reportaba NotApplicable, que afirma "esto no aplica en tu equipo" sobre algo que no se
+        // pudo medir. R-L: Unknown antes que adivinar.
         using var harness = new EngineTestHarness();
         harness.WithProfile(TestProfiles.NonWindows());
         harness.WithCatalog(Tweak.Create("tweak.one", Spec.Action("Fake", new { id = "one" }), conditions: [Spec.Condition("windows")]));
         var engine = harness.CreateEngine();
-        Assert.Equal(TweakState.NotApplicable, Assert.Single((await engine.ScanAsync()).Tweaks).State);
+
+        var scanned = Assert.Single((await engine.ScanAsync()).Tweaks);
+        Assert.Equal(TweakState.Unknown, scanned.State);
+        Assert.NotEqual(TweakState.NotApplicable, scanned.State);
+
         var report = await engine.ApplyAsync(["tweak.one"], harness.Options());
-        Assert.Equal(TweakState.NotApplicable, Assert.Single(report.Results).State);
+        var applied = Assert.Single(report.Results);
+        Assert.Equal(TweakState.Unknown, applied.State);
+        Assert.NotEqual(TweakState.NotApplicable, applied.State);
+
+        // Lo que NO cambia: la acción jamás se ejecuta.
         Assert.Empty(harness.Factory.Trace);
+    }
+
+    [Fact]
+    public async Task UnmetConditions_StayNotApplicable_BecauseAKnownNoIsNotAnUnknownOne()
+    {
+        // Contraste: gpuVendor=Nvidia sobre una iGPU Intel es un "no" CONOCIDO, no un "no sé".
+        using var harness = new EngineTestHarness();
+        harness.WithProfile(TestProfiles.Pn64());
+        harness.WithCatalog(Tweak.Create("tweak.nvidia", Spec.Action("Fake", new { id = "nvidia" }), conditions: [Spec.Condition("gpuVendor", new { vendor = "Nvidia" })]));
+        var engine = harness.CreateEngine();
+
+        var scanned = Assert.Single((await engine.ScanAsync()).Tweaks);
+
+        Assert.Equal(TweakState.NotApplicable, scanned.State);
+        Assert.True(scanned.Reason.Length > 0);
+    }
+
+    [Fact]
+    public async Task UnknownCondition_InvalidatesAnExperimentArm_InsteadOfPretendingTheBaselineIsFine()
+    {
+        // El endurecimiento es deliberado: ExperimentRunner.EnsureArmStateAsync NO acepta Unknown al
+        // preparar el brazo base (solo NotApplied/NotApplicable/Inspected), así que un estado no
+        // determinado invalida la medición en lugar de producir números que parecen evidencia.
+        using var harness = new EngineTestHarness();
+        harness.WithProfile(TestProfiles.NonWindows());
+        harness.WithCatalog(Tweak.Create("tweak.one", Spec.Action("Fake", new { id = "one" }), conditions: [Spec.Condition("windows")]));
+        var engine = harness.CreateEngine();
+
+        var state = Assert.Single((await engine.ScanAsync()).Tweaks).State;
+
+        // NotApplicable habría pasado el filtro del brazo base; Unknown no.
+        Assert.Equal(TweakState.Unknown, state);
+        Assert.False(state is TweakState.NotApplied or TweakState.NotApplicable or TweakState.Inspected);
     }
 
     [Fact]
