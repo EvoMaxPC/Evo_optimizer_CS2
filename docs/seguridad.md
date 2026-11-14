@@ -70,6 +70,19 @@ La amenaza más probable y la única que se puede atacar de verdad.
 - **Revert verificado**: cada acción tiene `VerifyRevertAsync`; si no coincide, el resultado es
   `RollbackFailed`, no "hecho".
 - **Journal encadenado**: cada entrada lleva el hash de la anterior. Verificar detecta una línea cambiada.
+- **Bloqueado hasta cablear la recuperación fuera de banda (R-J).** El motor **no escribe** el
+  script de recuperación (`RecoveryWriter` solo se construye en su propio fichero; `TweakEngine` no
+  lo menciona). Por eso el preflight emite una comprobación **Blocking** para todo tweak que pueda
+  dejar el equipo sin red o sin arranque: `restartsNetworkLink`, acciones sobre propiedades del
+  adaptador de red (`NetAdapterProperty`), `Bcdedit`, y cualquier `Kind` de driver/dispositivo
+  (`PreflightService.RecoveryCoverage`). Que un Blocking impide aplicar no es una suposición:
+  `PreflightReport.Passed` pone `CanApply=false` si hay alguno (`Results.cs:80`) y `TweakEngine`
+  lanza `PreflightFailedException` (`TweakEngine.cs:141`).
+  - *Estado hoy*: **`network.i225v-eee-off` queda bloqueado** (es el único de los 32 con
+    `NetAdapterProperty`/`restartsNetworkLink`). Se aplica a mano con la herramienta del fabricante
+    o espera a la ronda 10, cuando se cablee `RecoveryWriter`.
+  - Mientras quede algún tweak de esos en el catálogo, el apply completo queda bloqueado: la
+    comprobación se decide por catálogo, no por selección, porque `ApplyOptions` no lleva ids.
 - **Snapshot con hash de definición, pero NO obligatorio al leer.** El motor calcula
   `DefinitionSha256` al capturar (`TweakEngine.cs:469`) y al revertir lo compara con la definición
   guardada; si no coincide, no revierte (`TweakEngine.cs:656-660`). Ahora bien: un snapshot
