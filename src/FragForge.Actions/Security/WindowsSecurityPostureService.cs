@@ -88,7 +88,20 @@ public sealed class WindowsSecurityPostureService(
 
         if (hvci == FeatureState.Unknown)
         {
-            var scenario = await registry.ReadValueAsync(HvciScenarioKey, "Enabled", cancellationToken);
+            // Ultima fuente de HVCI. Si la lectura falla (registro protegido, clave ausente por politicas de
+            // grupo, IO), el estado se queda en Unknown, que es exactamente lo que significa: no se pudo
+            // comprobar. Se protege igual que las otras fuentes del metodo (WMI arriba, manage-bde en 127),
+            // que anaden su observacion y siguen. Antes la excepcion salia de ReadAsync y se perdia la
+            // postura ENTERA (VBS, BitLocker, SecureBoot, driver...) solo porque esta ultima lectura fallara;
+            // el test ThirdPartyDriver_WhenTheReadFails_IsNullNotFalse lo destapo, pero el campo del driver
+            // era la parte menos importante del problema.
+            RegistryReadResult scenario;
+            try { scenario = await registry.ReadValueAsync(HvciScenarioKey, "Enabled", cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                observations.Add(new DiagnosticObservation("hvci.scenario", "Unknown", "registro (Scenarios\\HypervisorEnforcedCodeIntegrity)", "Unknown", "No se pudo leer: " + ex.Message));
+                scenario = new RegistryReadResult(false, false, null, null);
+            }
             if (scenario.ValueExists && ToInt(scenario.Data) is { } enabled)
             {
                 // El escenario solo dice "configurado". Si está a 0 no se afirma Disabled si WMI ya dijo
@@ -130,7 +143,11 @@ public sealed class WindowsSecurityPostureService(
         }
 
         // --- Lista de bloqueo de drivers vulnerables ---------------------------
-        var blocklistValue = await registry.ReadValueAsync(CiConfigKey, "VulnerableDriverBlocklistEnable", cancellationToken);
+        // Se protege como las demas fuentes: si la lectura falla, el estado es Unknown (no se pudo comprobar)
+        // y se sigue con el resto de la postura, en vez de perderla entera por un valor informativo.
+        var blocklistValue = new RegistryReadResult(false, false, null, null);
+        try { blocklistValue = await registry.ReadValueAsync(CiConfigKey, "VulnerableDriverBlocklistEnable", cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { /* se informa abajo como Unknown */ }
         // DWORD 1 = habilitada; 0 = deshabilitada explícitamente. Ausente = Unknown (el valor por defecto
         // depende de la versión de Windows y no se asume).
         var blocklist = !blocklistValue.ValueExists ? FeatureState.Unknown : ToInt(blocklistValue.Data) switch
@@ -172,7 +189,11 @@ public sealed class WindowsSecurityPostureService(
     private async Task<FeatureState> ReadSecureBootAsync(CancellationToken cancellationToken)
     {
         // El registro es más barato y no depende de PowerShell. Si dice algo, manda.
-        var state = await registry.ReadValueAsync(@"HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled", cancellationToken);
+        // Si la lectura falla, se pasa a PowerShell: el doc de este metodo dice "un error ... es Unknown"
+        // y una excepcion de registro no puede tumbar la postura entera antes de intentar la otra via.
+        var state = new RegistryReadResult(false, false, null, null);
+        try { state = await registry.ReadValueAsync(@"HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot\State", "UEFISecureBootEnabled", cancellationToken); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { /* se intenta PowerShell */ }
         if (state.ValueExists && ToInt(state.Data) is { } value)
             return value == 1 ? FeatureState.Enabled : FeatureState.Disabled;
 
