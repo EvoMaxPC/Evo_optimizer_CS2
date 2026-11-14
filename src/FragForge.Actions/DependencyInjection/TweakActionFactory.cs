@@ -20,9 +20,18 @@ namespace FragForge.Actions.DependencyInjection;
 /// <para>
 /// <c>adapterResolver</c> es NUEVO, ADITIVO y OPCIONAL (al final, con valor por defecto). Lo exige
 /// <c>NetAdapterPropertyAction</c>, que necesita un <see cref="INetworkAdapterResolver"/> y no un
-/// <c>INetworkAdapterController</c>: son interfaces distintas. Al ir al final, los 8 llamadores existentes
-/// compilan sin cambios (los 7 tests no tocan red y el contenedor lo pasa). Si falta, esa accion falla al
-/// construirse con un mensaje claro en vez de resolver el adaptador por su nombre visible.
+/// <c>INetworkAdapterController</c>: son interfaces distintas. Al ir al final, los llamadores existentes
+/// compilan sin cambios.
+/// </para>
+/// <para>
+/// Si falta, se usa <see cref="Network.UnsupportedNetworkAdapterResolver"/>, NO se lanza. Motivo (fallo
+/// encontrado en la ronda 3): el validador del catalogo construye TODAS las acciones al cargar
+/// (<c>TweakCatalogValidator.ValidateCatalog</c>), y el catalogo real incluye <c>network.i225v-eee-off</c>,
+/// que es de tipo <c>NetAdapterProperty</c>. Los tests construyen la fabrica sin resolutor, asi que lanzar
+/// aqui dejaba el catalogo real INCARGABLE en cualquier host sin <c>IWmiQuery</c>: no es un fallo de la
+/// accion, es el arranque entero. Con el resolutor sin soporte la accion se CONSTRUYE y, al aplicarse,
+/// <c>ResolveAsync</c> devuelve null y falla con <c>ActionNotApplicableException</c>. Eso es lo correcto por
+/// R-L: no se inventa un adaptador; se dice que no aplica. El contenedor de produccion pasa siempre el real.
 /// </para>
 /// </remarks>
 public sealed class TweakActionFactory(IRegistry registry, IProtectionPolicy policy, IServiceController services, IScheduledTaskStore tasks, INetworkAdapterController network, IProcessRunner runner, IEnumerable<IDiagnosticProbe> probes, IWmiQuery? wmi = null, INetworkAdapterResolver? adapterResolver = null) : ITweakActionFactory
@@ -48,14 +57,16 @@ public sealed class TweakActionFactory(IRegistry registry, IProtectionPolicy pol
             "bcdedit" => new BcdeditAction(runner, policy, specification),
             // Capa 5.1: la acción se identifica por hardware (InterfaceGuid / NetCfgInstanceId), no por el
             // nombre visible. El resolutor es el INYECTADO (lo elige el contenedor por plataforma); el lector
-            // de propiedades se construye aquí con el runner que ya recibe la fábrica, para no cambiar su
-            // constructor (lo usan 8 sitios).
+            // de propiedades se construye aquí con el runner que ya recibe la fábrica, para no añadir otro
+            // parámetro al constructor.
             "netadapterproperty" => new NetAdapterPropertyAction(
                 // Se usa el resolutor INYECTADO, no uno construido aqui: es el que el contenedor elige por
                 // plataforma (Windows/Unsupported) y el que los tests pueden sustituir por un doble.
                 // Construirlo a mano disparaba CA1416 (WindowsNetworkAdapterResolver es Windows-only y este
                 // sitio es alcanzable en todas las plataformas) y ademas ignoraba la inyeccion.
-                _adapterResolver ?? throw new CatalogValidationException("NetAdapterProperty requiere INetworkAdapterResolver (adapterResolver).", ["adapterResolver"]),
+                // Sin resolutor inyectado se usa el de "sin soporte" (lista vacia / null), que hace la accion
+                // NO APLICABLE al aplicarse en vez de impedir que el catalogo se cargue. Ver <remarks>.
+                _adapterResolver ?? new Network.UnsupportedNetworkAdapterResolver(),
                 new Network.NetworkAdvancedPropertyReader(runner),
                 policy, specification),
             "fileedit" => new FileEditAction(policy, specification),
