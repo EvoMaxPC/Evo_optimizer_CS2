@@ -44,9 +44,15 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             foreach (var condition in definition.Conditions) { try { conditions.Create(condition); } catch (Exception ex) { errors.Add($"{definition.Id}: condición inválida: {ex.Message}"); } }
             foreach (var action in definition.Actions)
             {
-                // Un destino protegido NO es una acción inválida: lo reporta ValidatePolicy con su propio motivo.
-            try { actions.Create(action); }
-            catch (Exception ex) when (ex is not ProtectedTargetException) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
+                // Un destino protegido NO es una acción inválida: se reporta como error de POLÍTICA, no de
+                // forma, con el mismo formato que ValidatePolicy. Antes se dejaba escapar la excepción con un
+                // `when (ex is not ProtectedTargetException)`, y eso solo funcionaba en la ruta resiliente
+                // (TweakCatalog.cs:156 concatena ValidatePolicy); en la ruta ESTRICTA no hay quien la recoja,
+                // asi que el loader lanzaba ProtectedTargetException en vez de CatalogValidationException y
+                // ademas el mensaje se perdia.
+                try { actions.Create(action); }
+                catch (ProtectedTargetException ex) { errors.Add($"{definition.Id}: {ex.Message}"); }
+                catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
                 if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
                 {
                     var service = ImpactSimulator.ExtractServiceName(action);
