@@ -155,7 +155,9 @@ public sealed class ExternalCatalogResilienceTests
         ]);
 
         Assert.DoesNotContain(catalog.Definitions, d => d.Id == "cs2.cpu-priority-high");
-        Assert.Equal(original.Actions[0].Kind, "IfeoPerfOptions");
+        // xUnit2000: el valor ESPERADO va primero. Estaba al reves ("IfeoPerfOptions" como actual), asi que
+        // al fallar el mensaje decia lo contrario de lo que pasaba.
+        Assert.Equal("IfeoPerfOptions", original.Actions[0].Kind);
         Assert.Contains(catalog.LoadReport.Rejected, r => r.Reason.Contains("duplicado", StringComparison.OrdinalIgnoreCase));
     }
 
