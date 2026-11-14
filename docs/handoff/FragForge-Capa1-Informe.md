@@ -6,6 +6,11 @@
 
 > Este informe **incorpora la adenda 2**, que prevalece sobre lo escrito antes. Donde la
 > adenda contradice una versión anterior, manda la adenda.
+>
+> **No existe adenda 3.** Se buscó en el historial de git (todos los commits y ramas), en el
+> contenido de todos los commits y en los PRs de GitHub, y no hay rastro. Si existe, no llegó a
+> este repositorio: hay que pegarla. Este informe refleja la adenda 2 más dos correcciones
+> añadidas después (ver "Correcciones posteriores" al final).
 
 ---
 
@@ -242,6 +247,43 @@ cada corrida con sus motivos.
 6. **La captura de referencia no es un baseline válido.** Se usa solo como fixture.
    **No se afirma que el juego corra a 60 FPS ni que la pantalla esté a 60 Hz**: hay dos
    swapchains y su relación no está determinada.
+
+## Correcciones posteriores a la adenda 2
+
+Dos defectos propios encontrados al revisar el parser después de entregarlo. Ambos con test
+red-first y commit propio.
+
+### 1. `SwapChainAddress` devolvía `""` cuando no había dirección
+
+**Dónde:** `PresentMonCsvParser.cs`, construcción de `chosenAddress`.
+
+**Qué pasaba.** Si el CSV no trae la columna `SwapChainAddress`, o la celda viene `NA`, todas las
+filas caen en la misma clave interna (`""`). Agrupar así es correcto —no hay dos cadenas que
+separar—, pero ese `""` se reportaba tal cual en `FrameSeries.SwapChainAddress`: se afirmaba una
+dirección que no se conoce. R-L dice `null`.
+
+**Arreglo.** `chosenAddress = chosen.Address.Length == 0 ? null : chosen.Address;`. El detalle de
+`Warnings` muestra `(sin dirección)` en vez de `: filas=…`.
+
+**Tests:** `WithoutSwapChainColumn_AddressIsNull_NotAnEmptyString` y
+`RowsWithNaSwapChainAddress_AreGroupedSeparately_AndTheirAddressIsNull`. El segundo comprueba además
+que las filas con `NA` **no se mezclan** con las de la cadena real.
+
+### 2. El motivo de "GPU no disponible" no acotaba a la swapchain
+
+**Dónde:** `CaptureValidity.cs:92`.
+
+**Qué pasaba.** El parser calcula `GpuUnavailable` **solo dentro de la swapchain elegida** (adenda 2),
+pero la puerta emitía *"todas las filas de MsGPUBusy son 0 o NA"*. En una captura con varias cadenas
+eso es **falso**: la descartada puede tener la GPU en cero y la elegida no — exactamente el caso de la
+captura real, donde `0x167400D5A60` tiene todo en 0 y `0x0` tiene GPU real. El motivo contradecía al
+dato que la propia captura demostraba.
+
+**Arreglo.** El motivo dice ahora *"GPU no disponible en la swapchain analizada"*.
+
+**Test:** `GpuUnavailableReason_SaysTheChainAnalyzed_NotAllRows`.
+
+---
 
 ## Sí verificado en la PC objetivo
 
