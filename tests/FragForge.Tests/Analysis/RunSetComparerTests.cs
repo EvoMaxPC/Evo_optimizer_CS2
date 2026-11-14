@@ -16,6 +16,20 @@ public sealed class RunSetComparerTests
     /// Cuatro corridas por condición SIN solape en las tres métricas, con B mejor en todas: FPS más altos,
     /// P99 más bajo y menos tirones. Es el caso que debería producir <see cref="OverallVerdict.Mejora"/>.
     /// </summary>
+    /// <summary>
+    /// Construye las métricas de una corrida recorriendo el camino REAL del motor: frames crudos en ms ->
+    /// <see cref="HitchAnalyzer.Analyze"/> -> <see cref="FrameStatisticsCalculator.Compute"/> -> RunMetricSet.
+    /// Es el mismo orden que usa <c>AnalyzeCommands.BuildReport</c>. Nada se pone a mano: si una corrida tiene
+    /// 500 frames, el null de Low1PercentAverageFps lo produce el motor, no el test.
+    /// </summary>
+    private static RunMetricSet RunFromFrames(string label, int frameCount, double frameTimeMs)
+    {
+        var frames = Enumerable.Repeat(frameTimeMs, frameCount).ToArray();
+        var (hitch, analyzed) = HitchAnalyzer.Analyze(frames);
+        var stats = FrameStatisticsCalculator.Compute(analyzed);
+        return new RunMetricSet(label, stats.Low1PercentAverageFps, stats.P99FrameTimeMs, hitch.HitchesPerMinute, stats.TotalDurationMs / 1000.0);
+    }
+
     private static (RunMetricSet[] A, RunMetricSet[] B) Disjoint()
     {
         var a = new[]
@@ -175,5 +189,49 @@ public sealed class RunSetComparerTests
         Assert.Equal(BetterDirection.Lower, result.HitchesPerMinute.Direction);
         Assert.Equal("FPS", result.Low1Percent.Unit);
         Assert.Equal("ms", result.P99FrameTime.Unit);
+    }
+
+    [Fact]
+    public void RunWith500Frames_MakesLow1Insuficiente_AndTheGlobalVerdictIsNotMejora()
+    {
+        // 4 corridas por condición. A: 1200 frames de 12.5 ms. B: tres de 1200 frames de 10.0 ms y UNA de
+        // solo 500 frames. Los frames son crudos: el camino es HitchAnalyzer + FrameStatisticsCalculator.
+        var a = new[]
+        {
+            RunFromFrames("a1", 1200, 12.5), RunFromFrames("a2", 1200, 12.5),
+            RunFromFrames("a3", 1200, 12.5), RunFromFrames("a4", 1200, 12.5)
+        };
+        var b = new[]
+        {
+            RunFromFrames("b1", 1200, 10.0), RunFromFrames("b2", 1200, 10.0),
+            RunFromFrames("b3", 1200, 10.0), RunFromFrames("b4", 500, 10.0)
+        };
+
+        var result = RunSetComparer.Compare(a, b);
+
+        // Cálculo a mano: con N copias de un mismo frametime x, cualquier percentil y cualquier media valen x.
+        //   P99FrameTime: A = 12.5 ms, B = 10.0 ms -> en ms, más bajo es mejor -> se separa a favor de B.
+        //   Low1PercentAverage: A = 1000/12.5 = 80 FPS, B = 1000/10.0 = 100 FPS... salvo la corrida de 500.
+        //
+        // 500 frames < MinFramesForLow1Percent (1000), así que el peor 1 % (ceil(0.01*500) = 5 frames) NO se
+        // calcula: Low1PercentAverageFps es null CON MOTIVO, no 0 ni un valor estimado (R-L). El comparador no
+        // inventa nada: al faltar el dato de una corrida de B, la métrica entera pasa a Insuficiente.
+        Assert.Null(b[3].Low1PercentAverageFps);
+
+        Assert.Equal(MetricVerdict.Insuficiente, result.Low1Percent.Verdict);
+        Assert.Equal(1, result.Low1Percent.B.MissingRuns);
+        Assert.Equal(0, result.Low1Percent.A.MissingRuns);
+        Assert.Contains("sin dato", result.Low1Percent.Reason, StringComparison.Ordinal);
+        Assert.Contains("1000", result.Low1Percent.Reason, StringComparison.Ordinal);
+
+        // Las OTRAS corridas sí están separadas: 10.0 < 12.5 para las cuatro de A, así que el P99 se separa a
+        // favor de B. Esto demuestra que el global no decae por falta de separación, sino por el hueco.
+        Assert.Equal(MetricVerdict.Separado, result.P99FrameTime.Verdict);
+        Assert.Equal("B", result.P99FrameTime.BetterCondition);
+
+        // Y aun así NO se declara mejora: la métrica principal no se puede comparar.
+        Assert.NotEqual(OverallVerdict.Mejora, result.Overall);
+        Assert.Equal(OverallVerdict.SinDiferenciaDistinguible, result.Overall);
+        Assert.Contains("No hay corridas suficientes", result.OverallReason, StringComparison.Ordinal);
     }
 }
