@@ -1,15 +1,32 @@
 name: build
 
+# Capa 11.7. Sin secretos: el workflow no firma ni publica releases. El artefacto de
+# publish solo se adjunta en tags.
+
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
 jobs:
+  # ---------------------------------------------------------------------------
+  # Linux: lo que NO depende de Windows. Rapido y sin UAC: aqui no se aplica nada
+  # sobre el sistema real.
+  # ---------------------------------------------------------------------------
   linux-core:
     name: Core + Actions + Tweaks + Composition + Tests (ubuntu)
     runs-on: ubuntu-latest
@@ -18,32 +35,87 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Restore (CLI and App excluded; Windows-only)
+
+      - name: Restore
         run: dotnet restore tests/FragForge.Tests/FragForge.Tests.csproj
-      - name: Build (warnings as errors in Core)
-        run: dotnet build tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-restore
+
+      # Core ya rompe con warnings por Directory.Build.props (TreatWarningsAsErrors).
+      # Aqui se extiende a TODA la cadena que compila este job (Core, Actions,
+      # Tweaks, Composition, UI.Core), que es donde vive la logica y donde va a caer
+      # cualquier aviso del codigo nuevo.
+      #
+      # Si esto se pone rojo el primer dia: NO quitar -warnaserror, arreglar el
+      # aviso. Es el objetivo de la capa (0 warnings).
+      - name: Build (warnings as errors)
+        run: >
+          dotnet build tests/FragForge.Tests/FragForge.Tests.csproj
+          -c Release --no-restore -warnaserror
+
+      # Los tests marcados con Trait Category=Windows se saltan solos fuera de
+      # Windows (no se excluyen a mano: el filtro vive en el codigo del test).
       - name: Test
-        run: dotnet test tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=results.trx"
-      - uses: actions/upload-artifact@v4
+        run: >
+          dotnet test tests/FragForge.Tests/FragForge.Tests.csproj
+          -c Release --no-build --logger "trx;LogFileName=results.trx"
+
+      - name: Subir resultados
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: test-results
           path: '**/TestResults/results.trx'
+          retention-days: 7
 
+  # ---------------------------------------------------------------------------
+  # Windows: solucion completa (App WPF incluida) y publish.
+  # ---------------------------------------------------------------------------
   windows-full:
-    name: Solution completa + publish (windows)
+    name: Solucion completa + publish (windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: dotnet restore FragForge.sln
-      - run: dotnet build FragForge.sln -c Release --no-restore
-      - run: dotnet test tests/FragForge.Tests/FragForge.Tests.csproj -c Release --no-build
-      - run: dotnet publish src/FragForge.Cli/FragForge.Cli.csproj -c Release -r win-x64 --self-contained true -o publish/cli -p:PublishSingleFile=true
-      - run: dotnet publish src/FragForge.App/FragForge.App.csproj -c Release -r win-x64 --self-contained true -o publish/app -p:PublishSingleFile=true
-      - uses: actions/upload-artifact@v4
+
+      - name: Restore
+        run: dotnet restore FragForge.sln
+
+      # Sin -warnaserror GLOBAL a proposito: la solucion incluye App (WPF) y CLI, y
+      # esos dos proyectos nunca se han compilado en este entorno. Core sigue
+      # rompiendo con warnings por Directory.Build.props; el resto se deja como
+      # aviso para que un warning preexistente de WPF no tape el resto del build.
+      # Cuando se pueda compilar en local, el siguiente paso es extender el flag.
+      - name: Build
+        run: dotnet build FragForge.sln -c Release --no-restore
+
+      # En Windows entran tambien los tests con Trait Category=Windows. Siguen sin
+      # escribir en el sistema: usan dobles (CompositionOverrides). Ver
+      # docs/handoff/e2e-manual.md para lo que solo se puede probar a mano.
+      - name: Test
+        run: >
+          dotnet test tests/FragForge.Tests/FragForge.Tests.csproj
+          -c Release --no-build --logger "trx;LogFileName=results-win.trx"
+
+      - name: Subir resultados
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: fragforge-win-x64
-          path: publish/
+          name: test-results-windows
+          path: '**/TestResults/results-win.trx'
+          retention-days: 7
+
+      # El publish se hace con el MISMO script que se usa a mano, para que CI no
+      # pruebe una ruta que nadie usa. -SkipTests porque ya se corrieron arriba.
+      - name: Publish (solo en tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: ./scripts/publish.ps1 -SkipTests
+
+      - name: Adjuntar artefacto (solo en tags)
+        uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: fragforge-win-x64-${{ github.ref_name }}
+          path: artifacts/publish/
+          retention-days: 30
