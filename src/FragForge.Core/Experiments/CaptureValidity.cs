@@ -86,7 +86,10 @@ public static class CaptureValidityGate
             && series.UntilDisplayedMs.Count > 0 && series.UntilDisplayedMs.All(v => v is null);
         if (displayAllNa) reasons.Add("sin seguimiento de display (MsBetweenDisplayChange y MsUntilDisplayed en NA)");
 
-        if (series.GpuUnavailable) reasons.Add("GPU no disponible (todas las filas de MsGPUBusy son 0 o NA)");
+        // El parser calcula GpuUnavailable SOLO dentro de la swapchain elegida. El motivo debe decir
+        // eso exactamente: "todas las filas" a secas sería falso en una captura con varias cadenas,
+        // donde la descartada puede tener la GPU en cero y la elegida no.
+        if (series.GpuUnavailable) reasons.Add("GPU no disponible en la swapchain analizada (todas sus filas de MsGPUBusy son 0 o NA)");
 
         if (series.SwapChains.Count > 1)
             reasons.Add("varias swapchains en el proceso");

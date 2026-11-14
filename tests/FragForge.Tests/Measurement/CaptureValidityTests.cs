@@ -63,6 +63,19 @@ public sealed class CaptureValidityTests
     }
 
     [Fact]
+    public void GpuUnavailableReason_SaysTheChainAnalyzed_NotAllRows()
+    {
+        // Con varias swapchains, "todas las filas" sería falso: la descartada puede tener la GPU en
+        // cero y la elegida no. El motivo debe acotarse a la cadena analizada.
+        using var reader = new StringReader(PresentMonFixtures.OnlyDxgi);
+        var report = CaptureValidityGate.Evaluate(PresentMonCsvParser.Parse(reader));
+
+        var reason = Assert.Single(report.Reasons, r => r.Contains("GPU no disponible", StringComparison.Ordinal));
+        Assert.Contains("swapchain analizada", reason, StringComparison.Ordinal);
+        Assert.DoesNotContain("todas las filas de MsGPUBusy", reason, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void NonStandardLayout_IsSuspect_WithItsOwnReason()
     {
         var csv = PresentMonFixtures.V1MetricsHeader + "\n" +
