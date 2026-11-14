@@ -1,6 +1,7 @@
 using FragForge.Core.Abstractions;
 using FragForge.Core.Conditions;
 using FragForge.Core.Engine;
+using FragForge.Core.Localization;
 using FragForge.Core.Models;
 using FragForge.Core.Persistence;
 using FragForge.Core.Preflight;
@@ -52,10 +53,31 @@ public sealed class EngineTestHarness : IDisposable
         Snapshots,
         Journal,
         Restore,
-        new PreflightService(Restore, Catalog),
+        // El localizador REAL, el mismo que inyecta CompositionRoot en produccion (:77 y :95). Sin el,
+        // PreflightService cae a LocalizerVacio (PreflightService.cs:93) y todo mensaje localizado sale
+        // como su CLAVE: los tests leian "preflight.recovery" en vez del motivo. No cambia que se bloquee,
+        // cambia que el mensaje sea el que el usuario ve.
+        new PreflightService(Restore, Catalog, null, PreflightLocalizer),
         new FileExecutionGate(Paths),
         hooks ?? [],
         NullLogger<TweakEngine>.Instance);
+    /// <summary>
+    /// Los textos de la app, cargados una vez. Ver el comentario del preflight en CreateEngine.
+    /// Se lee el recurso embebido de forma SINCRONA a proposito: este campo se inicializa en un helper de
+    /// test que no es async, y bloquear un hilo con .GetAwaiter().GetResult() es justo lo que xUnit1031
+    /// senala. Localizer.FromJson ya es publico (Localizer.cs:17), asi que no hace falta tocar produccion.
+    /// </summary>
+    private static readonly Localizer PreflightLocalizer = LoadPreflightLocalizer();
+
+    private static Localizer LoadPreflightLocalizer()
+    {
+        const string resource = "FragForge.Tweaks.Localization.es-MX.json";
+        using var stream = typeof(FragForge.Tweaks.Localization.LocalizationLoader).Assembly.GetManifestResourceStream(resource)
+            ?? throw new InvalidDataException($"Recurso de localizacion '{resource}' ausente.");
+        using var reader = new StreamReader(stream);
+        return Localizer.FromJson("es-MX", reader.ReadToEnd());
+    }
+
     public ApplyOptions Options(bool dryRun = false, bool force = false, TweakProfile profile = TweakProfile.Advanced) => new() { DryRun = dryRun, Force = force, CreateRestorePoint = true, Profile = profile, TargetUserSid = UserSid };
     public void Dispose() => Directory.Dispose();
 }
