@@ -381,10 +381,11 @@ public sealed class CatalogTests
     }
 
     [Fact]
-    public void Localization_LoadsBothLanguagesWithTheSameKeys()
+    public async Task Localization_LoadsBothLanguagesWithTheSameKeys()
     {
-        var es = FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync("es-MX").GetAwaiter().GetResult();
-        var en = FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync("en-US").GetAwaiter().GetResult();
+        // xUnit1031: await en vez de bloquear con GetAwaiter().GetResult().
+        var es = await FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync("es-MX");
+        var en = await FragForge.Tweaks.Localization.LocalizationLoader.LoadAsync("en-US");
         Assert.Equal("es-MX", es.Culture);
         Assert.Equal("en-US", en.Culture);
         Assert.NotEqual(es["nav.scan"], en["nav.scan"]);
