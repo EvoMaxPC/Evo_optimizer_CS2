@@ -1,6 +1,7 @@
 using FragForge.Actions.Files;
 using FragForge.Cli;
 using FragForge.Core.Abstractions;
+using FragForge.Core.Cs2Profile;
 using FragForge.Core.Models;
 using FragForge.Tests.Fakes;
 using Xunit;
