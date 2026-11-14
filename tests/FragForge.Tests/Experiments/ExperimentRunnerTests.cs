@@ -1,6 +1,7 @@
 using FragForge.Core.Abstractions;
 using FragForge.Core.Experiments;
 using FragForge.Core.Models;
+using FragForge.Core.Persistence;
 using FragForge.Tests.Fakes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;

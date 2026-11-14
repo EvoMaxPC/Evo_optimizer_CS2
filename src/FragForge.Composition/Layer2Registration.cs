@@ -1,6 +1,7 @@
 using FragForge.Actions.Inventory;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Drift;
+using FragForge.Core.Experiments;
 using FragForge.Core.Inventory;
 using FragForge.Core.Myths;
 using FragForge.Core.Recovery;

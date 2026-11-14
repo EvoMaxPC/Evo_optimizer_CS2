@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FragForge.Actions.Inventory;
 using FragForge.Core.Abstractions;
+using FragForge.Core.Atlas;
 using FragForge.Core.Inventory;
 using FragForge.Core.Models;
 using FragForge.Tests.Fakes;
