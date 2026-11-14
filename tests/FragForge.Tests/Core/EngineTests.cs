@@ -72,8 +72,19 @@ public sealed class EngineTests
 
     /// <summary>
     /// Capa 5.3: si un tweak reinicia el enlace, el aviso aparece ANTES de aplicar. Es lo que la UI y el CLI
-    /// muestran al usuario, y tiene que estar aunque el tweak se aplique bien.
+    /// muestran al usuario, y tiene que estar aunque el tweak no llegue a aplicarse.
     /// </summary>
+    /// <remarks>
+    /// CORREGIDO en la ronda de fallos 2. Este test se escribio cuando R-J no existia y afirmaba
+    /// report.Success == true. Desde R-J un tweak con restartsNetworkLink queda BLOQUEADO por diseno
+    /// (docs/seguridad.md:73-88), asi que la premisa del test ya no se cumple y fallaba en el Assert.True.
+    ///
+    /// El aviso de red NO se pierde por el bloqueo, y el orden importa: el motor lo acumula en :149-150,
+    /// ANTES de llamar al preflight (:159), asi que cuando el preflight lanza (:161) el aviso ya esta en
+    /// report.Warnings. Aqui se afirman las dos cosas con el reporte real: que el bloqueo llego como
+    /// Success=false + Errors (no como excepcion que escape: el throw de :161 lo recoge el catch de :277) y
+    /// que el aviso de la Capa 5.3 sigue ahi, con el id y el texto.
+    /// </remarks>
     [Fact]
     public async Task NetworkLinkRestart_ProducesAWarning_BeforeApplying()
     {
@@ -83,10 +94,15 @@ public sealed class EngineTests
 
         var report = await engine.ApplyAsync(["tweak.net"], harness.Options());
 
-        Assert.True(report.Success, string.Join("; ", report.Errors.Concat(report.Warnings)));
+        // R-J: no se aplica. El motivo nombra al culpable.
+        Assert.False(report.Success);
+        Assert.Contains(report.Errors, e => e.Contains("tweak.net", StringComparison.Ordinal) && e.Contains("R-J", StringComparison.Ordinal));
+        // Y el aviso de Capa 5.3 sigue llegando, que es la intencion original del test.
         var warning = Assert.Single(report.Warnings, w => w.Contains("reinicia el adaptador", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("tweak.net", warning, StringComparison.Ordinal);
         Assert.Contains("cortará", warning, StringComparison.OrdinalIgnoreCase);
+        // Y no se toco nada: el bloqueo ocurre antes de aplicar.
+        Assert.DoesNotContain("apply:net", harness.Factory.Trace);
     }
 
     /// <summary>Un tweak que NO reinicia el enlace no genera ese aviso: no se avisa de lo que no pasa.</summary>
