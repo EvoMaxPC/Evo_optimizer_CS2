@@ -12,14 +12,17 @@ namespace FragForge.Tests.Gpu;
 /// módulos distintos ni siquiera se sugiera.
 ///
 /// <c>DescribeChannels</c> es puro (recibe la lista de módulos ya leída), así que no hace falta WMI ni
-/// Windows para probarlo.
+/// Windows para probarlo. Pero VIVE en <c>WindowsHardwareProfiler</c>, que está marcada
+/// <c>[SupportedOSPlatform("windows")]</c>: sin la marca en el test, cada acceso daría CA1416 en un
+/// proyecto net10.0. Mismo patrón que NetAdapterPropertiesTests.
 /// </summary>
+[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 public sealed class MemoryChannelDescriptionTests
 {
     [Fact]
     public void WithTwoEqualModules_SaysProbableAndNotConfirmable()
     {
-        var text = HardwareProfiler.DescribeChannels([Module(8UL << 30, 3200), Module(8UL << 30, 3200)]);
+        var text = WindowsHardwareProfiler.DescribeChannels([Module(8UL << 30, 3200), Module(8UL << 30, 3200)]);
 
         Assert.Contains("2 módulos iguales", text, StringComparison.Ordinal);
         Assert.Contains("dual-channel probable", text, StringComparison.Ordinal);
@@ -33,7 +36,7 @@ public sealed class MemoryChannelDescriptionTests
     [Fact]
     public void WithOneModule_SaysSingleChannel_NotProbableDual()
     {
-        var text = HardwareProfiler.DescribeChannels([Module(16UL << 30, 3200)]);
+        var text = WindowsHardwareProfiler.DescribeChannels([Module(16UL << 30, 3200)]);
 
         Assert.Contains("1 módulo", text, StringComparison.Ordinal);
         Assert.Contains("single-channel", text, StringComparison.Ordinal);
@@ -43,7 +46,7 @@ public sealed class MemoryChannelDescriptionTests
     [Fact]
     public void WithDifferentCapacities_DoesNotSuggestDualChannel()
     {
-        var text = HardwareProfiler.DescribeChannels([Module(8UL << 30, 3200), Module(16UL << 30, 3200)]);
+        var text = WindowsHardwareProfiler.DescribeChannels([Module(8UL << 30, 3200), Module(16UL << 30, 3200)]);
 
         Assert.Contains("no se puede afirmar dual-channel", text, StringComparison.Ordinal);
         Assert.DoesNotContain("probable", text, StringComparison.OrdinalIgnoreCase);
@@ -52,7 +55,7 @@ public sealed class MemoryChannelDescriptionTests
     [Fact]
     public void WithDifferentSpeeds_DoesNotSuggestDualChannel()
     {
-        var text = HardwareProfiler.DescribeChannels([Module(8UL << 30, 2666), Module(8UL << 30, 3200)]);
+        var text = WindowsHardwareProfiler.DescribeChannels([Module(8UL << 30, 2666), Module(8UL << 30, 3200)]);
 
         Assert.Contains("no se puede afirmar dual-channel", text, StringComparison.Ordinal);
     }
@@ -60,7 +63,7 @@ public sealed class MemoryChannelDescriptionTests
     [Fact]
     public void WithNoModules_SaysNothingAboutChannels()
     {
-        var text = HardwareProfiler.DescribeChannels([]);
+        var text = WindowsHardwareProfiler.DescribeChannels([]);
 
         Assert.Contains("no devolvió módulos", text, StringComparison.Ordinal);
         Assert.DoesNotContain("dual-channel", text, StringComparison.OrdinalIgnoreCase);
@@ -74,7 +77,7 @@ public sealed class MemoryChannelDescriptionTests
     public void AlwaysExplainsThatWmiDoesNotSeeInterleaving(int moduleCount)
     {
         var modules = Enumerable.Range(0, moduleCount).Select(_ => Module(8UL << 30, 3200)).ToArray();
-        var text = HardwareProfiler.DescribeChannels(modules);
+        var text = WindowsHardwareProfiler.DescribeChannels(modules);
 
         Assert.Contains("no el entrelazado", text, StringComparison.Ordinal);
     }
