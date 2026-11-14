@@ -19,13 +19,18 @@ public sealed class ScheduledTaskAction(IScheduledTaskStore store, IProtectionPo
         var state = await store.GetAsync(_parameters.Path, cancellationToken);
         // Objeto inexistente = NO APLICABLE, nunca error ni "aplicado" (R-L: no inventar).
         //
-        // "No existe" lo decide WindowsScheduledTaskStore.GetAsync por DATO ESTRUCTURADO, no por texto:
-        // devuelve {"exists":false} cuando Get-ScheduledTask no encuentra la tarea. La deteccion no pasa
-        // por ningun mensaje localizado, asi que un Windows en es-MX, en-US o el que sea da el mismo
-        // resultado.
+        // COMO se decide "no existe" (estado real, ronda 5c): el script de
+        // WindowsScheduledTaskStore.BuildGetScript usa Get-ScheduledTask -ErrorAction Stop dentro de un
+        // try/catch y emite {"exists":false} SOLO si la excepcion tiene
+        // $_.CategoryInfo.Category -eq 'ObjectNotFound'. La categoria es un valor de enumeracion de
+        // PowerShell, no texto: un Windows en es-MX, en-US o el que sea da el mismo resultado.
         //
-        // Un fallo real (acceso denegado, Task Scheduler caido, timeout) NO llega aqui: el store lanza
-        // ProcessFailedException, que sube como error. Esta distincion es la clave de la ronda.
+        // Cualquier OTRA falla (acceso denegado, Programador de tareas caido, RPC, timeout, o exito con
+        // 0 resultados sin excepcion) NO produce exists:false: el script escribe por stderr y sale con
+        // codigo distinto de 0, asi que WindowsScheduledTaskStore.RunAsync lanza ProcessFailedException
+        // y sube como error real. No se llega a este if.
+        //
+        // Es decir: este if solo se ejecuta cuando el store pudo AFIRMAR que la tarea no existe.
         if (!state.Exists) throw new ActionNotApplicableException($"La tarea no existe en este equipo: {_parameters.Path}");
         return state;
     }
