@@ -95,18 +95,20 @@ public sealed class NetworkProbeTests
         Assert.False(result.HasSamples);
     }
 
+    // Los valores esperados que estaban escritos NO coincidian con el comentario de al lado ni con la
+    // implementacion: Median redondea con MidpointRounding.AwayFromZero.
     [Theory]
-    [InlineData(new long[] { 1, 2, 3, 4 }, 2)]        // par → media de las dos centrales (2+3)/2 = 2.5 → 3
+    [InlineData(new long[] { 1, 2, 3, 4 }, 3)]        // par → media de las dos centrales (2+3)/2 = 2.5 → 3
     [InlineData(new long[] { 1, 2, 3, 4, 5 }, 3)]     // impar → central exacta
     [InlineData(new long[] { 5 }, 5)]
-    [InlineData(new long[] { 1, 2, 3, 4, 5, 6 }, 3)]  // (3+4)/2 = 3.5 → 4
+    [InlineData(new long[] { 1, 2, 3, 4, 5, 6 }, 4)]  // (3+4)/2 = 3.5 → 4
     public void Median_HandlesEvenAndOddCounts(long[] values, long expected)
     {
         Assert.Equal(expected, NetworkProbeResult.Median(values.OrderBy(v => v).ToArray()));
     }
 
     [Theory]
-    [InlineData(99, 100)]  // con 100 muestras, p99 es la 99.ª
+    [InlineData(99, 99)]   // con 100 muestras, p99 es la 99.ª (rank=ceil(99)=99 -> indice 98 -> valor 99)
     [InlineData(50, 50)]
     [InlineData(100, 100)]
     public void Percentile_UsesNearestRank(int percentile, long expected)
