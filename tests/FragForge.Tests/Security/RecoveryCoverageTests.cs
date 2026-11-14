@@ -44,7 +44,7 @@ public sealed class RecoveryCoverageTests
         new(new FakeSystemRestoreService { Protection = FeatureState.Enabled }, catalog, null, localizer);
 
     /// <summary>Un tweak mínimo con las acciones que se le pasen.</summary>
-    private static TweakDefinition Tweak(string id, params string[] kinds) => new()
+    private static TweakDefinition MinimalTweak(string id, params string[] kinds) => new()
     {
         Id = id,
         Category = "Network",
@@ -54,7 +54,6 @@ public sealed class RecoveryCoverageTests
         Risk = RiskLevel.Advanced,
         RequiresAdmin = true,
         RequiresReboot = false,
-        ReadOnly = false,
         ExpectedImpact = new ExpectedImpact(),
         References = ["https://example.invalid/r"],
         Actions = [.. kinds.Select(k => new ActionSpec { Kind = k })]
@@ -68,7 +67,7 @@ public sealed class RecoveryCoverageTests
         new() { SelectedIds = ids.ToHashSet(StringComparer.OrdinalIgnoreCase) };
 
     /// <summary>El tweak REAL del catálogo: es el único de los 32 con NetAdapterProperty y restartsNetworkLink.</summary>
-    private static TweakDefinition RealNetworkTweak() => Tweak("network.i225v-eee-off", "NetAdapterProperty") with { RestartsNetworkLink = true };
+    private static TweakDefinition RealNetworkTweak() => MinimalTweak("network.i225v-eee-off", "NetAdapterProperty") with { RestartsNetworkLink = true };
 
     [Fact]
     public async Task ATweakThatRestartsTheNetworkLink_IsBlocking_WithAReason()
@@ -91,7 +90,7 @@ public sealed class RecoveryCoverageTests
     [InlineData("DriverInstall")]
     public async Task EachOutOfBandKind_IsBlockingOnItsOwn(string kind)
     {
-        var report = await Service(new TweakCatalog([Tweak("probe.x", kind)])).CheckAsync(Selecting("probe.x"), Profile());
+        var report = await Service(new TweakCatalog([MinimalTweak("probe.x", kind)])).CheckAsync(Selecting("probe.x"), Profile());
 
         Assert.False(report.CanApply);
         Assert.Contains(report.Checks, c => c.Id == "recovery" && c.Severity == PreflightSeverity.Blocking);
@@ -101,7 +100,7 @@ public sealed class RecoveryCoverageTests
     [Fact]
     public async Task APlainRegistryTweak_IsNotAffected()
     {
-        var report = await Service(new TweakCatalog([Tweak("latency.game-mode-on", "Registry")])).CheckAsync(Selecting("latency.game-mode-on"), Profile());
+        var report = await Service(new TweakCatalog([MinimalTweak("latency.game-mode-on", "Registry")])).CheckAsync(Selecting("latency.game-mode-on"), Profile());
 
         Assert.True(report.CanApply);
         Assert.DoesNotContain(report.Checks, c => c.Id == "recovery");
@@ -114,7 +113,7 @@ public sealed class RecoveryCoverageTests
     [Fact]
     public async Task SelectingOneDangerousTweakAmongSafeOnes_BlocksAndNamesOnlyTheCulprit()
     {
-        var catalog = new TweakCatalog([Tweak("latency.game-mode-on", "Registry"), RealNetworkTweak()]);
+        var catalog = new TweakCatalog([MinimalTweak("latency.game-mode-on", "Registry"), RealNetworkTweak()]);
 
         var report = await Service(catalog).CheckAsync(Selecting("latency.game-mode-on", "network.i225v-eee-off"), Profile());
 
@@ -221,9 +220,9 @@ public sealed class RecoveryCoverageTests
     /// </summary>
     /// <remarks>
     /// Se demuestra de dos formas complementarias:
-    ///   (a) estática: <c>TweakEngine.RevertAsync</c> (línea 278) no contiene ninguna llamada a
-    ///       <c>preflight</c>; las únicas están en ScanAsync (:57) y ApplyAsync (:145), y ninguna está
-    ///       después de la línea 277.
+    ///   (a) estática: <c>TweakEngine.RevertAsync</c> (:289-382) no contiene ninguna llamada a
+    ///       <c>preflight</c>; las del motor están en ScanAsync (:57) y ApplyAsync (:126,:156,:158,
+    ///       :198,:201), y ninguna cae dentro del revert.
     ///   (b) aquí: se aplica un tweak, se revierte, y un preflight ESPÍA confirma que el revert no consultó.
     /// </remarks>
     [Fact]
@@ -291,9 +290,12 @@ public sealed class RecoveryCoverageTests
 
         Assert.True(report.DryRun);
         Assert.True(report.Success, string.Join(" | ", report.Errors));
-        // Y el motivo está a la vista, marcado como "no se podrá aplicar".
-        Assert.Contains(report.Warnings, w => w.Contains("NO SE PODRÁ APLICAR", StringComparison.Ordinal)
-                                          && w.Contains("network.i225v-eee-off", StringComparison.Ordinal));
+        // El motivo está a la vista, marcado como "no se podrá aplicar". El TEXTO del motivo depende del
+        // localizador: el harness arma PreflightService SIN localizer (EngineTestHarness.cs:55), así que
+        // aquí llega la CLAVE "preflight.recovery", no la frase. Por eso NO se asserta el id ni la prosa:
+        // se asserta el prefijo (lo pone el motor) y que el bloqueo llegó. El texto real, en los dos
+        // idiomas y por el camino de composición, lo cubren TheReason_IsLocalized y el test de integración.
+        Assert.Contains(report.Warnings, w => w.StartsWith("NO SE PODRÁ APLICAR", StringComparison.Ordinal));
     }
 
     /// <summary>Un dry-run de algo inocuo no arrastra avisos de R-J.</summary>

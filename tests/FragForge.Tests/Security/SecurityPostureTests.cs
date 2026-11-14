@@ -19,8 +19,8 @@ namespace FragForge.Tests.Security;
 public sealed class SecurityPostureTests
 {
     private static WindowsSecurityPostureService Create(
-        FakeRegistry? registry = null,
-        ScriptedWmi? wmi = null,
+        IRegistry? registry = null,
+        IWmiQuery? wmi = null,
         ScriptedRunner? runner = null)
     {
         registry ??= new FakeRegistry();
@@ -282,7 +282,6 @@ public sealed class SelectiveFailingRegistry(string failingKey) : IRegistry
     public Task<IReadOnlyList<string>> GetSubKeyNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetSubKeyNamesAsync(key, cancellationToken);
     public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
     public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
-    public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
     public Task DeleteEmptySubKeyAsync(string parentKey, string childName, CancellationToken cancellationToken = default) => _inner.DeleteEmptySubKeyAsync(parentKey, childName, cancellationToken);
 }
 
@@ -297,7 +296,6 @@ public sealed class CancellingRegistry : IRegistry
     public Task<IReadOnlyList<string>> GetSubKeyNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetSubKeyNamesAsync(key, cancellationToken);
     public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
     public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
-    public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
     public Task DeleteEmptySubKeyAsync(string parentKey, string childName, CancellationToken cancellationToken = default) => _inner.DeleteEmptySubKeyAsync(parentKey, childName, cancellationToken);
 }
 
