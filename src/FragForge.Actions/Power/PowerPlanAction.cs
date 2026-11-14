@@ -134,10 +134,13 @@ public sealed class PowerPlanAction : ITweakAction
         var plan = FindPlan(await ListPlansAsync(cancellationToken));
         if (plan is null) return VerificationResult.Missing("El plan FragForge no existe.");
         var settingsOnly = _parameters.Mode.Equals("settingsOnly", StringComparison.OrdinalIgnoreCase);
+        // Una sola consulta de /qh para decidir qué variantes no se escribieron (no una por ajuste).
+        IReadOnlyList<PowerSettingQuery>? enumerated = null;
+        if (_parameters.SkipUnenumeratedSettings) enumerated = await QuerySettingsAsync(plan.Value.Guid, cancellationToken);
         foreach (var setting in _parameters.Settings)
         {
             // Las variantes que este equipo no enumera no se escribieron ni se exigen.
-            if (_parameters.SkipUnenumeratedSettings && FindSetting(await QuerySettingsAsync(plan.Value.Guid, cancellationToken), setting) is null) continue;
+            if (enumerated is not null && FindSetting(enumerated, setting) is null) continue;
             var current = await QuerySettingAsync(plan.Value.Guid, setting.SubgroupGuid, setting.SettingGuid, cancellationToken);
             if (current.AcIndex != setting.AcValue) return VerificationResult.Missing($"El ajuste {setting.SettingGuid} no coincide en AC.");
             // DC solo se escribió si el equipo no tiene batería: no se exige cuando no se escribió.
