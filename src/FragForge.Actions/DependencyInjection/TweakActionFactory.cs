@@ -18,6 +18,13 @@ namespace FragForge.Actions.DependencyInjection;
 /// resolutor que se construia a mano y se ha eliminado. Se descarta de forma explicita para que no quede mudo.
 /// </para>
 /// <para>
+/// <c>network</c> tampoco se usa, y NO es un olvido: <see cref="INetworkAdapterController"/> trabaja por
+/// NOMBRE VISIBLE de adaptador (<c>GetAsync(string adapterName, ...)</c>), y la ruta de <c>NetAdapterProperty</c>
+/// identifica por hardware (R-I); el nombre visible esta eliminado a proposito de esa accion. El parametro
+/// entra en el ctor desde el commit inicial y ninguna version de la clase lo ha usado. Se conserva porque
+/// forma parte de la firma publica (la pasan el contenedor y 11 sitios de test).
+/// </para>
+/// <para>
 /// <c>adapterResolver</c> es NUEVO, ADITIVO y OPCIONAL (al final, con valor por defecto). Lo exige
 /// <c>NetAdapterPropertyAction</c>, que necesita un <see cref="INetworkAdapterResolver"/> y no un
 /// <c>INetworkAdapterController</c>: son interfaces distintas. Al ir al final, los llamadores existentes
@@ -38,11 +45,14 @@ public sealed class TweakActionFactory(IRegistry registry, IProtectionPolicy pol
 {
     private readonly IReadOnlyList<IDiagnosticProbe> _probes = probes.ToArray();
 
-    // Descartado a proposito: ver <remarks> de la clase. Sin esta linea, CS9113 (parameter 'wmi' is unread).
-    private readonly IWmiQuery? _ = wmi;
-
-    /// <summary>Resolutor por identidad de hardware. Opcional: ver <remarks> de la clase.</summary>
+    /// <summary>Resolutor por identidad de hardware (R-I). Opcional: ver <remarks> de la clase.</summary>
     private readonly INetworkAdapterResolver? _adapterResolver = adapterResolver;
+
+    // Parametros descartados a proposito. Sin estas lineas, un CS9113 por cada uno: el compilador solo mira
+    // si el parametro se LEE, y estos dos no intervienen en la construccion de ninguna accion (el porque,
+    // en <remarks>). No se quitan del ctor porque forman parte de la firma que usan el contenedor y los tests.
+    private readonly IWmiQuery? _ = wmi;
+    private readonly INetworkAdapterController _ = network;
     public IReadOnlySet<string> SupportedKinds { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Registry", "IfeoPerfOptions", "Service", "ScheduledTask", "PowerPlan", "Bcdedit", "NetAdapterProperty", "FileEdit", "PowerShell", "InspectOnly" };
     public ITweakAction Create(ActionSpec specification)
     {
