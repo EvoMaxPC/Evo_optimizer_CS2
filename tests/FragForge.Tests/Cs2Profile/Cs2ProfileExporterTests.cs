@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using FragForge.Core.Cs2Profile;
 using FragForge.Tests.Fakes;
@@ -49,6 +50,155 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         Timestamp = FixedTime,
         Overwrite = overwrite
     };
+
+    // ------------------------------------------------------------------ colisión de backup (mismo segundo)
+
+    private static readonly DateTimeOffset NextSecond = new(2026, 11, 13, 10, 0, 1, TimeSpan.Zero);
+
+    [Fact]
+    public async Task TwoExportsInTheSameSecond_ProduceTwoDistinctBackups_AndNeverOverwrite()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        var firstText = "// original del usuario\nsensitivity 2.5\n";
+        var firstBytes = new UTF8Encoding(true).GetBytes(firstText);
+        await File.WriteAllBytesAsync(autoexec, firstBytes);
+
+        var first = await Cs2ProfileExporter.ExportAsync(GameBlock());
+        Assert.True(first.Written);
+        // La PRIMERA copia del segundo es la que no lleva sufijo.
+        Assert.Equal(Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000"), first.BackupPath);
+        // Y es byte a byte el autoexec ORIGINAL (con su BOM).
+        Assert.Equal(Convert.ToHexString(firstBytes), Convert.ToHexString(await File.ReadAllBytesAsync(first.BackupPath!)));
+
+        // El primer export ya modificó el autoexec; el segundo copia ESA versión, no la original.
+        var afterFirst = await File.ReadAllBytesAsync(autoexec);
+        Assert.NotEqual(Convert.ToHexString(firstBytes), Convert.ToHexString(afterFirst));
+
+        var second = await Cs2ProfileExporter.ExportAsync(GameBlock());
+        Assert.True(second.Written);
+        // Mismo instante inyectado -> el nombre pelado ya está ocupado -> sufijo -02.
+        Assert.Equal(Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000-02"), second.BackupPath);
+        // El segundo backup es byte a byte el autoexec TAL COMO LO DEJÓ EL PRIMER EXPORT.
+        Assert.Equal(Convert.ToHexString(afterFirst), Convert.ToHexString(await File.ReadAllBytesAsync(second.BackupPath!)));
+        // Y son dos archivos distintos, con contenidos distintos: no se pisó nada.
+        Assert.NotEqual(first.BackupPath, second.BackupPath);
+        Assert.NotEqual(Convert.ToHexString(await File.ReadAllBytesAsync(first.BackupPath!)),
+                        Convert.ToHexString(await File.ReadAllBytesAsync(second.BackupPath!)));
+    }
+
+    [Fact]
+    public async Task ThreeExportsInTheSameSecond_AreNumbered_02_And_03()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        await File.WriteAllTextAsync(autoexec, "// original\n");
+
+        var a = await Cs2ProfileExporter.ExportAsync(GameBlock());
+        var b = await Cs2ProfileExporter.ExportAsync(GameBlock());
+        var c = await Cs2ProfileExporter.ExportAsync(GameBlock());
+
+        var stem = "autoexec.cfg.fragforge-backup-20261113-100000";
+        Assert.Equal(Path.Combine(_cfg, stem), a.BackupPath);
+        Assert.Equal(Path.Combine(_cfg, stem + "-02"), b.BackupPath);
+        Assert.Equal(Path.Combine(_cfg, stem + "-03"), c.BackupPath);
+
+        // Cálculo a mano del criterio de restore (último por nombre, OrderByDescending ordinal):
+        //   "…-100000"    vs "…-100000-02" -> los 21 primeros caracteres son iguales; "-" (0x2D) hace que
+        //                   "…-100000-02" sea MAYOR y por tanto el último sea -03.
+        var presentes = Directory.GetFiles(_cfg, Cs2ProfileGenerator.BackupPrefix + "*")
+            .Select(Path.GetFileName)
+            .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Assert.Equal(3, presentes.Length);
+        Assert.Equal(stem + "-03", presentes[0]);
+        Assert.Equal(stem + "-02", presentes[1]);
+        Assert.Equal(stem, presentes[2]);
+    }
+
+    [Fact]
+    public async Task NextSecond_SortsAfterTheNumberedOnesOfThePreviousSecond()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        await File.WriteAllTextAsync(autoexec, "// original\n");
+
+        await Cs2ProfileExporter.ExportAsync(GameBlock());
+        await Cs2ProfileExporter.ExportAsync(GameBlock());          // -02
+        await Cs2ProfileExporter.ExportAsync(GameBlock() with { Timestamp = NextSecond });
+
+        var stem = "autoexec.cfg.fragforge-backup-20261113-100000";
+        var presentes = Directory.GetFiles(_cfg, Cs2ProfileGenerator.BackupPrefix + "*")
+            .Select(Path.GetFileName)
+            .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        // Cálculo a mano carácter a carácter: "…-100001" y "…-100000-02".
+        // Comparan igual hasta "…-10000"; luego "1" (0x31) frente a "0" (0x30): 1 > 0, así que el del
+        // segundo siguiente gana ANTES de llegar al guion del sufijo. Orden final: 100001 > 100000-02 > 100000.
+        Assert.Equal("autoexec.cfg.fragforge-backup-20261113-100001", presentes[0]);
+        Assert.Equal(stem + "-02", presentes[1]);
+        Assert.Equal(stem, presentes[2]);
+    }
+
+    [Fact]
+    public async Task WhenAll99SlotsAreTaken_ExportAborts_AndAutoexecAndBackupsAreUntouched()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        var originalBytes = new UTF8Encoding(true).GetBytes("// original intocable\nsensitivity 2.5\n");
+        await File.WriteAllBytesAsync(autoexec, originalBytes);
+
+        // Se ocupan las 99 ranuras del segundo 10:00:00: la pelada + -02 … -99.
+        // Cálculo a mano: 1 (pelada) + 98 (de 02 a 99 inclusive, porque 99 - 2 + 1 = 98) = 99.
+        var stem = "autoexec.cfg.fragforge-backup-20261113-100000";
+        var paths = new List<string> { Path.Combine(_cfg, stem) };
+        for (var n = 2; n <= 99; n++)
+            paths.Add(Path.Combine(_cfg, stem + "-" + n.ToString("D2", CultureInfo.InvariantCulture)));
+        Assert.Equal(99, paths.Count);
+        foreach (var path in paths) await File.WriteAllTextAsync(path, "copia " + Path.GetFileName(path));
+
+        // Hashes ANTES, para probar después que NADA cambió.
+        var hashesBefore = paths.Select(p => (p, Cs2ProfileExporter.Sha256(File.ReadAllBytes(p)))).ToArray();
+        var autoexecBefore = Cs2ProfileExporter.Sha256(originalBytes);
+
+        var result = await Cs2ProfileExporter.ExportAsync(GameBlock());
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("99 copias de seguridad", message, StringComparison.Ordinal);
+        Assert.Contains("No se ha modificado autoexec.cfg", message, StringComparison.Ordinal);
+        Assert.Null(result.BackupPath);
+
+        // autoexec byte a byte intacto y las 99 copias con el mismo hash que antes.
+        Assert.Equal(autoexecBefore, Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(autoexec)));
+        foreach (var (path, hashBefore) in hashesBefore)
+            Assert.Equal(hashBefore, Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(path)));
+    }
+
+    [Fact]
+    public void ChooseBackupPath_UsesZeroPaddedCounters_SoOrdinalOrderMatchesCreationOrder()
+    {
+        var dir = Path.Combine(_root, "contadores");
+        Directory.CreateDirectory(dir);
+        var stem = "autoexec.cfg.fragforge-backup-20261113-100000";
+
+        // Sin nada: nombre pelado.
+        Assert.Equal(Path.Combine(dir, stem), Cs2ProfileExporter.ChooseBackupPath(dir, FixedTime));
+
+        File.WriteAllText(Path.Combine(dir, stem), "x");
+        Assert.Equal(Path.Combine(dir, stem + "-02"), Cs2ProfileExporter.ChooseBackupPath(dir, FixedTime));
+
+        // Ocupa -02…-09 y comprueba que el siguiente es -10, no -1.
+        // Cálculo a mano: 02,03,04,05,06,07,08,09 son 8 nombres; el que sigue es el 10 -> "-10".
+        for (var n = 2; n <= 9; n++)
+            File.WriteAllText(Path.Combine(dir, stem + "-" + n.ToString("D2", CultureInfo.InvariantCulture)), "x");
+        Assert.Equal(Path.Combine(dir, stem + "-10"), Cs2ProfileExporter.ChooseBackupPath(dir, FixedTime));
+
+        // Orden ordinal de los nombres creados hasta aquí: -10 debe ir DESPUÉS de -09.
+        var ordered = Directory.GetFiles(dir, Cs2ProfileGenerator.BackupPrefix + "*")
+            .Select(Path.GetFileName)
+            .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        Assert.Equal(stem + "-10", ordered[0]);
+        Assert.Equal(stem + "-09", ordered[1]);
+    }
 
     // ------------------------------------------------------------------ bloque nuevo
 

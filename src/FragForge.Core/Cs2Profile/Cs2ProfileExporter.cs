@@ -165,8 +165,15 @@ public static class Cs2ProfileExporter
         // 1) Backup OBLIGATORIO y VERIFICADO antes de tocar nada. Solo si había algo que copiar.
         if (original.Length > 0)
         {
-            backupPath = Path.Combine(cfgDirectory, Cs2ProfileGenerator.BackupPrefix +
-                request.Timestamp.UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
+            backupPath = ChooseBackupPath(cfgDirectory, request.Timestamp);
+            if (backupPath is null)
+            {
+                // 99 copias para el mismo segundo: no se pisa ninguna y se aborta sin tocar nada.
+                return Fail($"Ya existen {MaxBackupsPerSecond} copias de seguridad con la marca de tiempo " +
+                            $"{request.Timestamp.UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)} en " +
+                            $"'{cfgDirectory}'. No se sobrescribe ninguna copia anterior y no se ha modificado autoexec.cfg. " +
+                            "Borra alguna copia antigua o espera un segundo y vuelve a intentarlo.");
+            }
             await AtomicFile.WriteAllBytesAsync(backupPath, original, cancellationToken);
 
             var backupBytes = await File.ReadAllBytesAsync(backupPath, cancellationToken);
@@ -291,6 +298,47 @@ public static class Cs2ProfileExporter
 
     /// <summary>SHA-256 en hexadecimal minúscula. Es lo que se compara para verificar un backup.</summary>
     public static string Sha256(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
+    /// <summary>
+    /// Cuántas copias se admiten por segundo: la primera sin sufijo y luego <c>-02</c> … <c>-99</c>.
+    /// </summary>
+    public const int MaxBackupsPerSecond = 99;
+
+    /// <summary>
+    /// Elige un nombre de backup que NO exista. La primera copia del segundo usa el nombre pelado; si ya está
+    /// ocupado se prueba <c>-02</c>, <c>-03</c>… hasta <c>-99</c>. Devuelve null si están todas ocupadas.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Por qué contador y no azar.</b> <c>restore-autoexec</c> elige «el último» ordenando por nombre con
+    /// <see cref="StringComparer.OrdinalIgnoreCase"/>. Un sufijo aleatorio haría indeterminado cuál es el último.
+    /// Con contador y dos dígitos, el orden ordinal coincide con el orden de creación:
+    /// <c>…120000</c> &lt; <c>…120000-02</c> &lt; <c>…120000-03</c> &lt; … &lt; <c>…120001</c>.
+    /// El cero a la izquierda es obligatorio: sin él, <c>-10</c> ordenaría ANTES que <c>-9</c>.
+    /// </para>
+    /// <para>
+    /// <b>Ventana de carrera.</b> Entre la comprobación de existencia y la escritura, otro proceso podría crear
+    /// el mismo nombre. No se usa creación exclusiva porque <see cref="AtomicFile"/> escribe a un temporal y
+    /// mueve con sobreescritura, y no se toca <see cref="AtomicFile"/> porque lo usan otros módulos.
+    /// </para>
+    /// </remarks>
+    internal static string? ChooseBackupPath(string cfgDirectory, DateTimeOffset timestamp)
+    {
+        var stamp = timestamp.UtcDateTime.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        var baseName = Cs2ProfileGenerator.BackupPrefix + stamp;
+
+        var first = Path.Combine(cfgDirectory, baseName);
+        if (!File.Exists(first)) return first;
+
+        // Cálculo a mano: 02..99 son 98 nombres más el pelado = 99 copias por segundo.
+        for (var n = 2; n <= MaxBackupsPerSecond; n++)
+        {
+            var candidate = Path.Combine(cfgDirectory, baseName + "-" + n.ToString("D2", CultureInfo.InvariantCulture));
+            if (!File.Exists(candidate)) return candidate;
+        }
+
+        return null;
+    }
 
     private static ExportResult Fail(string message) => new() { Written = false, Messages = [message] };
 }
