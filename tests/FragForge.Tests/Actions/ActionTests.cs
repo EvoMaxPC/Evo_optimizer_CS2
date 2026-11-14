@@ -110,6 +110,23 @@ public sealed class PowerPlanActionTests
     {
         public bool PlanExists { get; set; }
         public bool ActiveIsFragForge { get; set; }
+        /// <summary>¿Existe el plan base que se duplica? Se puede apagar para probar el caso de error.</summary>
+        public bool SourceExists { get; set; } = true;
+        /// <summary>Índices posibles que el sistema enumera para el ajuste de prueba.</summary>
+        public int[] PossibleIndices { get; set; } = [0, 1, 2];
+        /// <summary>Bloque /qh con rango (mín/máx/inc) cuando es true; enumerado cuando es false.</summary>
+        public bool EnumeratedRange { get; set; } = true; // el Spec_ usa 100: debe estar en 0..100
+        public const string SourceGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+
+        public string QhOutput() => EnumeratedRange
+            ? "Power Scheme GUID: 54533251-82be-4824-96c1-47b60b740d00  (Processor)\n" +
+              "  Power Setting GUID: 893dee8e-2bef-41e0-89c6-b55d0929964c  (Minimum processor state)\n" +
+              "    Minimum Possible Setting: 0x00000000\n    Maximum Possible Setting: 0x00000064\n    Possible Setting Increment: 0x00000001\n" +
+              $"    Current AC Power Setting Index: 0x{AcIndex:x8}\n    Current DC Power Setting Index: 0x{DcIndex:x8}"
+            : "Power Scheme GUID: 54533251-82be-4824-96c1-47b60b740d00  (Processor)\n" +
+              "  Power Setting GUID: 893dee8e-2bef-41e0-89c6-b55d0929964c  (Minimum processor state)\n" +
+              "    Possible Settings:\n" + string.Join("", PossibleIndices.Select(i => $"      {i:000}\n")) +
+              $"    Current AC Power Setting Index: 0x{AcIndex:x8}\n    Current DC Power Setting Index: 0x{DcIndex:x8}";
         public List<string> Commands { get; } = [];
         public int AcIndex { get; private set; } = 5;
         public int DcIndex { get; private set; } = 5;
@@ -123,10 +140,13 @@ public sealed class PowerPlanActionTests
             var joined = string.Join(' ', request.Arguments);
             Commands.Add(joined);
             if (joined == "/getactivescheme") return new ProcessResult(0, $"Power Scheme GUID: {(ActiveIsFragForge ? PlanGuid : PreviousGuid)}  ({(ActiveIsFragForge ? "FragForge Performance" : "Balanced")})", "", false);
-            if (joined == "/list") return new ProcessResult(0, (PlanExists ? $"Power Scheme GUID: {PlanGuid}  (FragForge Performance){(ActiveIsFragForge ? " *" : "")}\n" : "") + $"Power Scheme GUID: {PreviousGuid}  (Balanced){(ActiveIsFragForge ? "" : " *")}", "", false);
+            if (joined == "/list") return new ProcessResult(0, (PlanExists ? $"Power Scheme GUID: {PlanGuid}  (FragForge Performance){(ActiveIsFragForge ? " *" : "")}\n" : "") + (SourceExists ? $"Power Scheme GUID: {SourceGuid}  (High performance)\n" : "") + $"Power Scheme GUID: {PreviousGuid}  (Balanced){(ActiveIsFragForge ? "" : " *")}", "", false);
             if (joined.StartsWith("/duplicatescheme", StringComparison.Ordinal)) { PlanExists = true; return new ProcessResult(0, $"Power Scheme GUID: {PlanGuid}  (FragForge Performance)", "", false); }
             if (joined.StartsWith("/setactive", StringComparison.Ordinal)) { ActiveIsFragForge = request.Arguments[1].Equals(PlanGuid, StringComparison.OrdinalIgnoreCase); return new ProcessResult(0, "", "", false); }
             if (joined.StartsWith("/query", StringComparison.Ordinal)) return new ProcessResult(0, $"  Minimum processor state\n    Current AC Power Setting Index: 0x{AcIndex:x8}\n    Current DC Power Setting Index: 0x{DcIndex:x8}", "", false);
+            // /qh responde lo mismo para cualquier plan: el simulador no distingue FragForge de origen,
+            // y el test solo necesita que el ajuste este enumerado con su rango.
+            if (joined.StartsWith("/qh", StringComparison.Ordinal)) return new ProcessResult(0, QhOutput(), "", false);
             if (joined.StartsWith("/setacvalueindex", StringComparison.Ordinal)) { AcIndex = int.Parse(request.Arguments[^1], System.Globalization.CultureInfo.InvariantCulture); return new ProcessResult(0, "", "", false); }
             if (joined.StartsWith("/setdcvalueindex", StringComparison.Ordinal)) { DcIndex = int.Parse(request.Arguments[^1], System.Globalization.CultureInfo.InvariantCulture); return new ProcessResult(0, "", "", false); }
             if (joined.StartsWith("/delete", StringComparison.Ordinal)) { PlanExists = false; return new ProcessResult(0, "", "", false); }
@@ -187,6 +207,138 @@ public sealed class PowerPlanActionTests
     {
         Assert.Throws<CatalogValidationException>(() => new PowerPlanAction(new FakeProcessRunner(), Spec.Action("PowerPlan", new { planName = "X", sourceSchemeGuid = "not-a-guid" })));
     }
+
+    // ---------- B1: validador "entero >= 0" y rango real contra /qh ----------
+
+    [Fact]
+    public void NegativeValue_IsRejectedEagerly_ButValuesAboveOneHundredAreNot()
+    {
+        // B1: el validador del catálogo ya NO impone 0..100. Solo exige "entero >= 0"; el rango real
+        // lo enumera el sistema y se comprueba en Preflight contra /qh (R-L).
+        Assert.Throws<CatalogValidationException>(() => new PowerPlanAction(new FakeProcessRunner(), SpecWithValue(-1)));
+        var action = new PowerPlanAction(new FakeProcessRunner(), SpecWithValue(1000));
+        Assert.Equal("PowerPlan", action.Kind);
+    }
+
+    [Fact]
+    public async Task Preflight_RejectsAValueOutsideTheRangeTheSystemEnumerates()
+    {
+        // El sistema enumera 0..100 con incremento 1: 1000 no está permitido y NO se escribe.
+        var simulator = new PowerCfgSimulator { EnumeratedRange = true };
+        var action = new PowerPlanAction(simulator.Runner, SpecWithValue(1000));
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.Contains("no está en", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Preflight_RejectsAValueOutsideTheEnumeratedList()
+    {
+        // Bloque enumerado (0,1,2): el 5 no existe en este equipo.
+        var simulator = new PowerCfgSimulator { EnumeratedRange = false, PossibleIndices = [0, 1] };
+        var action = new PowerPlanAction(simulator.Runner, SpecWithValue(5));
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+    }
+
+    [Fact]
+    public async Task Preflight_RejectsASettingTheSystemDoesNotEnumerate()
+    {
+        // R-L: si /qh no devuelve el GUID del setting, NotApplicable. Nunca se asume un rango.
+        var simulator = new PowerCfgSimulator();
+        var action = new PowerPlanAction(simulator.Runner, SpecWithOtherSetting());
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.Contains("no enumera", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Preflight_RejectsWhenTheSourcePlanDoesNotExist()
+    {
+        // Punto 7: sin plan base no se duplica nada, y el mensaje lo dice.
+        var simulator = new PowerCfgSimulator { SourceExists = false };
+        var action = new PowerPlanAction(simulator.Runner, Spec_());
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+        Assert.Contains("no existe en este equipo", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/duplicatescheme", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Apply_RevalidatesAgainstQhRightBeforeWriting()
+    {
+        // El Preflight corre en la fase de planificación, muy antes de Apply: Apply debe releer /qh.
+        var simulator = new PowerCfgSimulator { EnumeratedRange = true };
+        var action = new PowerPlanAction(simulator.Runner, SpecWithValue(120));
+        simulator.EnumeratedRange = false;
+        simulator.PossibleIndices = [0, 1];
+        var before = await action.CaptureAsync(Context());
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.ApplyAsync(before, Context()));
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+    }
+
+    // ---------- Regla 1: DC solo sin batería ----------
+
+    [Fact]
+    public async Task WithoutBattery_WritesBothAcAndDc_AsBefore()
+    {
+        var simulator = new PowerCfgSimulator { EnumeratedRange = true };
+        var action = new PowerPlanAction(simulator.Runner, Spec_());
+        var context = Context(); // el perfil de prueba no tiene batería
+        Assert.False(context.Hardware.FormFactor.HasBattery);
+        await action.ApplyAsync(await action.CaptureAsync(context), context);
+        Assert.Contains(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+        Assert.Contains(simulator.Commands, c => c.StartsWith("/setdcvalueindex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WithBattery_DoesNotWriteDc_AndSaysSo()
+    {
+        var simulator = new PowerCfgSimulator { EnumeratedRange = true };
+        var action = new PowerPlanAction(simulator.Runner, Spec_());
+        var context = BatteryContext(hasBattery: true);
+        await action.ApplyAsync(await action.CaptureAsync(context), context);
+        Assert.Contains(simulator.Commands, c => c.StartsWith("/setacvalueindex", StringComparison.Ordinal));
+        Assert.DoesNotContain(simulator.Commands, c => c.StartsWith("/setdcvalueindex", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Verify_DoesNotRequireDc_WhenDcWasNeverWritten()
+    {
+        var simulator = new PowerCfgSimulator { EnumeratedRange = true };
+        var action = new PowerPlanAction(simulator.Runner, Spec_());
+        var context = BatteryContext(hasBattery: true);
+        var before = await action.CaptureAsync(context);
+        await action.ApplyAsync(before, context);
+        Assert.Equal(VerificationOutcome.Matches, (await action.VerifyAsync(before, context)).Outcome);
+    }
+
+    private static ActionExecutionContext BatteryContext(bool hasBattery)
+    {
+        var hardware = TestProfiles.Pn64();
+        return Context() with { Hardware = hardware with { FormFactor = hardware.FormFactor with { HasBattery = hasBattery } } };
+    }
+
+    private static ActionSpec SpecWithValue(int ac) => new()
+    {
+        Kind = "PowerPlan",
+        Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            planName = "FragForge Performance",
+            sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+            activate = true,
+            settings = new[] { new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "893dee8e-2bef-41e0-89c6-b55d0929964c", acValue = ac, dcValue = ac } }
+        })
+    };
+
+    private static ActionSpec SpecWithOtherSetting() => new()
+    {
+        Kind = "PowerPlan",
+        Parameters = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            planName = "FragForge Performance",
+            sourceSchemeGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+            activate = true,
+            settings = new[] { new { subgroupGuid = "54533251-82be-4824-96c1-47b60b740d00", settingGuid = "be337238-0d82-4146-a960-4f3749d470c7", acValue = 0, dcValue = 0 } }
+        })
+    };
 
     [Fact]
     public void AmbiguousPlanNames_AreRejected()
