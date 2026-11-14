@@ -245,3 +245,36 @@ sigue siendo estricto: si algo del binario no valida, la carga falla. Un bug de 
   tamper-evident, y así se presenta.
 - **RecoveryWriter no lo invoca el motor**: existe y se prueba, pero `TweakEngine` todavía no lo llama en el
   flujo de aplicación. Se documenta como hueco conocido; el snapshot y el journal sí se escriben.
+
+---
+
+## 10. Limitaciones conocidas
+
+Hechos verificados leyendo el código. No son promesas de cuándo se cierran.
+
+**Los mensajes del motor y del resto del preflight están en español fijo.** No pasan por `Localizer`, así
+que con la aplicación en `en-US` se ven en español. Sitios concretos:
+
+- `TweakEngine.cs`: `:138` (prefijo `"NO SE PODRÁ APLICAR — "` del dry-run), `:143`, `:150` (AVISO de
+  reinicio de red), `:161` (prefijo `"El preflight bloqueó la aplicación: "`), `:190` (los dos avisos de
+  "nada que aplicar"), `:202`, `:268`, `:274`, `:380`, `:578`.
+- `PreflightService.cs`: los mensajes de los checks de `:29`, `:42`, `:43`, `:49`, `:50`, `:51`, `:53`
+  (ids `dry-run`, `reboot`, `servicing`, `restore`). Solo `recovery` está traducido, en sus dos piezas:
+  `:124` (message, clave `preflight.recovery`) y `:127` (remediation, clave
+  `preflight.recovery.remediation`).
+- `GameSessionService.cs`: `:85`, `:95`, `:120`.
+- `ScanStatusText.cs:16-17`: el mensaje de escaneo se forma en español dentro del helper, sin usar
+  `Localizer`. No le falta ninguna clave: no usa localización en absoluto.
+
+**Cambiar el idioma en la App no cambia el `Localizer` que usa el preflight.** `CompositionRoot.cs:77`
+carga un `Localizer` y `:95` lo registra como singleton; `PreflightService` lo captura al construirse
+(`PreflightService.cs:7-11`). El combo de idioma, en cambio, crea uno **nuevo** y lo guarda en un campo
+del ViewModel (`MainViewModel.cs:514`), sin tocar el del contenedor. Consecuencia: la interfaz cambia de
+idioma en vivo, el motivo del bloqueo R-J no, hasta reiniciar.
+
+**En dry-run solo puede aparecer el check `recovery`.** `PreflightService.cs:37` retorna dentro de la rama
+`if (options.DryRun)` (`:27`), antes de los checks de `:39-58`. Por eso el dry-run nunca evalúa `admin`,
+`platform`, `os`, `disk` ni `catalog`, y en consecuencia no avisa de que falten privilegios: el check
+`admin` Blocking está en `:41`, después del `return`. La App exige elevación por manifiesto
+(`app.manifest:5`, `requireAdministrator`), así que en el uso normal no se da; el CLI sí puede ejecutarse
+sin elevación.
