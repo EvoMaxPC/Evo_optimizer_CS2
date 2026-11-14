@@ -66,19 +66,36 @@ public sealed class RealCatalogArchitectureTests
     }
 
     [Fact]
-    public async Task RealCatalog_WithTheLocalizedArchitectureText_EverythingIsNotApplicable()
+    public async Task RealCatalog_WithTheLocalizedArchitectureText_ConditionsAreMet_NotBroken()
     {
-        // Reproduce el estado previo al hotfix: el perfil guarda "64 bits" como única diferencia.
+        // Este test afirmaba lo CONTRARIO antes del hotfix: que con "64 bits" (texto localizado de
+        // Win32_OperatingSystem.OSArchitecture en es-MX) ninguna condición se cumplía. Ese era el
+        // bug, no el comportamiento deseado: el test estaba codificando el defecto.
+        //
+        // Comportamiento correcto: "64 bits" se interpreta como X64 (ArchitectureInterpreter.Parse,
+        // rama de compatibilidad) y las condiciones se cumplen igual que con el valor de enum.
         var catalog = await LoadRealCatalogAsync();
-        var broken = Pn64() with { Os = Pn64().Os with { Architecture = "64 bits" } };
+        var fromLocalizedText = Pn64() with { Os = Pn64().Os with { Architecture = "64 bits" } };
 
         var safe = ProfileSelector.Select(catalog.Definitions, TweakProfile.Safe).ToArray();
-        var evaluated = safe.Select(d => EvaluateAll(d, broken)).ToArray();
+        var evaluated = safe.Select(d => EvaluateAll(d, fromLocalizedText)).ToArray();
 
-        // Con el texto localizado, NINGUNO cumple (esto es lo que se veía en pantalla).
-        // Si el hotfix no estuviera, este test seguiría esperando el mismo resultado: por eso se
-        // comprueba además que el texto SÍ se acepta ahora en el otro test.
-        Assert.All(evaluated, r => Assert.False(r.IsMet));
+        Assert.All(evaluated, r => Assert.True(
+            r.IsMet,
+            $"el texto localizado '64 bits' debe equivaler a X64; condición no cumplida: {r.Reason}"));
+
+        // Y no es que todo pase por la cara: el texto produce el MISMO resultado que el enum.
+        var fromEnum = safe.Select(d => EvaluateAll(d, Pn64())).ToArray();
+        Assert.Equal(
+            fromEnum.Select(r => (r.IsMet, r.IsKnown)),
+            evaluated.Select(r => (r.IsMet, r.IsKnown)));
+
+        // Control negativo: con un texto que NO es una arquitectura, no se cumple nada.
+        var garbage = Pn64() with { Os = Pn64().Os with { Architecture = "procesador raro" } };
+        var withGarbage = safe.Select(d => EvaluateAll(d, garbage)).ToArray();
+        Assert.All(withGarbage, r => Assert.False(
+            r.IsMet && r.IsKnown,
+            $"un texto no reconocido no puede cumplir una condición conocida: {r.Reason}"));
     }
 
     [Fact]
