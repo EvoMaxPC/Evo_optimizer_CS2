@@ -388,7 +388,8 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
         Assert.Contains("99 copias de seguridad", message, StringComparison.Ordinal);
-        Assert.Contains("No se ha modificado autoexec.cfg", message, StringComparison.Ordinal);
+        // El mensaje real dice "no se ha modificado autoexec.cfg" con minuscula inicial.
+        Assert.Contains("no se ha modificado autoexec.cfg", message, StringComparison.Ordinal);
         Assert.Null(result.BackupPath);
 
         // autoexec byte a byte intacto y las 99 copias con el mismo hash que antes.
@@ -414,13 +415,22 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         // Cálculo a mano: 02,03,04,05,06,07,08,09 son 8 nombres; el que sigue es el 10 -> "-10".
         for (var n = 2; n <= 9; n++)
             File.WriteAllText(Path.Combine(dir, stem + "-" + n.ToString("D2", CultureInfo.InvariantCulture)), "x");
-        Assert.Equal(Path.Combine(dir, stem + "-10"), Cs2ProfileExporter.ChooseBackupPath(dir, FixedTime));
+        // ChooseBackupPath PROPONE el nombre; no lo crea (eso lo hace el exportador al escribir). Por eso
+        // aquí todavía no existe ningún -10 en el disco.
+        var propuesto = Cs2ProfileExporter.ChooseBackupPath(dir, FixedTime);
+        Assert.Equal(Path.Combine(dir, stem + "-10"), propuesto);
+        Assert.False(File.Exists(propuesto), "ChooseBackupPath no debe crear el archivo");
+
+        // Ahora sí se crea, que es lo que hace el exportador con lo que ChooseBackupPath devuelve.
+        File.WriteAllText(propuesto!, "x");
 
         // Orden ordinal de los nombres creados hasta aquí: -10 debe ir DESPUÉS de -09.
         var ordered = Directory.GetFiles(dir, Cs2ProfileGenerator.BackupPrefix + "*")
             .Select(Path.GetFileName)
             .OrderByDescending(n => n, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+        // Cálculo a mano del tamaño: el pelado (1) + -02…-09 (8) + -10 (1) = 10 ficheros.
+        Assert.Equal(10, ordered.Length);
         Assert.Equal(stem + "-10", ordered[0]);
         Assert.Equal(stem + "-09", ordered[1]);
     }
