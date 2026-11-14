@@ -404,6 +404,111 @@ de plataforma), y registrar allí los dobles de `IHardwareProfiler`, `IWmiQuery`
 Así el test probaría la composición sin depender de la PC. Requiere tocar `CompositionRoot`, que es
 más de lo que autoriza esta ronda: **queda listado, no hecho**.
 
+
+### Ronda 5b: un error de compilación y una detección que no era segura
+
+**El build de `818a9a9` falló con 1 error** (0 warnings nuevos, 42; y **no corrió ningún test**, así
+que la corrección de la ronda 5 no llegó a verificarse):
+
+```
+tests\FragForge.Tests\Core\MissingObjectTests.cs(108,79): error CS0103:
+El nombre 'JsonDefaults' no existe en el contexto actual
+```
+
+**Causa.** `JsonDefaults` **sí existe** (`src/FragForge.Core/Logging/JsonDefaults.cs:6`); lo que
+faltaba era `using FragForge.Core.Logging;` en el archivo. No era un tipo inventado, era un `using`
+omitido: escribí el helper de serialización a mano en vez de reutilizar el que ya existía.
+
+**Arreglo.** Se eliminó el helper y el test usa `Spec.Action(kind, parameters)`
+(`tests/FragForge.Tests/Fakes/TestSupport.cs:10`), que ya serializa con `JsonDefaults.Options` y
+compila. Así no hay dos configuraciones de serialización que puedan divergir. Se quitó también
+`using System.Text.Json;`, que quedó sin uso.
+
+Se auditó cada identificador externo de los dos archivos (ver la tabla en el informe de Capa 2).
+
+### Detección de "no existe": de `SilentlyContinue` a la categoría
+
+**El problema.** `Get-ScheduledTask -ErrorAction SilentlyContinue` + `$null ⇒ {"exists":false}`.
+`SilentlyContinue` silencia **todos** los errores no terminantes. Un Programador de tareas caído, un
+fallo de RPC o un permiso denegado podían dar `$null` con exit 0 y **leerse como "no existe"**. Eso
+viola R-L: "no sé" se convertía en una afirmación.
+
+**El cambio.** El script ahora usa `-ErrorAction Stop` dentro de `try/catch` y emite `exists=false`
+**solo** si `$_.CategoryInfo.Category -eq 'ObjectNotFound'`. Cualquier otra excepción escribe el error
+por stderr y sale con 2 ⇒ `RunAsync` lanza `ProcessFailedException` (error real, el lote se corta).
+Y "éxito con 0 resultados sin lanzar" sale con 3: es error, **no** `exists=false`, porque no hay forma
+de distinguir "no existe" de "el proveedor no respondió".
+
+La señal es la **categoría**, un valor de enumeración de PowerShell, no el texto: no se usa
+`Contains`, ni el mensaje localizado, ni `FullyQualifiedErrorId` como regla única.
+
+**NO VERIFICADO contra Windows real: la categoría `ObjectNotFound` para una tarea inexistente se
+confirma con una sonda que corre el usuario.** Los tests usan un `IProcessRunner` falso: prueban qué
+hace el código con cada salida, no lo que PowerShell devuelve de verdad.
+
+**Sonda sugerida** (para el usuario, en la PC, con una tarea que se sabe eliminada):
+
+```powershell
+try { Get-ScheduledTask -TaskPath '\Microsoft\Windows\Application Experience\' `
+      -TaskName 'Appraiser' -ErrorAction Stop } catch {
+  $_.CategoryInfo.Category   # se espera: ObjectNotFound
+  $_.FullyQualifiedErrorId
+}
+```
+Si la categoría **no** fuera `ObjectNotFound`, la tarea se reportaría como error en vez de
+"No aplicable": se vería en el mensaje del lote, no se adivinaría. Es el fallo seguro.
+
+
+### Auditoría de identificadores externos (ronda 5b)
+
+Sin compilador, la alternativa fue citar la definición real de **cada** identificador externo que usan
+los dos archivos. Todos se localizaron: ninguno quedó sin definición.
+
+| Identificador | Definido en |
+|---|---|
+| `ScheduledTaskAction` | `src/FragForge.Actions/Tasks/ScheduledTaskAction.cs:6` |
+| `ScheduledTaskActionState` | `src/FragForge.Core/Models/ActionState.cs:57` |
+| `IScheduledTaskStore` | `src/FragForge.Core/Abstractions/IContracts.cs:82` |
+| `IProtectionPolicy` | `src/FragForge.Core/Abstractions/IContracts.cs:66` |
+| `ITweakAction` / `ITweakActionFactory` | `src/FragForge.Core/Abstractions/ITweakAction.cs:16` / `:28` |
+| `ActionSpec` | `src/FragForge.Core/Models/TweakDefinition.cs:46` |
+| `TweakDefinition` | `src/FragForge.Core/Models/TweakDefinition.cs:6` |
+| `LocalizedText` | `src/FragForge.Core/Models/LocalizedText.cs:5` |
+| `ExpectedImpact` | `src/FragForge.Core/Models/TweakDefinition.cs:53` |
+| `TweakState` / `RiskLevel` / `EvidenceLevel` | `src/FragForge.Core/Models/Enums.cs:5` / `:4` / `:3` |
+| `FragForgeException` | `src/FragForge.Core/Models/FragForgeException.cs:3` |
+| `ActionNotApplicableException` | `src/FragForge.Core/Models/FragForgeException.cs:13` |
+| `ProcessFailedException(executable, exitCode, error)` | `src/FragForge.Core/Models/FragForgeException.cs:20` |
+| `TweakStatus(5 args)` | `src/FragForge.Core/Models/Results.cs:16` |
+| `ScanReport` | `src/FragForge.Core/Models/Results.cs:17` |
+| `BatchReport` (`DryRun`, `Success`, `Errors`, `Results`, `SnapshotId`) | `src/FragForge.Core/Models/Results.cs:63` |
+| `TweakApplyResult` (`State`, `Message`) | `src/FragForge.Core/Models/Results.cs:51` |
+| `ActionExecutionContext` (`OperationId`/`Hardware` **required**) | `src/FragForge.Core/Abstractions/ITweakAction.cs:5` |
+| `ProcessRequest` / `ProcessResult` | `src/FragForge.Core/Abstractions/IProcessRunner.cs:7` / `:15` |
+| `IProcessRunner` | `src/FragForge.Core/Abstractions/IProcessRunner.cs:3` |
+| `ProtectionPolicy.CreateDefault()` | `src/FragForge.Core/Persistence/ProtectionPolicy.cs:13` |
+| `Spec.Action(kind, parameters)` | `tests/FragForge.Tests/Fakes/TestSupport.cs:10` |
+| `JsonDefaults.Options` | `src/FragForge.Core/Logging/JsonDefaults.cs:6` |
+| `EngineTestHarness` / `CreateEngine(hooks, factory)` / `Options(dryRun, force, profile)` | `tests/FragForge.Tests/Core/EngineTestHarness.cs:13` / `:47` / `:59` |
+| `TestProfiles.Pn64()` | `tests/FragForge.Tests/Fakes/FakeHardwareProfiler.cs:13` |
+| `FakeActionFactory` / `ScriptedActionOptions` / `TempDirectory` | `tests/FragForge.Tests/Fakes/TestSupport.cs:79` / `:40` / `:104` |
+| `FakeJournal` / `FakeSystemRestoreService` | `tests/FragForge.Tests/Fakes/FakePlatformServices.cs:85` / `:6` |
+| `FakeRegistry` | `tests/FragForge.Tests/Fakes/FakeRegistry.cs:5` |
+| `FakeHardwareProfiler` | `tests/FragForge.Tests/Fakes/FakeHardwareProfiler.cs:6` |
+| `FileJournal` / `FileSnapshotStore` / `FragForgePaths` / `FileExecutionGate` | `src/FragForge.Core/Persistence/` |
+| `ConditionFactory` / `PreflightService` / `TweakCatalog` | `src/FragForge.Core/Conditions/`, `Preflight/`, `src/FragForge.Tweaks/TweakCatalog.cs:11` |
+| `NullLogger<T>` | `Microsoft.Extensions.Logging.Abstractions` (paquete) |
+
+Cuatro correcciones que salieron de esta auditoría:
+
+1. **CS0103**: faltaba `using FragForge.Core.Logging;` (resuelto usando `Spec.Action`).
+2. **`ActionExecutionContext`** tiene `OperationId` y `Hardware` como `required`: un
+   `new ActionExecutionContext()` no compila. Se construye con ambos.
+3. **`Assert.ThrowsAny<>`** no se usaba en ningún otro test del repo: se cambió a `Assert.Throws<>`,
+   que sí está probado en el proyecto, y coincide con el `ArgumentException` exacto que lanza el código.
+4. **CA1416**: `WindowsScheduledTaskStore` está marcada `[SupportedOSPlatform("windows")]` y el test vive
+   en `net10.0`. Se anotó la clase de test con la misma marca, como en Capa 0.
+
 ### No verificado
 
 - **Sin `dotnet` no se compiló ni se ejecutó nada.** Lo único automático fue tree-sitter (sintaxis),
@@ -414,6 +519,10 @@ más de lo que autoriza esta ronda: **queda listado, no hecho**.
 - No se ejerció el camino real de `powershell.exe`/`Get-ScheduledTask`: los tests usan dobles.
 - La carrera "desaparece entre verify y captura" se prueba con un doble que cambia de respuesta; en
   hardware real no se reprodujo.
+- **La categoría `ObjectNotFound` no se midió en Windows real** (ver arriba): la confirma la sonda del
+  usuario.
+- El script de PowerShell no se ejecutó: los tests validan el texto generado y el contrato con un
+  runner falso.
 
 ## 10. Lo que NO está hecho
 

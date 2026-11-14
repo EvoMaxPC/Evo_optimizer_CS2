@@ -416,6 +416,18 @@ siguen siendo error (control negativo en los tests).
 propiedad de red ya lo decidían en `PreflightAsync` (protegido); registro captura el valor ausente
 como ausente. Detalle completo en `FragForge-Capa2-Informe.md`, sección "Ronda 5".
 
+**Ronda 5b — dos correcciones.** (1) El build de `818a9a9` falló con **CS0103** en
+`MissingObjectTests.cs:108`: `JsonDefaults` sí existe (`src/FragForge.Core/Logging/JsonDefaults.cs:6`),
+faltaba el `using`. Se resolvió usando `Spec.Action` (`TestSupport.cs:10`), que ya serializa con esas
+opciones. (2) `Get-ScheduledTask` usaba `-ErrorAction SilentlyContinue`, que silencia **todos** los
+errores no terminantes: un Task Scheduler caído podía devolver `$null` con exit 0 y leerse como "no
+existe". Ahora se usa `-ErrorAction Stop` y **solo** `$_.CategoryInfo.Category -eq 'ObjectNotFound'`
+produce `exists=false`; cualquier otro fallo sale con código ≠ 0 y sigue siendo error. "0 resultados sin
+excepción" también es error, a propósito.
+
+**NO VERIFICADO contra Windows real: la categoría `ObjectNotFound` para una tarea inexistente se
+confirma con una sonda que corre el usuario** (el comando está en el informe de Capa 2).
+
 **No verificado:** sin `dotnet` no se compiló ni se ejecutó; solo tree-sitter (que no es compilar). No
 se sabe si faltan más tareas del catálogo en esa PC: solo `Appraiser` está medido.
 
