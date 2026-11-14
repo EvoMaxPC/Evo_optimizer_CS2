@@ -122,6 +122,11 @@ public sealed class SteamCs2Resolver(IRegistry registry) : ICs2Resolver
         var unc = value.StartsWith(@"\\", StringComparison.Ordinal);
         while (value.Contains(@"\\", StringComparison.Ordinal)) value = value.Replace(@"\\", @"\", StringComparison.Ordinal);
         if (unc) value = @"\" + value;
+        // Barras FINALES: el doc de este metodo las anuncia ("barras dobles y barras finales") y el test lo
+        // exige, pero Path.GetFullPath NO las quita: solo resuelve "." y "..". Se quitan aqui, conservando la
+        // raiz ("C:\") y la raiz UNC ("\\srv\share"), que sin su barra dejarian de serlo.
+        while (value.Length > 3 && value.EndsWith(@"\", StringComparison.Ordinal) && !value.EndsWith(@":\", StringComparison.Ordinal))
+            value = value[..^1];
         return Path.GetFullPath(value);
     }
 
