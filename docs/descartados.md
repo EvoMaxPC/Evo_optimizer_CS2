@@ -217,3 +217,73 @@ cambiado, pero lo consume el perfil de hardware (`HardwareProfiler.cs:165`) y po
 detección de condiciones `cs2`. Cambiarlo habría sido tocar algo que funciona para resolver un caso
 (instalación con carpeta renombrada) sin poder medirlo. Se añadió `SteamCs2Resolver` aparte y se dejó el
 locator intacto.
+
+---
+
+## Capa 6 y Capa 7 — Latencia y iGPU
+
+### MMCSS (`SystemProfile\Tasks\Games`)
+
+**Descartado.** La condición de la ronda era justificar que CS2 use la tarea `Tasks\Games` de MMCSS. **No se
+pudo justificar**: haría falta leer el estado de MMCSS en el equipo real mientras corre el juego, y este entorno
+no tiene Windows. Además CS2 gestiona sus propios hilos (`-threads`) y no depende de MMCSS para su hilo
+principal. Aplicarlo "porque hay un tweak famoso que lo hace" es folclore, y la ronda lo prohíbe sin fuente.
+
+Se reabriría si alguien midiera el reparto de CPU de `cs2.exe` con y sin la tarea `Games` en la misma escena.
+
+### NetworkThrottlingIndex
+
+**Descartado.** El propio encargo lo describía como "probable folclore → descartar salvo fuente sólida". No se
+encontró una fuente sólida con efecto medible en un adaptador moderno: el ajuste limita paquetes por milisegundo
+y el tráfico de CS2 es de decenas por segundo. No hay forma de medirlo aquí, y sin medición no entra.
+
+### DWM: transparencias y animaciones
+
+**Descartado.** La condición era "solo si reversible y claro". Es reversible, pero **no es claro**: el efecto es de
+composición del escritorio y no existe una métrica de juego que se le pueda atribuir. Evidencia baja sin forma de
+medirla → fuera. El estado de DWM y de MPO ya se **lee** (no se toca) en
+`src/FragForge.Actions/Diagnostics/DiagnosticProbes.cs:31`.
+
+### MPO (`OverlayTestMode`)
+
+**Descartado como tweak.** Corrige parpadeos y artefactos de composición conocidos; **no aporta FPS** ni mejora la
+latencia. Ya existe como sonda de solo lectura que informa `DisabledByOverride` cuando vale `5`
+(`src/FragForge.Actions/Diagnostics/DiagnosticProbes.cs:31`). Escribirlo habría sido cambiar un problema visual por
+otro sin poder medir nada.
+
+### Claves de clase del driver de pantalla `{4d36e968-c1e0-4863-9cf1-...}`
+
+**Descartado.** Tocar claves bajo la clase del adaptador de pantalla es una operación de driver. R-J exige
+`RecoveryWriter`, preflight de BitLocker en solo lectura y un revert verificable; además, un valor equivocado deja
+la pantalla en negro sin acceso. No hay forma de verificarlo en este entorno, y el beneficio no está medido.
+
+### Forzar la resolución o la frecuencia de refresco
+
+**Descartado.** La pantalla y el refresco **se leen, no se fuerzan**. Forzarlos puede dejar el monitor en negro y
+el encargo prohíbe hardcodear 200 Hz / 5 ms. El perfil ya lee `CurrentHorizontalResolution`,
+`CurrentVerticalResolution`, `CurrentRefreshRate` (`src/FragForge.Actions/Platform/HardwareProfiler.cs:101`).
+
+### `DirectXUserGlobalSettings` con `SwapEffectUpgradeEnable=1;`
+
+**Descartado por un defecto de la acción existente, no por falta de fundamento.** El valor de DirectX es una
+cadena **separada por `;`**, pero `AddToken` une y separa tokens **por espacio**:
+escribe con `original + " " + token` (`src/FragForge.Actions/Registry/RegistryAction.cs:75`) y comprueba con
+`value.Split(' ')` (`src/FragForge.Actions/Registry/RegistryAction.cs:143`).
+
+Con `;` la cadena resultante sería inválida y el `verify` no la reconocería. Las dos salidas posibles eran:
+(1) escribir la cadena completa como `String`, lo que **pisa** las demás preferencias del usuario —prohibido por la
+propia ronda—, o (2) cambiar `RegistryAction` para aceptar un separador, que es un refactor fuera del alcance.
+Se descarta hasta que se haga (2) de forma explícita, con su test de fusión y su revert exacto.
+
+### Separar `AllowGameDVR=0` en un tweak propio
+
+**Descartado.** La política de máquina ya está **dentro** de `latency.game-dvr-capture-off` y el contrato de la
+ronda la enumera ahí. Separarla crearía dos tweaks que escriben la misma clave con `revert` distintos: al revertir
+uno se borraría lo que puso el otro. Habría sido un conflicto real. Se dejó como está y se fijó con un test.
+
+### Crear un tweak nuevo de suspensión selectiva USB
+
+**No se añadió: ya existía.** (No es un descarte técnico, es una decisión de no duplicar.) `power.usb-selective-suspend-off` ya escribe los GUID exactos del encargo
+(`2a737441-1930-4402-8d77-b2bebba308a3` / `48e6b7a6-50f5-4782-a5d4-53bb8f07e226` = 0, CA y CC) y
+`power.fragforge-performance` **no** los cubre (solo escribe `893dee8e-…` y `0cc5b647-…` = 100). Se revisó antes
+de escribir nada y no se añadió un segundo tweak.
