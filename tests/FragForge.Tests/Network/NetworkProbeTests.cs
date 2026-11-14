@@ -60,6 +60,32 @@ public sealed class NetworkProbeTests
         Assert.Equal(100.0, result.LossPercent);
     }
 
+    /// <summary>
+    /// El caso que el compilador destapo (CS1503): una respuesta con Success=true pero RoundtripTimeMs=null.
+    /// PingReplySample declara el RTT como long? a proposito —null = no se sabe—, asi que esa muestra NO
+    /// puede entrar en la estadistica convertida a 0: contaria como un ping de 0 ms y falsearia mediana, p99
+    /// y jitter. Tiene que contarse como fallo (NA), nunca como 0 (R-L).
+    /// </summary>
+    [Fact]
+    public async Task Measure_WithSuccessButUnknownRoundtrip_CountsItAsFailure_NotAsZero()
+    {
+        var probe = new NetworkProbe(new EmptyResolver(), new SuccessWithoutRoundtripPing());
+
+        var result = await probe.MeasureAsync("example.invalid", count: 3);
+
+        Assert.False(result.HasSamples);
+        // Received cuenta MUESTRAS UTILES (samples.Count, NetworkProbe.cs:237), no respuestas ICMP. Un reply
+        // con exito pero sin RTT no es una muestra: entra por la rama de fallo. Si aqui apareciera un 3,
+        // significaria que el RTT nulo se convirtio en 0.
+        Assert.Equal(0, result.Received);
+        Assert.Null(result.MedianMs);
+        Assert.Null(result.P99Ms);
+        Assert.Null(result.JitterMs);
+        Assert.Null(result.MinMs);
+        Assert.Null(result.MaxMs);
+        Assert.Equal(100.0, result.LossPercent);
+    }
+
     [Fact]
     public async Task Measure_WithCompleteLoss_IsStillOneHundredPercent()
     {
@@ -276,6 +302,16 @@ public sealed class NetworkProbeTests
             var next = _plan.Dequeue();
             return Task.FromResult(new PingReplySample(next is not null, next));
         }
+    }
+
+    /// <summary>
+    /// Devuelve exito SIN tiempo de ida y vuelta. ScriptedPing no puede expresarlo: deriva Success de si el
+    /// valor es null. Este doble existe solo para el caso que el compilador destapo.
+    /// </summary>
+    private sealed class SuccessWithoutRoundtripPing : IPingProbe
+    {
+        public Task<PingReplySample> SendAsync(string host, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PingReplySample(true, null));
     }
 
     private sealed class EmptyResolver : INetworkAdapterResolver

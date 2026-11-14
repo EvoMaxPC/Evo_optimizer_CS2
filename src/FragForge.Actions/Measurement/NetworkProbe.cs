@@ -107,7 +107,11 @@ public sealed class NetworkProbe(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var reply = await ping.SendAsync(host, cancellationToken);
-            if (reply.Success && reply.RoundtripTimeMs is >= 0) samples.Add(reply.RoundtripTimeMs);
+            // RoundtripTimeMs es long? POR DISEÑO: null = no hubo respuesta (ver PingReplySample, linea 177).
+            // El patron `is >= 0` no estrecha el tipo anulable, asi que la muestra solo entra si el valor esta
+            // presente Y es valido. NO se usa `?? 0` ni `.Value`: null aqui significa "no se sabe", y una
+            // muestra de 0 ms seria una mentira que falsearia mediana, p99 y jitter (R-L).
+            if (reply.Success && reply.RoundtripTimeMs is long ms && ms >= 0) samples.Add(ms);
             else failures++;
         }
 
