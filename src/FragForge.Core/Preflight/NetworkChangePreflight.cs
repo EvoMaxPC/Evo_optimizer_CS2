@@ -108,8 +108,17 @@ public sealed partial class NetworkChangePreflight(IProcessRunner runner)
     private static partial Regex PercentRegex();
 
     /// <summary>
-    /// Convierte el estado en comprobaciones de preflight. <b>Ninguna es Blocking</b>: el preflight informa, y
-    /// el usuario decide. Lo que sí se hace es advertir con claridad cuando el cifrado está activo.
+    /// Convierte el estado en comprobaciones de preflight. <b>De las que produce ESTA función ninguna es
+    /// Blocking</b>: aquí solo se informa del estado de BitLocker y el usuario decide. Lo que sí se hace es
+    /// advertir con claridad cuando el cifrado está activo.
+    ///
+    /// <para>
+    /// Cuidado al leer esto: no significa que un cambio de red pueda aplicarse. La comprobación Blocking
+    /// para los tweaks que necesitan recuperación fuera de banda —incluido todo lo que reinicie el enlace—
+    /// vive en <c>PreflightService.RecoveryCoverage</c>, no aquí, porque la decide el CATÁLOGO y este tipo
+    /// solo mira BitLocker. Mientras el motor no escriba el script de recuperación (R-J), esa comprobación
+    /// bloquea el apply.
+    /// </para>
     /// </summary>
     public static IReadOnlyList<PreflightCheck> ToChecks(BitLockerStatus status)
     {

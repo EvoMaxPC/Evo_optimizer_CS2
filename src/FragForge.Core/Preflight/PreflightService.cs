@@ -1,9 +1,14 @@
 using FragForge.Core.Abstractions;
+using FragForge.Core.Localization;
 using FragForge.Core.Models;
 
 namespace FragForge.Core.Preflight;
 
-public sealed class PreflightService(ISystemRestoreService restore, ITweakCatalog catalog, NetworkChangePreflight? networkChanges = null) : IPreflightService
+public sealed class PreflightService(
+    ISystemRestoreService restore,
+    ITweakCatalog catalog,
+    NetworkChangePreflight? networkChanges = null,
+    Localizer? localizer = null) : IPreflightService
 {
     public const ulong MinimumFreeBytes = 512UL * 1024 * 1024;
 
@@ -43,6 +48,66 @@ public sealed class PreflightService(ISystemRestoreService restore, ITweakCatalo
         // resto de operaciones no se ejecuta manage-bde: no se paga el coste ni se pide nada al usuario.
         if (networkChanges is not null && MayRestartNetworkLink())
             checks.AddRange(NetworkChangePreflight.ToChecks(await networkChanges.ReadAsync(cancellationToken)));
+        checks.AddRange(RecoveryCoverage());
         return PreflightReport.Passed(checks);
+    }
+
+    /// <summary>
+    /// Idiomas del mensaje de R-J. es-MX por omision: es el idioma en el que estan escritos TODOS los demas
+    /// mensajes de este preflight. El localizador solo cambia esto, no el resto, para no traducir media
+    /// pantalla y dejar la otra media en espanol.
+    /// </summary>
+    private Localizer Text => localizer ?? LocalizerEsMx;
+
+    private static readonly Localizer LocalizerEsMx = new("es-MX", new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["preflight.recovery.es-MX"] = "FragForge todavía no escribe el script de recuperación fuera de banda (R-J). Si este cambio te deja sin red o sin arranque, no habría forma de deshacerlo desde aquí: aplica {0} con la herramienta del fabricante o del sistema operativo a mano, y con la clave de recuperación a la vista.",
+        ["preflight.recovery.en-US"] = "FragForge does not write the out-of-band recovery script yet (R-J). If this change leaves you without network or unable to boot, there would be no way to undo it from here: apply {0} by hand with the vendor or OS tool, keeping the recovery key at hand."
+    });
+
+    /// <summary>
+    /// R-J: nada que necesite recuperacion FUERA DE BANDA puede aplicarse mientras el motor no escriba ese
+    /// script. <see cref="TweakEngine"/> no invoca <c>RecoveryWriter</c> (no aparece en el fichero), asi que
+    /// si un cambio deja el equipo sin red o sin arranque, la unica vuelta atras seria a mano.
+    ///
+    /// <para>
+    /// Se decide por CATALOGO, no por lo seleccionado: <see cref="ApplyOptions"/> no lleva ids (Results.cs:21-33)
+    /// y el preflight se consulta antes de saber que se aplica. Es el mismo criterio que
+    /// <see cref="MayRestartNetworkLink"/> (linea 17): conservador, un aviso de mas es mejor que uno de menos.
+    /// Consecuencia: mientras exista un tweak de estos en el catalogo, un apply sin <c>--dry-run</c> queda
+    /// bloqueado. Hoy es UNO (network.i225v-eee-off); la salida para el usuario es aplicarlo a mano o esperar
+    /// a que se cablee RecoveryWriter (ronda 10).
+    /// </para>
+    /// </summary>
+    private IEnumerable<PreflightCheck> RecoveryCoverage()
+    {
+        var affected = catalog.Definitions
+            .Where(d => !d.ReadOnly && NeedsOutOfBandRecovery(d))
+            .Select(d => d.Id)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        if (affected.Length == 0) yield break;
+        yield return new("recovery",
+            PreflightSeverity.Blocking,
+            Text.Format($"preflight.recovery.{Text.Culture}", string.Join(", ", affected)),
+            "No hay script de recuperación: se retomará cuando el motor lo escriba (ronda 10). Mientras tanto, aplica esos cambios con la herramienta del fabricante.");
+    }
+
+    /// <summary>
+    /// ¿Este tweak necesita recuperacion fuera de banda? Los tres casos del encargo: reinicia el enlace de
+    /// red, toca propiedades del adaptador de red, o usa bcdedit. Tambien cualquier Kind de driver/dispositivo,
+    /// que hoy no existe en el catalogo pero se contempla por nombre para que no entre sin querer.
+    /// </summary>
+    private static bool NeedsOutOfBandRecovery(TweakDefinition definition)
+    {
+        if (definition.RestartsNetworkLink) return true;
+        foreach (var action in definition.Actions)
+        {
+            if (action.Kind.Equals("NetAdapterProperty", StringComparison.OrdinalIgnoreCase)) return true;
+            if (action.Kind.Equals("Bcdedit", StringComparison.OrdinalIgnoreCase)) return true;
+            if (action.Kind.Contains("Driver", StringComparison.OrdinalIgnoreCase)) return true;
+            if (action.Kind.Contains("Device", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
     }
 }
