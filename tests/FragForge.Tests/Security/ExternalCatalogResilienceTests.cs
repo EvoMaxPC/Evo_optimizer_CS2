@@ -99,6 +99,8 @@ public sealed class ExternalCatalogResilienceTests
         var rejectedIds = catalog.LoadReport.Rejected.Select(r => r.Id).Where(i => i is not null).ToArray();
         Assert.Contains("ext.debugger", rejectedIds);
         Assert.Contains("ext.service", rejectedIds);
+        // El motivo del servicio es de POLÍTICA (denylist), no de una acción mal formada: es lo que pide 10.4.
+        Assert.Contains(catalog.LoadReport.Rejected, r => r.Id == "ext.service" && r.Reason.Contains("protegido", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("ext.memmgmt", rejectedIds);
         Assert.Contains("cs2.cpu-priority-high", rejectedIds);
         Assert.Contains(catalog.LoadReport.Rejected, r => r.Name.Contains("broken.json", StringComparison.Ordinal) && r.Id is null);
