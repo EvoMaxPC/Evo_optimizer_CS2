@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -30,8 +31,38 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<TweakItemViewModel> Tweaks { get; } = [];
     public ObservableCollection<string> Logs { get; } = [];
     public ObservableCollection<PreflightCheck> Checks { get; } = [];
-    public IReadOnlyList<TweakProfile> Profiles { get; } = Enum.GetValues<TweakProfile>();
-    public IReadOnlyList<string> Cultures { get; } = ["es-MX", "en-US"];
+    /// <summary>Perfiles disponibles, con nombre para mostrar. El combo enlaza a esta lista.</summary>
+    public IReadOnlyList<ProfileOption> Profiles { get; } = [.. Enum.GetValues<TweakProfile>().Select(p => new ProfileOption(p, DescribeProfile(p)))];
+
+    /// <summary>Culturas que el binario realmente puede cargar (los JSON embebidos).</summary>
+    public IReadOnlyList<string> Cultures { get; } = CultureDefaults.Supported;
+
+    /// <summary>
+    /// Valor del combo de perfil. Es el perfil en sí (enum), no una etiqueta: así el enlace no depende
+    /// de texto y la selección siempre existe al construir el ViewModel.
+    /// </summary>
+    public TweakProfile SelectedProfileOption
+    {
+        get => SelectedProfile;
+        set
+        {
+            if (value == SelectedProfile) return;
+            SelectedProfile = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Texto del contador: cuántos tweaks del perfil se están mostrando de cuántos existen.</summary>
+    public string TweakCountText => $"Mostrando {Tweaks.Count} de {_catalog.Definitions.Count} tweaks en el perfil {SelectedProfile}.";
+
+    private static string DescribeProfile(TweakProfile profile) => profile switch
+    {
+        TweakProfile.Safe => "Safe (menor riesgo)",
+        TweakProfile.Balanced => "Balanced",
+        TweakProfile.Competitive => "Competitive",
+        TweakProfile.Advanced => "Advanced (riesgo)",
+        _ => profile.ToString()
+    };
 
     [ObservableProperty] private string hardwareSummary = "Ejecuta Escanear para detectar el equipo.";
     [ObservableProperty] private string statusMessage = "Listo";
@@ -50,6 +81,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         _engine = engine; _catalog = catalog; _localizer = localizer; _reports = reports; _confirmation = confirmation; _files = files; _preflight = preflight; _profiler = profiler; _context = context;
         _uiContext = SynchronizationContext.Current;
+        // El combo de idioma debe arrancar con una opción REALMENTE seleccionable: la cultura de la UI
+        // si el binario la soporta; si no, es-MX y luego en-US.
+        // Se asigna el CAMPO, no la propiedad: asignar la propiedad dispararía OnCultureChanged y
+        // recargaría el localizador de forma asíncrona durante el constructor.
+        culture = CultureDefaults.PickInitialCulture(Cultures, CultureInfo.CurrentUICulture.Name) ?? "es-MX";
         _sink = sink as UiLogSink ?? new UiLogSink();
         _sink.MessageWritten += OnLogMessage;
         foreach (var line in _sink.History) Logs.Add(line);
@@ -73,7 +109,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             _statuses.Clear();
             foreach (var status in scan.Tweaks) _statuses[status.Id] = status;
             RebuildTweaks();
-            StatusMessage = $"Escaneo completado: {scan.Tweaks.Count} tweaks.";
+            StatusMessage = $"Escaneo completado: {scan.Tweaks.Count} evaluados; {TweakCountText}";
         });
     }
     [RelayCommand(CanExecute = nameof(CanOperate))]
@@ -169,6 +205,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             _statuses.TryGetValue(definition.Id, out var status);
             Tweaks.Add(new TweakItemViewModel(definition, status, _localizer) { IsSelected = selected.Contains(definition.Id) });
         }
+        // La tabla filtra por perfil: el contador tiene que decir cuántos se ven, no cuántos hay.
+        OnPropertyChanged(nameof(TweakCountText));
+        OnPropertyChanged(nameof(SelectedProfileOption));
     }
     private async Task ChangeCultureAsync(string value)
     {
@@ -204,4 +243,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
     private void OnLogMessage(object? sender, string line) => PostToUi(() => { Logs.Add(line); while (Logs.Count > 500) Logs.RemoveAt(0); });
     public void Dispose() { _sink.MessageWritten -= OnLogMessage; _operation?.Cancel(); _operation?.Dispose(); }
+}
+
+/// <summary>Opción del combo de perfiles: el enum (valor) y un texto para mostrar.</summary>
+public sealed record ProfileOption(TweakProfile Profile, string Label)
+{
+    public override string ToString() => Label;
 }

@@ -15,7 +15,11 @@
     <DockPanel Grid.Row="0" Margin="0,0,0,10">
       <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
         <TextBlock Text="{Binding Localizer[profile.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-        <ComboBox Width="140" ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}"/>
+        <ComboBox Width="170" ItemsSource="{Binding Profiles}" DisplayMemberPath="Label"
+                  SelectedValue="{Binding SelectedProfile}" SelectedValuePath="Profile"
+                  ToolTip="{Binding TweakCountText}"/>
+        <TextBlock Text="{Binding TweakCountText}" VerticalAlignment="Center" Margin="4,0,14,0"
+                   Foreground="#9FB0C2" FontSize="12"/>
         <TextBlock Text="{Binding Localizer[culture.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
         <ComboBox Width="90" ItemsSource="{Binding Cultures}" SelectedItem="{Binding Culture}"/>
       </StackPanel>
@@ -35,7 +39,7 @@
     </Border>
     <Grid Grid.Row="2">
       <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <DataGrid Grid.Column="0" ItemsSource="{Binding Tweaks}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" SelectionMode="Extended" HeadersVisibility="Column" GridLinesVisibility="Horizontal" Background="#0D1218" Foreground="#E8EDF2" BorderBrush="{StaticResource BorderBrush}" RowBackground="#121922" AlternatingRowBackground="#17212C">
+      <DataGrid Grid.Column="0" ItemsSource="{Binding Tweaks}" AutoGenerateColumns="False" CanUserAddRows="False" IsReadOnly="False" SelectionMode="Extended" HeadersVisibility="Column" GridLinesVisibility="Horizontal" Background="#0D1218" Foreground="#E8EDF2" BorderBrush="{StaticResource BorderBrush}" RowBackground="#121922" AlternatingRowBackground="#17212C" ColumnHeaderHeight="30" RowHeaderWidth="0">
         <DataGrid.Columns>
           <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="36"/>
           <DataGridTextColumn Header="Tweak" Binding="{Binding Title}" Width="240" IsReadOnly="True"/>
