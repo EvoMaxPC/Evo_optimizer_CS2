@@ -258,9 +258,20 @@ public sealed record NetworkProbeResult
         };
     }
 
-    /// <summary>Mediana. Con número par de muestras promedia las dos centrales. Devuelve entero por redondeo.</summary>
+    /// <summary>
+    /// Mediana. Con número par de muestras promedia las dos centrales. Devuelve entero por redondeo
+    /// (<see cref="MidpointRounding.AwayFromZero"/>).
+    ///
+    /// Sin muestras no hay mediana y NO se inventa un 0: se lanza, igual que en <see cref="Percentile"/>.
+    /// Antes caia en la rama par y hacia `sorted[n / 2 - 1]` = `sorted[-1]`, que revienta con
+    /// IndexOutOfRangeException: un error de indice no dice nada de la causa. Los llamadores de hoy
+    /// comprueban el vacio antes (MouseRateProbe.cs:69, IMeasurement.cs:96, Verdict.cs:144) y
+    /// <see cref="NetworkProbeResult.Create"/> retorna antes de llegar aqui (NetworkProbe.cs:239),
+    /// asi que esto no cambia ningun comportamiento: solo convierte un fallo criptico en uno explicito.
+    /// </summary>
     internal static long Median(IReadOnlyList<long> sorted)
     {
+        if (sorted.Count == 0) throw new ArgumentException("Sin muestras.", nameof(sorted));
         var n = sorted.Count;
         return n % 2 == 1 ? sorted[n / 2] : (long)Math.Round((sorted[n / 2 - 1] + sorted[n / 2]) / 2.0, MidpointRounding.AwayFromZero);
     }
