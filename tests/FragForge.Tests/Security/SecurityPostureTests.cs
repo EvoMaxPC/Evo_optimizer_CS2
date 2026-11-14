@@ -188,6 +188,42 @@ public sealed class SecurityPostureTests
         Assert.Null(posture.ThirdPartyKernelDriver);
     }
 
+    /// <summary>
+    /// Un fallo de lectura del escenario HVCI NO se lleva por delante el resto de la postura: VBS, TPM y
+    /// BitLocker se siguen leyendo. Es el escenario que en la ronda 8 tumbaba ReadAsync entera.
+    /// </summary>
+    [Fact]
+    public async Task AHvciScenarioReadFailure_DoesNotAffectTheRestOfThePosture()
+    {
+        // Falla SOLO la lectura del escenario HVCI; todo lo demas responde con normalidad.
+        var registry = new SelectiveFailingRegistry(WindowsSecurityPostureService.HvciScenarioKey);
+
+        var posture = await Create(registry: registry, wmi: new PerClassWmi()).ReadAsync();
+
+        // HVCI: no se pudo comprobar -> Unknown (nunca Disabled), y se dice por que.
+        Assert.Equal(FeatureState.Unknown, posture.Hvci);
+        // DiagnosticObservation expone Key/Value/Source/Confidence/Note (HardwareProfile.cs:184), no "Id".
+        Assert.Contains(posture.Observations, o => o.Key == "hvci.scenario" && o.Value == "Unknown");
+        // Y el resto SI se leyo: no se quedo a medias.
+        Assert.Equal(FeatureState.Enabled, posture.Vbs);
+        Assert.Equal(FeatureState.Enabled, posture.Tpm);
+    }
+
+    /// <summary>
+    /// Cancelar no es "no se pudo comprobar": la cancelacion se propaga y no se convierte en Unknown.
+    /// Si se tragara, el llamador no podria distinguir una cancelacion de un equipo sin datos.
+    /// </summary>
+    [Fact]
+    public async Task ACancelledRead_PropagatesTheCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var registry = new CancellingRegistry();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Create(registry: registry).ReadAsync(cts.Token));
+    }
+
     /// <summary>El servicio NO escribe: la postura se lee sin tocar ni un valor.</summary>
     [Fact]
     public async Task ReadingThePosture_NeverWrites()
@@ -199,6 +235,68 @@ public sealed class SecurityPostureTests
         Assert.Empty(registry.Writes);
         Assert.Empty(registry.Deletes);
     }
+}
+
+/// <summary>
+/// WMI que responde por CLASE, no una sola fila para todo. Hace falta porque <see cref="ScriptedWmi"/> devuelve
+/// la misma <c>Row</c> a cualquier consulta, y aqui se necesitan DeviceGuard (VBS) y Win32_Tpm (TPM) a la vez.
+/// Las clases son las que usa el servicio: DeviceGuardClass = "Win32_DeviceGuard" y
+/// WindowsHardwareProfiler.TpmClass = "Win32_Tpm".
+/// </summary>
+public sealed class PerClassWmi : IWmiQuery
+{
+    public Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> QueryAsync(string scope, string className, IReadOnlyList<string> properties, string? where = null, CancellationToken cancellationToken = default)
+    {
+        IReadOnlyDictionary<string, object?>? row = className switch
+        {
+            // 2 = Enabled (el servicio mapea 0 -> Disabled, 2 -> Enabled, otro -> Unknown).
+            "Win32_DeviceGuard" => new Dictionary<string, object?>
+            {
+                ["VirtualizationBasedSecurityStatus"] = 2,
+                ["SecurityServicesRunning"] = Array.Empty<object>(),
+                ["SecurityServicesConfigured"] = Array.Empty<object>()
+            },
+            "Win32_Tpm" => new Dictionary<string, object?>
+            {
+                ["IsEnabled_InitialValue"] = true,
+                ["IsActivated_InitialValue"] = true,
+                ["SpecVersion"] = "2.0"
+            },
+            _ => null
+        };
+        return Task.FromResult<IReadOnlyList<IReadOnlyDictionary<string, object?>>>(row is null ? [] : [row]);
+    }
+}
+
+/// <summary>Registro que falla SOLO la clave indicada; el resto responde con un valor fijo válido.</summary>
+public sealed class SelectiveFailingRegistry(string failingKey) : IRegistry
+{
+    private readonly FakeRegistry _inner = new();
+    public Task<bool> KeyExistsAsync(string key, CancellationToken cancellationToken = default) => _inner.KeyExistsAsync(key, cancellationToken);
+    public Task<RegistryReadResult> ReadValueAsync(string key, string name, CancellationToken cancellationToken = default)
+    {
+        if (string.Equals(key.TrimEnd('\\'), failingKey, StringComparison.OrdinalIgnoreCase)) throw new IOException("lectura selectiva fallida");
+        return _inner.ReadValueAsync(key, name, cancellationToken);
+    }
+    public Task<IReadOnlyList<string>> GetValueNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetValueNamesAsync(key, cancellationToken);
+    public Task<IReadOnlyList<string>> GetSubKeyNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetSubKeyNamesAsync(key, cancellationToken);
+    public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
+    public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
+    public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
+}
+
+/// <summary>Registro cuya PRIMERA lectura se cancela.</summary>
+public sealed class CancellingRegistry : IRegistry
+{
+    private readonly FakeRegistry _inner = new();
+    public Task<bool> KeyExistsAsync(string key, CancellationToken cancellationToken = default) => _inner.KeyExistsAsync(key, cancellationToken);
+    public Task<RegistryReadResult> ReadValueAsync(string key, string name, CancellationToken cancellationToken = default)
+        => throw new OperationCanceledException(cancellationToken);
+    public Task<IReadOnlyList<string>> GetValueNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetValueNamesAsync(key, cancellationToken);
+    public Task<IReadOnlyList<string>> GetSubKeyNamesAsync(string key, CancellationToken cancellationToken = default) => _inner.GetSubKeyNamesAsync(key, cancellationToken);
+    public Task WriteValueAsync(string key, string name, RegistryWriteValue value, CancellationToken cancellationToken = default) => _inner.WriteValueAsync(key, name, value, cancellationToken);
+    public Task DeleteValueAsync(string key, string name, CancellationToken cancellationToken = default) => _inner.DeleteValueAsync(key, name, cancellationToken);
+    public Task DeleteKeyAsync(string key, CancellationToken cancellationToken = default) => _inner.DeleteKeyAsync(key, cancellationToken);
 }
 
 /// <summary>WMI con una fila fija, o que falla si se le pide.</summary>
