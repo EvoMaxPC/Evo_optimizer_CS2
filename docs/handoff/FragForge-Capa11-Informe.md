@@ -32,7 +32,7 @@ forma, **no** errores de tipos ni de semántica.
 | `feat(ui)` | `a04893f` | 11.3: pestañas por capa, vista previa, revertir por operación |
 | `feat(installer)` | `d3c6437` | 11.4/11.5/11.6: elevación documentada, `publish.ps1`, `.iss`, `sign.ps1`, `docs/firma.md` |
 | `ci` | `41f2dcd` | 11.7: workflow con `-warnaserror`, publish solo en tags |
-| `docs` | *(este)* | 11.8/11.9: E2E, README, CHANGELOG, descartados, informe |
+| `docs` | `7059d01` | 11.8/11.9: E2E, README, CHANGELOG, descartados, informe |
 
 `9d92f96` es el HEAD de entrada; los otros cinco son de esta ronda.
 
