@@ -58,9 +58,11 @@ public sealed class BlockBootstrapTests
 
         var result = BlockBootstrap.Compute(values, seed: 7);
 
-        Assert.Equal(100.0, BlockBootstrap.BlockSeconds, 12);
+        // BlockSeconds es la constante en SEGUNDOS (1 s), no la longitud del bloque en frames.
+        Assert.Equal(1.0, BlockBootstrap.BlockSeconds, 12);
+        // Media 10 ms -> 100 frames/s -> 1 s de bloque = 100 frames. 2000 frames / 100 = 20 bloques.
         Assert.Equal(100, result.BlockLengthFrames);
-        Assert.Equal(2000 / 100, 2000 / result.BlockLengthFrames);
+        Assert.Equal(20, 2000 / result.BlockLengthFrames);
         Assert.Equal(BlockBootstrap.BootstrapIterations, result.Iterations);
         Assert.Equal(1000, BlockBootstrap.BootstrapIterations);
     }

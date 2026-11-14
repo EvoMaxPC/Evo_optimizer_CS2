@@ -79,15 +79,19 @@ public static class HitchAnalyzer
         var notes = new List<string>();
 
         // 1) Calentamiento: se descartan frames ENTEROS desde el principio hasta cubrir warmupSeconds.
+        // OJO con las unidades: los frametimes vienen en MILISEGUNDOS y warmupSeconds en SEGUNDOS. Se compara
+        // en ms (warmupSeconds * 1000); comparar ms contra s directamente descartaba casi todo el calentamiento
+        // (con warmup 1 s y frames de 100 ms paraba en el primero, no en el décimo).
+        var warmupMs = warmupSeconds * 1000.0;
         var dropped = 0;
-        var elapsed = 0.0;
-        while (dropped < frameTimesMs.Count && elapsed < warmupSeconds)
+        var elapsedMs = 0.0;
+        while (dropped < frameTimesMs.Count && elapsedMs < warmupMs)
         {
-            elapsed += frameTimesMs[dropped];
+            elapsedMs += frameTimesMs[dropped];
             dropped++;
         }
         if (warmupSeconds > 0)
-            notes.Add("Calentamiento: se descartaron " + dropped.ToString(CultureInfo.InvariantCulture) + " frames (" + elapsed.ToString("0.###", CultureInfo.InvariantCulture) + " s) de " + frameTimesMs.Count.ToString(CultureInfo.InvariantCulture) + ".");
+            notes.Add("Calentamiento: se descartaron " + dropped.ToString(CultureInfo.InvariantCulture) + " frames (" + (elapsedMs / 1000.0).ToString("0.###", CultureInfo.InvariantCulture) + " s) de " + frameTimesMs.Count.ToString(CultureInfo.InvariantCulture) + ".");
 
         var afterWarmup = new List<double>(frameTimesMs.Count - dropped);
         for (var i = dropped; i < frameTimesMs.Count; i++) afterWarmup.Add(frameTimesMs[i]);

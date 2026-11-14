@@ -32,10 +32,12 @@ public sealed class FrameStatisticsTests
         // 10 + 0.01 * (50 - 10) = 10 + 0.4 = 10.4 ms.
         Assert.Equal(10.4, stats.P99FrameTimeMs!.Value, Tolerance);
 
-        // P99.9 tipo 7: h = 999 * 0.999 = 998.001 -> entre índice 998 y 999. La serie ordenada tiene 990
-        // valores de 10 ms en los índices 0..989 y 50 ms en 990..999, así que AMBOS índices son 10 ms:
-        // 10 + 0.001 * (10 - 10) = 10 ms. (El 99.9 % no llega a tocar la cola: para eso está el peor 1 %.)
-        Assert.Equal(10.0, stats.P999FrameTimeMs!.Value, Tolerance);
+        // P99.9 tipo 7: h = 999 * 0.999 = 998.001 -> entre índice 998 (peso 0.999) y 999 (peso 0.001).
+        // La serie ordenada tiene los 990 valores de 10 ms en los índices 0..989 y los 10 de 50 ms en 990..999,
+        // así que AMBOS índices son 50 ms: 0.999 * 50 + 0.001 * 50 = 50 ms.
+        // (El P99, en cambio, cae en 989.01 y sí interpola entre 10 y 50: 10.4 ms. Ese contraste es el motivo
+        // de reportar las dos métricas por separado.)
+        Assert.Equal(50.0, stats.P999FrameTimeMs!.Value, Tolerance);
 
         // Peor 1 %: ceil(0.01 * 1000) = 10 frames más lentos = los diez de 50 ms -> media 50 ms -> 1000/50 = 20 FPS.
         Assert.Equal(20.0, stats.Low1PercentAverageFps!.Value, Tolerance);

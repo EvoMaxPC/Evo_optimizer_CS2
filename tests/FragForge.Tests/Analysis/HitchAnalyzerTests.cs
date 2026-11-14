@@ -33,7 +33,8 @@ public sealed class HitchAnalyzerTests
 
         var (report, _) = HitchAnalyzer.Analyze(values);
 
-        Assert.Equal(5000.0, HitchAnalyzer.PauseThresholdMs, 10);
+        // El umbral de pausa es PauseThresholdMs = 1000 ms; el frame de 5000 ms lo supera con holgura.
+        Assert.Equal(1000.0, HitchAnalyzer.PauseThresholdMs, 10);
         Assert.Equal(1, report.PauseCount);
         Assert.False(report.PausesExcluded);
         // Mediana de 11 valores ordenados = índice 5 (base 0) = 10 ms. Umbral = 30 ms. Solo el de 5000 lo supera.

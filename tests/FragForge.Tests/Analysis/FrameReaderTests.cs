@@ -96,7 +96,8 @@ public sealed class FrameReaderTests
         Assert.Equal(2, stream.Series.Count);
         Assert.Equal([10.0, 12.0], stream.Series.Single(s => s.Application == "game.exe").Primary);
         Assert.Equal([50.0], stream.Series.Single(s => s.Application == "overlay.exe").Primary);
-        Assert.Equal(12.0, stream.Series.Single(s => s.Application == "game.exe").Primary.Average(), 10);
+        // Media de game.exe = (10 + 12) / 2 = 22 / 2 = 11.
+        Assert.Equal(11.0, stream.Series.Single(s => s.Application == "game.exe").Primary.Average(), 10);
     }
 
     [Fact]
