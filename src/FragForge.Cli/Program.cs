@@ -1,6 +1,8 @@
+using FragForge.Actions.Measurement;
 using FragForge.Composition;
 using FragForge.Core.Abstractions;
 using FragForge.Core.Engine;
+using FragForge.Core.Experiments;
 using FragForge.Core.Localization;
 using FragForge.Core.Models;
 using FragForge.Core.Persistence;
@@ -120,10 +122,25 @@ public static class Program
                     else { ConsoleOutput.Preflight(check); Console.WriteLine($"Catálogo: {catalog.Definitions.Count} tweaks válidos · journal {(integrity.IsValid ? "íntegro" : "DAÑADO: " + integrity.Error)}"); }
                     return check.CanApply && integrity.IsValid ? ExitCodes.Success : ExitCodes.Preflight;
                 }
+                case "tools":
+                    return parsed.Positionals.FirstOrDefault() == "verify" ? await MeasurementCommands.ToolsVerifyAsync(host.Services, parsed) : throw new ArgumentException("tools admite verify.");
+                case "probe":
+                    return await MeasurementCommands.ProbeAsync(host.Services, parsed);
+                case "mouse-test":
+                    return await MeasurementCommands.MouseTestAsync(host.Services, parsed);
+                case "mem-bench":
+                    return await MeasurementCommands.MemBenchAsync(host.Services, parsed);
+                case "baseline":
+                    return await MeasurementCommands.BaselineAsync(host.Services, parsed);
+                case "ab":
+                    return await MeasurementCommands.AbAsync(host.Services, parsed);
+                case "experiment":
+                    return await MeasurementCommands.ExperimentAsync(host.Services, parsed);
                 default: throw new ArgumentException($"Comando desconocido: {parsed.Command}");
             }
         }
         catch (OperationCanceledException) { Console.Error.WriteLine("Operación cancelada. Si había una aplicación en curso, consulta el journal antes de continuar."); return ExitCodes.Cancelled; }
+        catch (MeasureNotAvailableException ex) { Console.Error.WriteLine("Medición no disponible: " + ex.Message); return ExitCodes.MeasurementInvalid; }
         catch (ArgumentException ex) { Console.Error.WriteLine(ex.Message); Help(); return ExitCodes.Usage; }
         catch (CatalogValidationException ex) { Console.Error.WriteLine(ex.Message); foreach (var error in ex.Errors) Console.Error.WriteLine("  " + error); return ExitCodes.Preflight; }
         catch (PreflightFailedException ex) { Console.Error.WriteLine(ex.Message); ConsoleOutput.Preflight(ex.Report); return ExitCodes.Preflight; }
@@ -150,9 +167,16 @@ Uso:
   fragforge snapshot list|create|show [ID] [--label TEXTO] [--no-restore-point] [--json]
   fragforge export-report --out reporte.html|json [--format html|json]
   fragforge doctor [--json]
+  fragforge tools verify [--json]
+  fragforge probe [CLAVE] [--json]
+  fragforge mouse-test [--duration 10] [--json]
+  fragforge mem-bench [--json]
+  fragforge baseline [--duration 120] [--runs 3] [--warmup 10] [--json]
+  fragforge ab <ids...> [--runs 5] [--aa] [--mode interleaved|blocked] [--seed N] [--json]
+  fragforge experiment list|show|resume|report [ID] [--out RUTA] [--json]
 
 Opciones globales: --data-root RUTA --culture es-MX|en-US
-Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico.
+Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico; 6 medición inválida.
 Seguridad: Force solo omite idempotencia/drift; nunca denylist, condiciones ni preflight.
 Los tweaks Advanced/Experimental requieren perfil Advanced, --accept-risk ID y la frase exacta.
 """);
