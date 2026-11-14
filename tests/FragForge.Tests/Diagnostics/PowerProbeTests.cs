@@ -33,6 +33,14 @@ public sealed class PowerProbeTests
         public Task<ProcessResult> RunAsync(ProcessRequest request, CancellationToken cancellationToken = default) => Task.FromResult(result);
     }
 
+    /// <summary>
+    /// Obtiene la fábrica de una sonda por su clave. El elemento de <c>Registrations</c> es una tupla con
+    /// nombre, así que el creador se accede por nombre o por <c>Item2</c>: <c>.Create(...)</c> sobre el
+    /// elemento de la lista no existe (CS1061).
+    /// </summary>
+    private static IDiagnosticProbe Probe(string key, IProcessRunner runner) =>
+        PowerProbeFactory.Registrations.Single(r => r.Key == key).Create(runner);
+
     private static HardwareProfile Profile(bool? portable, bool battery) => new()
     {
         FormFactor = new FormFactorInfo { IsPortable = portable, HasBattery = battery }
@@ -41,8 +49,7 @@ public sealed class PowerProbeTests
     [Fact]
     public async Task ProcessorSettings_ReportsTheEnumeratedValuesAndSaysWhatIsMissing()
     {
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.processor-settings")
-            .Create(new FakeRunner(new ProcessResult(0, Pn64Output, "", false)));
+        var probe = Probe("power.processor-settings", new FakeRunner(new ProcessResult(0, Pn64Output, "", false)));
 
         var observation = await probe.ReadAsync(Profile(false, false));
 
@@ -57,8 +64,7 @@ public sealed class PowerProbeTests
     [Fact]
     public async Task BoostMode_FlagsZeroFiveAndSix_AndIsReadOnly()
     {
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.boost-mode")
-            .Create(new FakeRunner(new ProcessResult(0, Pn64Output, "", false)));
+        var probe = Probe("power.boost-mode", new FakeRunner(new ProcessResult(0, Pn64Output, "", false)));
 
         var observation = await probe.ReadAsync(Profile(false, false));
 
@@ -77,8 +83,7 @@ public sealed class PowerProbeTests
                 Índice de energía actual: 0x00000006
                 Índice de energía actual (CC): 0x00000000
             """;
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.boost-mode")
-            .Create(new FakeRunner(new ProcessResult(0, aggressive, "", false)));
+        var probe = Probe("power.boost-mode", new FakeRunner(new ProcessResult(0, aggressive, "", false)));
 
         var observation = await probe.ReadAsync(Profile(false, false));
 
@@ -89,8 +94,7 @@ public sealed class PowerProbeTests
     [Fact]
     public async Task WhenPowerCfgFails_ConfidenceIsUnknown_AndNoValueIsGuessed()
     {
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.processor-settings")
-            .Create(new FakeRunner(new ProcessResult(1, "", "acceso denegado", false)));
+        var probe = Probe("power.processor-settings", new FakeRunner(new ProcessResult(1, "", "acceso denegado", false)));
 
         var observation = await probe.ReadAsync(Profile(false, false));
 
@@ -103,8 +107,7 @@ public sealed class PowerProbeTests
     public async Task ActiveScheme_ReadsTheGuid_NotTheLocalizedName()
     {
         const string spanish = "Esquema de energía activo: Alto rendimiento\r\nGUID del esquema de energía: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (Alto rendimiento)\r\n";
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.active-scheme")
-            .Create(new FakeRunner(new ProcessResult(0, spanish, "", false)));
+        var probe = Probe("power.active-scheme", new FakeRunner(new ProcessResult(0, spanish, "", false)));
 
         var observation = await probe.ReadAsync(Profile(false, false));
 
@@ -119,8 +122,7 @@ public sealed class PowerProbeTests
         {
             Power = new PowerInfo { ActiveSchemeGuid = "381b4222-f694-41f0-9685-ff5bb260df2e" }
         };
-        var probe = PowerProbeFactory.Registrations.Single(r => r.Key == "power.active-scheme")
-            .Create(new FakeRunner(new ProcessResult(0, "GUID del esquema de energía: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", "", false)));
+        var probe = Probe("power.active-scheme", new FakeRunner(new ProcessResult(0, "GUID del esquema de energía: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", "", false)));
 
         var observation = await probe.ReadAsync(profile);
 
