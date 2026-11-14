@@ -280,7 +280,7 @@ public sealed class NetworkProbeTests
         }
     }
 
-    private sealed class ThrowingEeeReader : FragForge.Actions.Network.NetworkAdvancedPropertyReader(new FakeProcessRunner())
+    private sealed class ThrowingEeeReader() : FragForge.Actions.Network.NetworkAdvancedPropertyReader(new FakeProcessRunner())
     {
         public override Task<FragForge.Actions.Network.NetworkAdvancedProperty> ReadAsync(string interfaceGuid, string keyword, CancellationToken cancellationToken = default) =>
             throw new InvalidOperationException("PowerShell no disponible (fake).");
