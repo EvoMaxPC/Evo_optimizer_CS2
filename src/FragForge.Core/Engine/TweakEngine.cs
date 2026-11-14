@@ -137,6 +137,16 @@ public sealed class TweakEngine(
             foreach (var plan in plans)
             {
                 var state = await VerifyPlanAsync(plan, cancellationToken);
+                // El objeto de la accion no existe en este equipo: NO APLICABLE, como en el scan.
+                // No es un error y no se aplica. Antes esta excepcion escapaba hasta el catch general
+                // de ApplyAsync y tumbaba el lote entero (bug medido: la tarea Appraiser, eliminada por
+                // Atlas Playbook).
+                if (state.State == TweakState.NotApplicable)
+                {
+                    skipped.Add(plan.Definition.Id);
+                    results.Add(Skipped(plan.Definition.Id, TweakState.NotApplicable, state.Reason));
+                    continue;
+                }
                 if (state.State is TweakState.Applied or TweakState.AppliedExternally && !options.Force)
                 {
                     var owned = ownership.Contains(plan.Definition.Id);
@@ -147,7 +157,11 @@ public sealed class TweakEngine(
             }
             if (applicable.Count == 0)
             {
-                warnings.Add("Todos los tweaks seleccionados ya coinciden; no hubo cambios.");
+                // El aviso debe decir la verdad: si lo que paso es que el objeto no existe, no es
+                // "ya coinciden".
+                warnings.Add(results.Any(r => r.State == TweakState.NotApplicable)
+                    ? "Nada que aplicar: algún tweak no aplica en este equipo (su objetivo no existe)."
+                    : "Todos los tweaks seleccionados ya coinciden; no hubo cambios.");
                 return await FinishAsync(new BatchReport { OperationId = operationId, Success = true, Results = results, Warnings = warnings }, true, cancellationToken);
             }
             if (needsRestore && options.EnableSystemProtection)
@@ -162,14 +176,24 @@ public sealed class TweakEngine(
                 }
                 else if (protection != FeatureState.Enabled) throw new PreflightFailedException("La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal.", preflightReport);
             }
-            var snapshot = await CaptureAndPersistAsync(operationId, "apply: " + string.Join(", ", applicable.Select(p => p.Definition.Id)), hardware, applicable, needsRestore, cancellationToken, progress);
+            // Si el objetivo desaparecio ENTRE la sonda de TryBuildPlanAsync y esta captura, el tweak
+            // queda fuera del snapshot: se reporta como no aplicable y no se aplica.
+            var vanished = new List<string>();
+            var snapshot = await CaptureAndPersistAsync(operationId, "apply: " + string.Join(", ", applicable.Select(p => p.Definition.Id)), hardware, applicable, needsRestore, cancellationToken, progress, vanished);
             snapshotId = snapshot.Id;
             restoreSequence = snapshot.RestorePointSequence;
+            foreach (var id in vanished)
+            {
+                results.Add(Skipped(id, TweakState.NotApplicable, "El objetivo de la acción ya no existe en este equipo."));
+            }
+            applicable.RemoveAll(p => vanished.Contains(p.Definition.Id, StringComparer.OrdinalIgnoreCase));
             foreach (var plan in applicable)
             {
                 plan.States.Clear();
-                foreach (var captured in snapshot.Tweaks.First(t => t.TweakId == plan.Definition.Id).Actions)
-                plan.States.Add(captured.State);
+                var captured = snapshot.Tweaks.FirstOrDefault(t => t.TweakId == plan.Definition.Id);
+                if (captured is null) continue;
+                foreach (var action in captured.Actions)
+                    plan.States.Add(action.State);
             }
             foreach (var plan in applicable)
             {
@@ -231,7 +255,11 @@ public sealed class TweakEngine(
             await AppendSafeAsync(operationId, JournalEventType.OperationFailed, null, snapshotId, ex.Message);
         }
         var success = !failed && !cancelled && !critical && results.All(r => !r.RollbackFailed);
-        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
+        // DryRun refleja lo PEDIDO, no solo el camino feliz: si la operacion falla antes de llegar al
+        // return del dry-run (linea ~123), este reporte decia DryRun=false aunque se hubiera pedido
+        // dry-run, y parecia que el dry-run se habia ignorado. Un dry-run fallido sigue siendo un
+        // dry-run: Success=false es lo que dice que fallo.
+        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, DryRun = options.DryRun, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
     }
 
     public async Task<BatchReport> RevertAsync(RevertRequest request, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null)
@@ -393,10 +421,11 @@ public sealed class TweakEngine(
             }
         }
         catch (ActionNotApplicableException) { return null; }
+        catch (OperationCanceledException) { throw; }
         return new ActionPlan(definition, actions, [], context, EvaluateConditions(definition, hardware).Reason);
     }
 
-    private async Task<SystemSnapshot> CaptureAndPersistAsync(string operationId, string label, HardwareProfile hardware, IReadOnlyList<ActionPlan> plans, bool createRestorePoint, CancellationToken cancellationToken, IProgress<EngineProgress>? progress)
+    private async Task<SystemSnapshot> CaptureAndPersistAsync(string operationId, string label, HardwareProfile hardware, IReadOnlyList<ActionPlan> plans, bool createRestorePoint, CancellationToken cancellationToken, IProgress<EngineProgress>? progress, List<string>? unavailable = null)
     {
         var snapshotId = NewId();
         var artifactDirectory = snapshots.GetArtifactDirectory(snapshotId);
@@ -409,11 +438,22 @@ public sealed class TweakEngine(
             var context = plan.Context with { OperationId = operationId, ArtifactDirectory = artifactDirectory, Progress = new ProgressAdapter(progress, plan.Definition.Id) };
             plan.Context = context;
             var actions = new List<CapturedAction>();
-            for (var i = 0; i < plan.Actions.Count; i++)
+            try
             {
-                var state = await plan.Actions[i].CaptureAsync(context, cancellationToken);
-                actions.Add(new CapturedAction(i, plan.Actions[i].Kind, state));
-                if (state is RegistryActionState registry) registryStates.Add(registry);
+                for (var i = 0; i < plan.Actions.Count; i++)
+                {
+                    var state = await plan.Actions[i].CaptureAsync(context, cancellationToken);
+                    actions.Add(new CapturedAction(i, plan.Actions[i].Kind, state));
+                    if (state is RegistryActionState registry) registryStates.Add(registry);
+                }
+            }
+            catch (ActionNotApplicableException)
+            {
+                // El objetivo desaparecio entre la sonda de TryBuildPlanAsync y esta captura: no se
+                // inventa un snapshot para algo que no existe, ni se rompe la operacion. El tweak queda
+                // fuera del snapshot, no se aplica y se reporta como no aplicable.
+                unavailable?.Add(plan.Definition.Id);
+                continue;
             }
             captured.Add(new TweakSnapshot { TweakId = plan.Definition.Id, DefinitionSha256 = catalog.GetDefinitionHash(plan.Definition.Id), Definition = plan.Definition, Actions = actions });
             await AppendAsync(operationId, JournalEventType.TweakCaptureCompleted, plan.Definition.Id, snapshotId, null, cancellationToken);
@@ -463,11 +503,29 @@ public sealed class TweakEngine(
     {
         var states = new List<ActionState>();
         var results = new List<VerificationResult>();
-        foreach (var action in plan.Actions)
+        try
         {
-            var before = await action.CaptureAsync(plan.Context, cancellationToken);
-            states.Add(before);
-            results.Add(await action.VerifyAsync(before, plan.Context, cancellationToken));
+            foreach (var action in plan.Actions)
+            {
+                var before = await action.CaptureAsync(plan.Context, cancellationToken);
+                states.Add(before);
+                results.Add(await action.VerifyAsync(before, plan.Context, cancellationToken));
+            }
+        }
+        catch (ActionNotApplicableException ex)
+        {
+            // El objeto de la accion NO existe en este equipo (tarea programada, servicio, plan de
+            // energia, adaptador). Es un HECHO, no un fallo: el tweak es NO APLICABLE.
+            //
+            // Este es el punto por el que se escapaba el error medido en la PC objetivo: ApplyAsync
+            // llama a VerifyPlanAsync ANTES de capturar el snapshot, asi que aqui se decide sin pagar
+            // una captura extra (hay acciones cuyo CaptureAsync ejecuta un script de PowerShell).
+            //
+            // Solo se traga ActionNotApplicableException. Un fallo REAL (acceso denegado, servicio de
+            // Task Scheduler caido, timeout) es otra excepcion y sube: sigue siendo error.
+            //
+            // No se toca plan.States: el plan no llega a la captura del snapshot.
+            return new TweakStatus(plan.Definition.Id, TweakState.NotApplicable, ex.Message, [], []);
         }
         plan.States.Clear();
         plan.States.AddRange(states);

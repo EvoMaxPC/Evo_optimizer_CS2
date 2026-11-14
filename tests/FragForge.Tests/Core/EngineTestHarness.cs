@@ -40,10 +40,14 @@ public sealed class EngineTestHarness : IDisposable
         return this;
     }
     public EngineTestHarness WithProfile(HardwareProfile profile) { Profiler.Profile = profile; return this; }
-    public TweakEngine CreateEngine(IEnumerable<IExperimentHook>? hooks = null) => new(
+    /// <summary>
+    /// <paramref name="factory"/> permite probar acciones REALES (p. ej. ScheduledTaskAction) contra un
+    /// doble del store, sin tocar el FakeActionFactory que usan los demas tests.
+    /// </summary>
+    public TweakEngine CreateEngine(IEnumerable<IExperimentHook>? hooks = null, ITweakActionFactory? factory = null) => new(
         Catalog,
         Profiler,
-        Factory,
+        factory ?? Factory,
         new ConditionFactory(),
         Snapshots,
         Journal,

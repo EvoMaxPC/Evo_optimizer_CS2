@@ -17,7 +17,16 @@ public sealed class ScheduledTaskAction(IScheduledTaskStore store, IProtectionPo
     {
         policy.EnsureTaskAllowed(_parameters.Path);
         var state = await store.GetAsync(_parameters.Path, cancellationToken);
-        if (!state.Exists) throw new ActionNotApplicableException($"La tarea {_parameters.Path} no existe.");
+        // Objeto inexistente = NO APLICABLE, nunca error ni "aplicado" (R-L: no inventar).
+        //
+        // "No existe" lo decide WindowsScheduledTaskStore.GetAsync por DATO ESTRUCTURADO, no por texto:
+        // devuelve {"exists":false} cuando Get-ScheduledTask no encuentra la tarea. La deteccion no pasa
+        // por ningun mensaje localizado, asi que un Windows en es-MX, en-US o el que sea da el mismo
+        // resultado.
+        //
+        // Un fallo real (acceso denegado, Task Scheduler caido, timeout) NO llega aqui: el store lanza
+        // ProcessFailedException, que sube como error. Esta distincion es la clave de la ronda.
+        if (!state.Exists) throw new ActionNotApplicableException($"La tarea no existe en este equipo: {_parameters.Path}");
         return state;
     }
     public async Task ApplyAsync(ActionState before, ActionExecutionContext context, CancellationToken cancellationToken = default) { policy.EnsureTaskAllowed(_parameters.Path); await store.SetEnabledAsync(_parameters.Path, _parameters.Enabled, cancellationToken); }
