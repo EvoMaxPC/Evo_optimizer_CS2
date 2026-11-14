@@ -63,7 +63,15 @@ public static class Layer2Registration
         // --- Huella (60 s): fábrica por plataforma, nunca registro genérico de un tipo Windows-only ---
         if (OperatingSystem.IsWindows())
         {
-            services.AddSingleton(sp => new FootprintProbe(sp.GetRequiredService<ISensorSampler>()));
+            // La guarda va DENTRO de la lambda, en el mismo ámbito donde se construye el tipo
+            // Windows-only: el analizador CA1416 no ve la comprobación de fuera de la fábrica.
+            services.AddSingleton(sp =>
+            {
+                // Guarda en el MISMO ámbito donde se construye: así CA1416 la reconoce. El ternario
+                // con throw no sirve (no hay tipo común entre FootprintProbe y el throw).
+                if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("FootprintProbe solo está disponible en Windows.");
+                return new FootprintProbe(sp.GetRequiredService<ISensorSampler>());
+            });
         }
         else
         {
