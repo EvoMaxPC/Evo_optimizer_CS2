@@ -340,13 +340,15 @@ public sealed class RecoveryCoverageTests
     /// arriba solo prueban que se emite un aviso.
     /// </summary>
     /// <remarks>
-    /// CORREGIDO en la ronda de fallos 1 (C1). Antes esperaba PreflightFailedException y el test fallaba con
-    /// "No exception was thrown". El motivo era doble: (a) el tweak es Risk.Advanced y sin aceptacion
-    /// explicita (ProfileSelector.cs:43-45) el apply moria antes de llegar al preflight; (b) el contrato del
-    /// motor NO es lanzar. ApplyAsync reporta el bloqueo como report.Success=false + report.Errors
-    /// (TweakEngine.cs:284-289, el catch generico). Es el mismo contrato que ya fija
-    /// EngineTests.MomentFor... (EngineTests.cs:256-259) para el bloqueo por reinicio pendiente, y es
-    /// deliberado: un lote bloqueado no es un crash, es un resultado con su motivo.
+    /// CORREGIDO en la ronda de fallos 2. El mecanismo, leido del codigo: TweakEngine SI LANZA
+    /// PreflightFailedException (:161) y el catch generico de ApplyAsync (:277-283) la recoge, la pasa a
+    /// report.Errors (:280) y devuelve Success=false (:284,:289). O sea: el motor lanza por dentro y el
+    /// llamador recibe un reporte. Mi frase de la ronda anterior ("el contrato es no lanzar") era
+    /// imprecisa: lo correcto es "el llamador de ApplyAsync no ve la excepcion".
+    ///
+    /// Y no es el unico camino: el perfil tambien puede rechazar antes (ProfileSelector.cs:43-45, hace falta
+    /// RiskAccepted() abajo), lo que produciria Success=false SIN pasar por R-J. Para que este test pruebe
+    /// R-J y no otra cosa, el motivo tiene que ser el del preflight.
     /// </remarks>
     [Fact]
     public async Task Apply_WithABlockingTweak_IsRejected_NotJustWarned()
@@ -356,10 +358,12 @@ public sealed class RecoveryCoverageTests
         var blocked = await harness.CreateEngine().ApplyAsync(["network.i225v-eee-off"], RiskAccepted(harness, "network.i225v-eee-off"));
 
         Assert.False(blocked.Success);
-        // El motivo llega al usuario y es el de R-J, no un "algo falló".
+        // El motivo llega al usuario y es el de R-J, no un "algo falló" ni un rechazo de perfil.
         Assert.Contains(blocked.Errors, e => e.Contains("R-J", StringComparison.Ordinal));
         Assert.Contains(blocked.Errors, e => e.Contains("network.i225v-eee-off", StringComparison.Ordinal));
-        // Y no se aplicó NADA: ni se llegó a tocar el registro. Sin esto el test solo probaría el mensaje.
-        Assert.DoesNotContain("apply:eee", harness.Factory.Trace);
+        // Y no se aplicó NADA: la traza del factory está vacía. Se asserta la traza ENTERA y no un
+        // "apply:eee" concreto: MinimalTweak no lleva Parameters, así que el label real es "fake"
+        // (TestSupport.cs:95) y buscar "apply:eee" habría pasado sin comprobar nada.
+        Assert.Empty(harness.Factory.Trace);
     }
 }
