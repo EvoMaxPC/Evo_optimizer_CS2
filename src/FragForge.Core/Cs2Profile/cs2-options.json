@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "options": [
+    {
+      "id": "fps_max",
+      "kind": "Cfg",
+      "text": "fps_max",
+      "valueType": "Int",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Limita los FPS maximos del juego. Si se pone por encima de la tasa de refresco del monitor, el juego produce mas imagenes de las que la pantalla puede mostrar; si se pone por debajo, ese limite pasa a mandar en todo. El efecto practico depende de la maquina y del monitor, no de esta opcion por si sola.",
+        "enUs": "Caps the game's maximum FPS. Set above the monitor refresh rate the game renders more frames than the display can show; set below it, that cap takes over everything. The practical effect depends on the machine and the monitor, not on this option alone."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia cuantas imagenes por segundo intenta generar el juego.",
+        "enUs": "Changes how many frames per second the game tries to produce."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "fps_max_ui",
+      "kind": "Cfg",
+      "text": "fps_max_ui",
+      "valueType": "Int",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Limita los FPS mientras estas dentro de los menus del juego. No afecta a la partida: cuando entras a jugar, manda fps_max. Sirve para que la interfaz no consuma recursos de mas mientras estas en el menu.",
+        "enUs": "Caps FPS while you are inside the game menus. It does not affect the match: once you are playing, fps_max governs. Its purpose is to keep the interface from using more resources than needed while in the menu."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia cuantas imagenes por segundo genera el juego en los menus.",
+        "enUs": "Changes how many frames per second the game produces in menus."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "engine_no_focus_sleep",
+      "kind": "Cfg",
+      "text": "engine_no_focus_sleep",
+      "valueType": "Int",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Controla cuantos milisegundos duerme el motor del juego cuando la ventana pierde el foco. Con 0 el juego no se duerme al pasar a otra ventana. Afecta al comportamiento en segundo plano, no a la partida en primer plano.",
+        "enUs": "Controls how many milliseconds the game engine sleeps when the window loses focus. With 0 the game does not sleep when you switch to another window. It affects background behavior, not the foreground match."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia si el juego sigue trabajando al perder el foco.",
+        "enUs": "Changes whether the game keeps working when it loses focus."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "r_low_latency",
+      "kind": "Cfg",
+      "text": "r_low_latency",
+      "valueType": "Int",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Ajuste de latencia de renderizado del motor grafico. Un valor 1 pide al juego que reduzca el trabajo en cola antes de presentar la imagen. El efecto real depende de la tarjeta grafica y del limite de FPS.",
+        "enUs": "Render latency setting of the graphics engine. A value of 1 asks the game to reduce queued work before presenting the frame. The real effect depends on the graphics card and the FPS cap."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia cuanto trabajo se acumula antes de mostrar cada imagen.",
+        "enUs": "Changes how much work piles up before each frame is shown."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "mat_vsync",
+      "kind": "Cfg",
+      "text": "mat_vsync",
+      "valueType": "Bool",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Activa o desactiva la sincronizacion vertical. Activada, la imagen se ajusta al ritmo del monitor y se evita el desgarro; desactivada, el juego no espera al monitor. Es una eleccion de compromiso, no una mejora automatica.",
+        "enUs": "Enables or disables vertical sync. On, the image follows the monitor's cadence and tearing is avoided; off, the game does not wait for the monitor. It is a trade-off, not an automatic improvement."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia si el juego espera al monitor antes de mostrar cada imagen.",
+        "enUs": "Changes whether the game waits for the monitor before showing each frame."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "engine_low_latency_sleep_after_client_tick",
+      "kind": "Cfg",
+      "text": "engine_low_latency_sleep_after_client_tick",
+      "valueType": "Bool",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Hace que el motor duerma justo despues de procesar el tick del cliente. Es un ajuste de temporizacion interna; existe sobre todo para reducir latencia a costa de margen de CPU. Con la CPU muy cargada el resultado puede ir en contra.",
+        "enUs": "Makes the engine sleep right after processing the client tick. It is an internal timing setting; it exists mainly to reduce latency at the cost of CPU headroom. With the CPU heavily loaded the result can go the other way."
+      },
+      "expectedEffect": {
+        "esMx": "Cambia cuando duerme el motor dentro de cada tick.",
+        "enUs": "Changes when the engine sleeps within each tick."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "-novid",
+      "kind": "LaunchOption",
+      "text": "-novid",
+      "valueType": "Bool",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Opcion de lanzamiento que omite el video de introduccion al abrir el juego. Solo cambia el tiempo que tardas en llegar al menu, no la partida.",
+        "enUs": "Launch option that skips the intro video when the game opens. It only changes how long it takes to reach the menu, not the match."
+      },
+      "expectedEffect": {
+        "esMx": "Evita la espera del video al arrancar.",
+        "enUs": "Avoids the video wait at startup."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    },
+    {
+      "id": "-nojoy",
+      "kind": "LaunchOption",
+      "text": "-nojoy",
+      "valueType": "Bool",
+      "defaultValue": null,
+      "description": {
+        "esMx": "Opcion de lanzamiento que desactiva el soporte de mandos. Se usa cuando no vas a jugar con mando y quieres que el juego no sondee esos dispositivos. No toca el raton ni el teclado.",
+        "enUs": "Launch option that disables gamepad support. It is used when you will not play with a controller and want the game not to probe those devices. It does not affect mouse or keyboard."
+      },
+      "expectedEffect": {
+        "esMx": "El juego deja de inicializar el soporte de mandos.",
+        "enUs": "The game stops initializing gamepad support."
+      },
+      "evidence": "Observed",
+      "source": "observado en la configuracion real del usuario (solo lectura)",
+      "conflictsWith": []
+    }
+  ]
+}
