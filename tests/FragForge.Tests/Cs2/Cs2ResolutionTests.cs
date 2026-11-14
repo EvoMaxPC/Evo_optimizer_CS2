@@ -186,11 +186,15 @@ public sealed class Cs2ResolutionTests : IDisposable
 
     private static string LibraryVdf(params (int Index, string Path)[] libraries)
     {
-        var entries = libraries.Select(l => $"""
-                "{l.Index}"
-                {{
-                    "path"  "{l.Path.Replace(@"\", @"\\")}"
-                }}
+        // Raw interpolado con DOS $, igual que Manifest() unas lineas mas abajo: "{{...}}" interpola y las
+        // llaves sueltas son contenido literal. Con un solo $ la cadena no compila de ninguna forma: "{{" no
+        // es un escape en un raw (CS9006, y de ahi el CS1733 en cascada) y "{" suelto abre un hueco de
+        // interpolacion, asi que el texto de dentro se intenta leer como expresion.
+        var entries = libraries.Select(l => $$"""
+                "{{l.Index}}"
+                {
+                    "path"  "{{l.Path.Replace(@"\", @"\\")}}"
+                }
             """);
         return "\"libraryfolders\"\n{\n" + string.Join("\n", entries) + "\n}\n";
     }
