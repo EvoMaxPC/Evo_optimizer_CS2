@@ -251,10 +251,6 @@ public sealed class NetworkProbeTests
     }
 
     /// <summary>
-    /// Devuelve las respuestas indicadas y después las pérdidas. El plan se construye de una vez para que el
-    /// número de éxitos y de fallos sea EXACTAMENTE el del test, sin depender del orden de llamada.
-    /// </summary>
-    /// <summary>
     /// 5.5: el estado EEE sale del adaptador elegido. Si la propiedad no existe, queda <c>null</c>, que en el
     /// CLI se imprime como NA — nunca como "desactivado".
     /// </summary>
@@ -346,6 +342,10 @@ public sealed class NetworkProbeTests
             throw new InvalidOperationException("PowerShell no disponible (fake).");
     }
 
+    /// <summary>
+    /// Devuelve las respuestas indicadas y después las pérdidas. El plan se construye de una vez para que el
+    /// número de éxitos y de fallos sea EXACTAMENTE el del test, sin depender del orden de llamada.
+    /// </summary>
     private sealed class ScriptedPing : IPingProbe
     {
         private readonly Queue<long?> _plan = new();
