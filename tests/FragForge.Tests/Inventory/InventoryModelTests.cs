@@ -195,9 +195,9 @@ public sealed class TierCatalogTests
     [Fact]
     public void DuplicateEntries_AreRejected()
     {
-        var json = """{"schemaVersion":1,"services":[
-            {"name":"Foo","tier":"T1","reason":"Motivo suficientemente largo.","reference":"https://a"},
-            {"name":"foo","tier":"T2","reason":"Motivo suficientemente largo.","reference":"https://b"}]}""";
+        var json = @"{""schemaVersion"":1,""services"":[
+            {""name"":""Foo"",""tier"":""T1"",""reason"":""Motivo suficientemente largo."",""reference"":""https://a""},
+            {""name"":""foo"",""tier"":""T2"",""reason"":""Motivo suficientemente largo."",""reference"":""https://b""}]}";
         Assert.Throws<InvalidDataException>(() => ServiceTierCatalog.Parse(json));
     }
 
