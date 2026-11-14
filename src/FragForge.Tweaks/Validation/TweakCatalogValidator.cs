@@ -93,7 +93,10 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
             // ValidatePolicy que va despues. Resultado: ProtectedTargetException escapaba hasta el test.
             // "ValidatePolicy va despues" solo vale si hay retorno; por eso aqui se captura y se descarta.
             try { actions.Create(action); }
-            catch (ProtectedTargetException) { /* lo reporta ValidatePolicy */ }
+            catch (ProtectedTargetException) { /* lo reporta ValidatePolicy (es politica, no forma) */ }
+            // FORMA: todo lo demas se reporta aqui, con el detalle real de la excepcion. Esta funcion es la
+            // dueña de las excepciones de forma; ValidatePolicy es la dueña de las de politica. Una sola
+            // dueña por clase de fallo, para que el mensaje no salga dos veces.
             catch (Exception ex) { errors.Add($"{definition.Id}: acción inválida: {ex.Message}"); }
             if (tiers is not null && action.Kind.Equals("Service", StringComparison.OrdinalIgnoreCase))
             {
@@ -117,6 +120,13 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
     /// Se captura <see cref="ProtectedTargetException"/> de <c>actions.Create</c>, que es exactamente lo que
     /// valida el destino (registro, servicio, tarea, BCD, script) al construir la acción.
     /// </para>
+    ///
+    /// <para>
+    /// Capa 10.4: NINGUNA excepción de <c>actions.Create</c> puede escapar de aquí. Un proveedor que revienta
+    /// con <see cref="InvalidOperationException"/>, o con lo que sea, se convierte en fallo de validación con
+    /// el id del tweak. La única excepción es <see cref="OperationCanceledException"/>, que se propaga porque
+    /// cancelar no es un dato: lo pidió quien llama.
+    /// </para>
     /// </summary>
     public IReadOnlyList<string> ValidatePolicy(TweakDefinition definition)
     {
@@ -124,8 +134,20 @@ public sealed class TweakCatalogValidator(JsonSchemaValidator schema, ITweakCond
         foreach (var action in definition.Actions)
         {
             try { actions.Create(action); }
-            catch (FragForgeException ex) when (ex is ProtectedTargetException) { errors.Add($"{definition.Id}: {ex.Message}"); }
-            catch (Exception ex) when (ex is CatalogValidationException or ArgumentException) { /* ya reportado por ValidateSingle */ }
+            // La cancelación NO es un fallo de validación: se propaga tal cual. Cancelar lo pidió quien
+            // llama; tragársela convertiría una cancelación en "tweak inválido".
+            catch (OperationCanceledException) { throw; }
+            // Destino protegido: es POLÍTICA y se reporta aquí, con su motivo.
+            catch (ProtectedTargetException ex) { errors.Add($"{definition.Id}: {ex.Message}"); }
+            // FORMA: su dueña es ValidateSingle, donde ya quedó anotada con el detalle real. Aquí se
+            // descarta para no duplicar el mensaje.
+            //
+            // Esta rama es OBLIGATORIA, no una optimización: sin ella, cualquier excepción de forma
+            // (InvalidOperationException de un proveedor que revienta, por ejemplo) saldría de esta función
+            // y llegaría al llamador, que es justo lo que la Capa 10.4 prohíbe: un catálogo externo no
+            // puede tumbar la app. Antes había un filtro por tipo
+            // (`CatalogValidationException or ArgumentException`) que dejaba escapar el resto.
+            catch (Exception) { /* ya reportado por ValidateSingle */ }
         }
         return errors;
     }
