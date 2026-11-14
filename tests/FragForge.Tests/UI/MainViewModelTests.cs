@@ -188,9 +188,10 @@ internal sealed class StubEngine : FragForge.Core.Abstractions.ITweakEngine
     public Task<ScanReport> ScanAsync(CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null) =>
         Task.FromResult(new ScanReport(new HardwareProfile(), [], DateTimeOffset.UtcNow));
     public Task<BatchReport> ApplyAsync(IEnumerable<string> ids, ApplyOptions options, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null) =>
-        Task.FromResult(new BatchReport { Success = true });
+        // BatchReport.OperationId es `required` (Results.cs:65): sin el, CS9035.
+        Task.FromResult(new BatchReport { OperationId = "stub-apply", Success = true });
     public Task<BatchReport> RevertAsync(RevertRequest request, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null) =>
-        Task.FromResult(new BatchReport { Success = true });
+        Task.FromResult(new BatchReport { OperationId = "stub-revert", Success = true });
     public Task<TweakStatus> GetStateAsync(string id, CancellationToken cancellationToken = default) =>
         Task.FromResult(new TweakStatus(id, TweakState.Unknown, "", [], []));
     public Task<SystemSnapshot> CreateSnapshotAsync(string label, bool createRestorePoint = true, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null) =>
