@@ -86,6 +86,60 @@ public sealed class RealCatalogDenylistTests
         Assert.Throws<OperationCanceledException>(() => validator.ValidateCatalog([definition]));
     }
 
+    // ---- D2: la FIRMA PUBLICA de ValidatePolicy reporta TODO lo que atrapa ----
+    //
+    // Las dos rutas combinadas (ValidateCatalog y LoadDocumentsResilient) pasan reportForms: false para no
+    // duplicar, porque ValidateSingle ya anoto la forma. Pero quien llame SOLO a la publica no puede
+    // perder el fallo: eso es lo que fijan estos dos tests.
+
+    [Fact]
+    public void PublicValidatePolicy_ReportsByItselfEvenWithoutValidateSingle()
+    {
+        var definition = JsonSerializer.Deserialize<TweakDefinition>(HarmlessTweak, FragForge.Core.Logging.JsonDefaults.Options)!;
+        var validator = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new ConditionFactory(), new ExplodingActionFactory());
+
+        // SOLO la publica: sin ValidateSingle. El fallo no puede perderse.
+        var errors = validator.ValidatePolicy(definition);
+
+        var error = Assert.Single(errors);
+        Assert.Contains("probe.harmless", error, StringComparison.Ordinal);   // con el id del tweak
+        Assert.Contains("el proveedor reventó", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PublicValidatePolicy_PropagatesCancellation()
+    {
+        var definition = JsonSerializer.Deserialize<TweakDefinition>(HarmlessTweak, FragForge.Core.Logging.JsonDefaults.Options)!;
+        var validator = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new ConditionFactory(), new CancellingActionFactory());
+
+        Assert.Throws<OperationCanceledException>(() => validator.ValidatePolicy(definition));
+        Assert.Throws<OperationCanceledException>(() => validator.ValidateCatalog([definition]));
+    }
+
+    /// <summary>
+    /// La ruta combinada reporta EXACTAMENTE 1. Antes de D2 esto ya pasaba porque la publica descartaba la
+    /// forma; ahora pasa porque se le dice explicitamente (reportForms: false). Si alguien quita esa bandera,
+    /// este test da 2 y falla: es el guardia contra el mensaje duplicado.
+    /// </summary>
+    [Fact]
+    public void TheCombinedRoute_ReportsTheFormErrorExactlyOnce()
+    {
+        var definition = JsonSerializer.Deserialize<TweakDefinition>(HarmlessTweak, FragForge.Core.Logging.JsonDefaults.Options)!;
+        var validator = new TweakCatalogValidator(new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
+            new ConditionFactory(), new ExplodingActionFactory());
+
+        var catalog = validator.ValidateCatalog([definition]);
+        Assert.Single(catalog, e => e.Contains("el proveedor reventó", StringComparison.Ordinal));
+
+        // Y la ruta RESILIENTE (TweakCatalog.cs) tambien: un solo rechazo por la entrada.
+        var loader = new JsonTweakCatalogLoader(validator);
+        var loaded = loader.LoadDocumentsResilient([("boom.json", HarmlessTweak)]);
+        Assert.Contains(loaded.LoadReport.Rejected, r => r.Reason.Contains("el proveedor reventó", StringComparison.Ordinal));
+        Assert.Single(loaded.LoadReport.Rejected, r => r.Reason.Contains("el proveedor reventó", StringComparison.Ordinal));
+    }
+
     /// <summary>Reproduce el validador de CompositionRoot, incluidos los tiers.</summary>
     private static JsonTweakCatalogLoader ProductionLikeLoader(ITweakActionFactory factory) => new(new TweakCatalogValidator(
         new JsonSchemaValidator(JsonTweakCatalogLoader.ReadEmbeddedSchema()),
