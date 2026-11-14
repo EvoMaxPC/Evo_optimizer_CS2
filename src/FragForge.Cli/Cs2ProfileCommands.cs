@@ -342,7 +342,10 @@ public static class Cs2ProfileCommands
             var cause = ex is UnauthorizedAccessException
                 ? "no hay permisos para escribir ahí (si el juego está abierto, ciérralo; si la carpeta es del sistema, ejecuta FragForge como administrador)"
                 : "el sistema no pudo completar la escritura (puede que el archivo esté en uso o que falte espacio)";
-            prompt.WriteWarning($"No se pudo restaurar '{target}': {cause}. Detalle: {ex.Message} El autoexec no se ha modificado.");
+            // No se puede afirmar que el autoexec siga igual: AtomicFile escribe un temporal y luego lo
+            // mueve, y el fallo puede haber ocurrido en cualquiera de las dos etapas.
+            prompt.WriteWarning($"No se pudo completar la restauración de '{target}': {cause}. Detalle: {ex.Message} " +
+                                $"VERIFICA '{target}' antes de usarlo; la copia desde la que se restauró sigue en '{backup}'.");
             return ExitCodes.Failure;
         }
 

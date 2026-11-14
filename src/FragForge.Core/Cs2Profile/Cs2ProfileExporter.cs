@@ -101,10 +101,25 @@ public static class Cs2ProfileExporter
     /// archivo en uso, disco lleno) sin depender del sistema operativo ni de sus permisos.
     /// </summary>
     /// <param name="write">Escribe los bytes en la ruta indicada. Puede lanzar E/S o acceso denegado.</param>
+    public static Task<ExportResult> ExportAsync(
+        ExportRequest request,
+        Func<byte[], byte[], bool>? verifyBackup,
+        Func<string, byte[], CancellationToken, Task> write,
+        CancellationToken cancellationToken = default) =>
+        ExportAsync(request, verifyBackup, write, move: null, cancellationToken);
+
+    /// <summary>
+    /// Igual que la anterior, con el MOVIMIENTO final inyectable. En producción se pasa null (se usa
+    /// <see cref="File.Move(string, string, bool)"/>). Existe para poder probar el fallo de la etapa final,
+    /// que es la única en la que el autoexec puede haber cambiado: hoy no hay otra forma hermética de
+    /// provocarla, porque el respaldo de permisos del sistema operativo no es portable.
+    /// </summary>
+    /// <param name="move">Mueve el temporal sobre el destino. Null = movimiento real.</param>
     public static async Task<ExportResult> ExportAsync(
         ExportRequest request,
         Func<byte[], byte[], bool>? verifyBackup,
         Func<string, byte[], CancellationToken, Task> write,
+        Action<string, string>? move,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write);
@@ -112,7 +127,7 @@ public static class Cs2ProfileExporter
         {
             ExportDestinationKind.Folder => await ExportToFolderAsync(request, write, cancellationToken),
             ExportDestinationKind.GameNewFile => await ExportToGameNewFileAsync(request, write, cancellationToken),
-            ExportDestinationKind.GameAutoexecBlock => await ExportToAutoexecAsync(request, verifyBackup, write, cancellationToken),
+            ExportDestinationKind.GameAutoexecBlock => await ExportToAutoexecAsync(request, verifyBackup, write, move, cancellationToken),
             _ => Fail("Destino desconocido.")
         };
     }
@@ -189,7 +204,7 @@ public static class Cs2ProfileExporter
         };
     }
 
-    private static async Task<ExportResult> ExportToAutoexecAsync(ExportRequest request, Func<byte[], byte[], bool>? verifyBackup, Func<string, byte[], CancellationToken, Task> write, CancellationToken cancellationToken)
+    private static async Task<ExportResult> ExportToAutoexecAsync(ExportRequest request, Func<byte[], byte[], bool>? verifyBackup, Func<string, byte[], CancellationToken, Task> write, Action<string, string>? move, CancellationToken cancellationToken)
     {
         var cfgDirectory = Cs2PathGuard.CfgDirectoryFor(request.GameExecutablePath);
         if (cfgDirectory is null) return Fail("No se pudo derivar la carpeta cfg: ¿está instalado CS2?");
@@ -241,19 +256,38 @@ public static class Cs2ProfileExporter
 
         // 2) Componer el archivo: el resto byte a byte + el bloque al final.
         var merged = MergeBlock(original, request.CfgText);
+
+        // La escritura va en DOS etapas separadas para poder decir con exactitud qué falló. Con una sola
+        // llamada no se puede distinguir «no se llegó a escribir» de «se escribió el temporal pero el
+        // movimiento final falló», y en la segunda el archivo SÍ puede haber cambiado.
+        var temporary = Path.Combine(cfgDirectory,
+            "." + Cs2ProfileGenerator.AutoexecFileName + "." + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture) + ".tmp");
+
+        // Etapa 2: el temporal. Mientras esto falla, autoexec.cfg sigue intacto.
         try
         {
-            await write(target, merged, cancellationToken);
+            await write(temporary, merged, cancellationToken);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            // Si el fallo deja una copia recién creada y sin usar, se retira: no se deja basura que confunda
-            // al próximo restore-autoexec (que elige «el último backup» por nombre).
-            var cleaned = TryRemoveLeftoverBackup(backupPath);
+            TryDeleteTemporary(temporary);
+            return FailWrite(ex, "el archivo temporal", temporary,
+                $"'{target}' no se ha modificado." + BackupLocation(backupPath));
+        }
+
+        // Etapa 3: el movimiento final. Aquí ya NO se puede afirmar que autoexec.cfg no cambió: el
+        // movimiento puede haber dejado el archivo a medias o haberlo reemplazado parcialmente. Se pide
+        // verificarlo y se dice dónde está el backup.
+        try
+        {
+            if (move is null) File.Move(temporary, target, overwrite: true);
+            else move(temporary, target);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            TryDeleteTemporary(temporary);
             return FailWrite(ex, "autoexec.cfg", target,
-                cleaned
-                    ? $"'{target}' no se ha modificado y se retiró la copia de seguridad que se acababa de crear ('{backupPath}')."
-                    : $"'{target}' no se ha modificado." + (backupPath is null ? "" : $" La copia '{backupPath}' se conserva."));
+                $"No se pudo completar la escritura: VERIFICA '{target}' antes de usarlo." + BackupLocation(backupPath));
         }
 
         // 3) Conflicto con líneas del USUARIO fuera del bloque: se informan, NO se tocan.
@@ -415,26 +449,34 @@ public static class Cs2ProfileExporter
     }
 
     /// <summary>
-    /// Retira el backup recién creado si el paso siguiente falló, para no dejar una copia huérfana que
-    /// <c>restore-autoexec</c> elegiría como «la última». Devuelve true si se retiró.
+    /// Retira el TEMPORAL que no llegó a moverse. Es basura propia, no una copia de seguridad: nunca se
+    /// borra un backup.
     /// </summary>
     /// <remarks>
-    /// Si borrar también falla, se responde false y el mensaje dice que la copia se conserva: se informa de
-    /// lo que de verdad quedó en disco en vez de suponer que se limpió.
+    /// Si borrar también falla no se hace nada más y no se dice nada en el mensaje: queda un <c>.tmp</c>
+    /// dentro de la carpeta cfg, que no interfiere con nada porque <c>restore-autoexec</c> solo mira el
+    /// prefijo <c>autoexec.cfg.fragforge-backup-</c> y <c>MergeBlock</c> solo lee <c>autoexec.cfg</c>.
     /// </remarks>
-    private static bool TryRemoveLeftoverBackup(string? backupPath)
+    private static void TryDeleteTemporary(string temporary)
     {
-        if (backupPath is null || !File.Exists(backupPath)) return false;
         try
         {
-            File.Delete(backupPath);
-            return true;
+            if (File.Exists(temporary)) File.Delete(temporary);
         }
         catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
         {
-            return false;
+            // Un temporal huérfano es inofensivo; se prefiere no tapar el error original con este.
         }
     }
+
+    /// <summary>
+    /// Dice dónde está la copia de seguridad, para el mensaje de error. Si no había autoexec previo no hay
+    /// nada que restaurar, y se dice así en vez de dejar el hueco.
+    /// </summary>
+    private static string BackupLocation(string? backupPath) =>
+        backupPath is null
+            ? " No había un autoexec.cfg anterior, así que no hay copia de seguridad que restaurar."
+            : $" La copia de seguridad del autoexec anterior está en '{backupPath}'.";
 
     private static ExportResult Fail(string message) => new() { Written = false, Messages = [message] };
 }

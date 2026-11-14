@@ -93,8 +93,14 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         Assert.False(File.Exists(backupPath));
     }
 
+    /// <summary>Escritor que falla al crear el TEMPORAL (nombre oculto <c>.autoexec.cfg.&lt;guid&gt;.tmp</c>).</summary>
+    private static Func<string, byte[], CancellationToken, Task> FailingOnTheTemporary(Exception failure) =>
+        (path, content, token) => Path.GetFileName(path).StartsWith(".autoexec.cfg.", StringComparison.Ordinal)
+            ? throw failure
+            : File.WriteAllBytesAsync(path, content, token);
+
     [Fact]
-    public async Task AccessDeniedWhenWritingAutoexec_AbortsAndRemovesTheJustCreatedBackup()
+    public async Task AccessDeniedWritingTheTemporary_Aborts_SaysAutoexecIsUntouched_AndKeepsTheBackup()
     {
         var autoexec = Path.Combine(_cfg, "autoexec.cfg");
         var originalBytes = new UTF8Encoding(true).GetBytes("// mio\nsensitivity 2.5\n");
@@ -102,30 +108,122 @@ public sealed class Cs2ProfileExporterTests : IDisposable
         var before = Cs2ProfileExporter.Sha256(originalBytes);
 
         var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
-        var writer = FailingOn(autoexec, new UnauthorizedAccessException("acceso denegado (test)"));
 
-        var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
+        var result = await Cs2ProfileExporter.ExportAsync(
+            GameBlock(), verifyBackup: null, FailingOnTheTemporary(new UnauthorizedAccessException("acceso denegado (test)")),
+            CancellationToken.None);
 
         Assert.False(result.Written);
         var message = Assert.Single(result.Messages);
-        Assert.Contains("No se pudo escribir autoexec.cfg", message, StringComparison.Ordinal);
-        Assert.Contains("no se ha modificado", message, StringComparison.Ordinal);
-        // Se informa de la limpieza que de verdad ocurrió.
-        Assert.Contains("se retiró la copia de seguridad", message, StringComparison.Ordinal);
+        Assert.Contains("No se pudo escribir el archivo temporal", message, StringComparison.Ordinal);
+        // En esta etapa SÍ se puede afirmar que autoexec.cfg no cambió.
+        Assert.Contains($"'{autoexec}' no se ha modificado", message, StringComparison.Ordinal);
+        // Y se dice dónde queda el backup, que no se borra nunca.
+        Assert.Contains("La copia de seguridad", message, StringComparison.Ordinal);
+        Assert.Contains(backupPath, message, StringComparison.Ordinal);
 
-        // Nada quedó: ni autoexec cambiado ni backup huérfano que restore-autoexec confundiría con «el último».
         Assert.Equal(before, Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(autoexec)));
-        Assert.False(File.Exists(backupPath));
-        Assert.Empty(Directory.GetFiles(_cfg, Cs2ProfileGenerator.BackupPrefix + "*"));
+        // El backup existe y es byte a byte el original: es la única copia recuperable.
+        Assert.True(File.Exists(backupPath));
+        Assert.Equal(Convert.ToHexString(originalBytes), Convert.ToHexString(await File.ReadAllBytesAsync(backupPath)));
+    }
+
+    [Fact]
+    public async Task FailureInTheFinalMove_DoesNotClaimAutoexecIsUntouched_AndKeepsTheBackupByteForByte()
+    {
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        var originalBytes = new UTF8Encoding(true).GetBytes("// mio\nsensitivity 2.5\n");
+        await File.WriteAllBytesAsync(autoexec, originalBytes);
+
+        var backupPath = Path.Combine(_cfg, "autoexec.cfg.fragforge-backup-20261113-100000");
+
+        // El temporal se escribe bien; lo que falla es el movimiento final.
+        var result = await Cs2ProfileExporter.ExportAsync(
+            GameBlock(),
+            verifyBackup: null,
+            write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
+            move: (_, _) => throw new IOException("el movimiento final falló (test)"),
+            CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+
+        // NO se puede afirmar que autoexec.cfg siga igual: en esta etapa pudo haber cambiado.
+        Assert.DoesNotContain("no se ha modificado", message, StringComparison.Ordinal);
+        Assert.Contains("No se pudo completar la escritura", message, StringComparison.Ordinal);
+        Assert.Contains("VERIFICA", message, StringComparison.Ordinal);
+        Assert.Contains(autoexec, message, StringComparison.Ordinal);
+        // Y se dice dónde está el backup para poder restaurar.
+        Assert.Contains("La copia de seguridad", message, StringComparison.Ordinal);
+        Assert.Contains(backupPath, message, StringComparison.Ordinal);
+
+        // El backup SIGUE EXISTIENDO y es byte a byte el original. Nunca se borra.
+        Assert.True(File.Exists(backupPath), "el backup no debe borrarse: es el único original recuperable");
+        Assert.Equal(Convert.ToHexString(originalBytes), Convert.ToHexString(await File.ReadAllBytesAsync(backupPath)));
+        // No quedó temporal huérfano.
+        Assert.Empty(Directory.GetFiles(_cfg, ".*.tmp"));
+    }
+
+    [Fact]
+    public async Task FailureInTheFinalMove_LeavesEveryExistingBackupExactlyAsItWas()
+    {
+        // Había backups de antes: tras un export fallido en el movimiento final, NINGUNO cambia de contenido.
+        // Cálculo a mano: se crean 2 backups previos (el del segundo 10:00:00 y su -02) y el export fallido
+        // añade el tercero del MISMO segundo, que es el -03. Antes y después deben ser 3 archivos.
+        var autoexec = Path.Combine(_cfg, "autoexec.cfg");
+        await File.WriteAllBytesAsync(autoexec, "// mio\n"u8.ToArray());
+
+        var stem = "autoexec.cfg.fragforge-backup-20261113-100000";
+        var previos = new[] { Path.Combine(_cfg, stem), Path.Combine(_cfg, stem + "-02") };
+        await File.WriteAllBytesAsync(previos[0], "// copia vieja 1\n"u8.ToArray());
+        await File.WriteAllBytesAsync(previos[1], "// copia vieja 2\n"u8.ToArray());
+        var hashesAntes = previos.Select(p => Cs2ProfileExporter.Sha256(File.ReadAllBytes(p))).ToArray();
+
+        var result = await Cs2ProfileExporter.ExportAsync(
+            GameBlock(),
+            verifyBackup: null,
+            write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
+            move: (_, _) => throw new IOException("el movimiento final falló (test)"),
+            CancellationToken.None);
+
+        Assert.False(result.Written);
+
+        // Las dos copias previas siguen byte a byte iguales.
+        for (var i = 0; i < previos.Length; i++)
+            Assert.Equal(hashesAntes[i], Cs2ProfileExporter.Sha256(await File.ReadAllBytesAsync(previos[i])));
+
+        // Y se añadió la tercera (la de este intento), que tampoco se borra: 2 + 1 = 3.
+        var todos = Directory.GetFiles(_cfg, Cs2ProfileGenerator.BackupPrefix + "*")
+            .Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        Assert.Equal(3, todos.Length);
+        Assert.Equal(new[] { stem, stem + "-02", stem + "-03" }, todos);
+    }
+
+    [Fact]
+    public async Task FailureInTheFinalMove_WithNoPreviousAutoexec_SaysThereIsNoBackupToRestore()
+    {
+        // Sin autoexec previo no se crea backup (no hay nada que copiar) y el mensaje debe decirlo en vez de
+        // dejar un hueco que se leería como si el backup se hubiera perdido.
+        var result = await Cs2ProfileExporter.ExportAsync(
+            GameBlock(),
+            verifyBackup: null,
+            write: (path, content, token) => File.WriteAllBytesAsync(path, content, token),
+            move: (_, _) => throw new IOException("el movimiento final falló (test)"),
+            CancellationToken.None);
+
+        Assert.False(result.Written);
+        var message = Assert.Single(result.Messages);
+        Assert.Contains("No había un autoexec.cfg anterior", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("no se ha modificado", message, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task DiskFullWhenWritingAutoexec_SaysItIsNotAPermissionsProblem()
     {
-        // IOException (disco lleno): NO se sugiere administrador, porque no arreglaría nada.
+        // IOException (disco lleno) al crear el TEMPORAL: NO se sugiere administrador, porque no lo arregla.
         var autoexec = Path.Combine(_cfg, "autoexec.cfg");
         await File.WriteAllTextAsync(autoexec, "// mio\n");
-        var writer = FailingOn(autoexec, new IOException("no hay espacio en el dispositivo (test)"));
+        var writer = FailingOnTheTemporary(new IOException("no hay espacio en el dispositivo (test)"));
 
         var result = await Cs2ProfileExporter.ExportAsync(GameBlock(), verifyBackup: null, writer, CancellationToken.None);
 
