@@ -52,6 +52,26 @@ public sealed class NetAdapterPropertiesTests
         "TransitioningToState", "TransmitLinkSpeed", "UsageRestriction", "Virtual", "VlanID", "WdmInterface"
     ];
 
+    /// <summary>
+    /// Capa 5.1: el resolutor de adaptadores pide la lista del perfil MÁS cuatro propiedades. Las cuatro
+    /// también tienen que existir en la clase real; si alguien añade una inventada, esto lo nombra.
+    /// </summary>
+    [Fact]
+    public void NetworkAdapterResolver_OnlyRequestsRealProperties()
+    {
+        var real = new HashSet<string>(RealMsftNetAdapterProperties, StringComparer.OrdinalIgnoreCase);
+        var requested = FragForge.Actions.Network.WindowsNetworkAdapterResolver.Properties;
+
+        var inexistentes = requested.Where(p => !real.Contains(p)).ToArray();
+        Assert.True(
+            inexistentes.Length == 0,
+            $"el resolutor pide propiedades que NO existen en MSFT_NetAdapter: [{string.Join(", ", inexistentes)}]");
+
+        // Y las cuatro que añade sobre el perfil están de verdad.
+        foreach (var extra in new[] { "PnPDeviceID", "InterfaceIndex", "MaxSpeed", "MediaConnectState" })
+            Assert.Contains(extra, requested, StringComparer.Ordinal);
+    }
+
     [Fact]
     public void EveryPropertyTheCodeRequests_ExistsInTheRealClass()
     {

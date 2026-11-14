@@ -108,6 +108,19 @@ public sealed record NetworkAdapterInfo
     public ulong? LinkSpeedBitsPerSecond { get; init; }
     public bool IsPhysical { get; init; }
     public string State { get; init; } = "Unknown";
+
+    // --- Capa 5.1: identidad de HARDWARE (R-I). Campos ADITIVOS y opcionales (R-N): ausentes = no se leyó.
+    // Son los únicos que se pueden usar para identificar un adaptador; Name y Description cambian con el
+    // idioma y con el usuario que renombra la conexión.
+
+    /// <summary><c>InterfaceGuid</c> de <c>MSFT_NetAdapter</c>, normalizado. Clave primaria de la ruta de apply.</summary>
+    public string? InterfaceGuid { get; init; }
+    /// <summary><c>NetCfgInstanceId</c> de la clase de red del registro.</summary>
+    public string? NetCfgInstanceId { get; init; }
+    /// <summary><c>PnPDeviceID</c>: contiene el hardware ID (PCI\VEN_8086&amp;DEV_15F3…).</summary>
+    public string? HardwareId { get; init; }
+    /// <summary>Valor crudo de <c>NdisPhysicalMedium</c>, para auditar el mapeo de tipo de medio.</summary>
+    public int? NdisPhysicalMedium { get; init; }
 }
 
 public sealed record MonitorInfo

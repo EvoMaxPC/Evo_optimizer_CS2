@@ -120,3 +120,77 @@ public interface IUiLogSink
     void Write(string level, string message);
     event EventHandler<string>? MessageWritten;
 }
+
+/// <summary>
+/// Resuelve un adaptador de red por su IDENTIDAD DE HARDWARE (R-I), nunca por el nombre visible.
+///
+/// Es una interfaz NUEVA y aditiva: <see cref="INetworkAdapterController"/> no se toca (R-A). El
+/// controlador existente recibe un nombre de adaptador y escribe propiedades; este resolutor solo
+/// IDENTIFICA, y es lo que usa la ruta de apply para no depender de un texto que cambia con el idioma
+/// y con el usuario que renombra la conexión.
+///
+/// Las tres identidades pedidas por la ronda, en orden de preferencia:
+/// <list type="number">
+/// <item><c>InterfaceGuid</c> — el GUID de la interfaz, tal como lo expone <c>MSFT_NetAdapter</c>.</item>
+/// <item><c>NetCfgInstanceId</c> — el GUID que la clase de red guarda en el registro
+/// (<c>…\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}\&lt;NNNN&gt;\NetCfgInstanceId</c>).</item>
+/// <item><c>HardwareId</c> — el <c>PnPDeviceID</c>, para exigir un modelo concreto (I225-V, AX210).</item>
+/// </list>
+/// </summary>
+public interface INetworkAdapterResolver
+{
+    /// <summary>
+    /// Adaptadores físicos con su identidad de hardware completa. Es la fuente de la ruta de apply y del
+    /// diagnóstico. Si la consulta falla, devuelve lista vacía: no se inventan identidades (R-L).
+    /// </summary>
+    Task<IReadOnlyList<NetworkAdapterIdentity>> ListAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resuelve UN adaptador. Devuelve <c>null</c> cuando no hay coincidencia exacta o hay más de una, que
+    /// es un resultado legítimo: quien llama decide si eso es "no aplicable".
+    /// </summary>
+    Task<NetworkAdapterIdentity?> ResolveAsync(NetworkAdapterSelector selector, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Identidad de un adaptador de red. Todos los campos son de hardware o del sistema: ninguno es el nombre
+/// visible que el usuario puede renombrar.
+/// </summary>
+public sealed record NetworkAdapterIdentity
+{
+    /// <summary>Nombre de la conexión (<c>Ethernet</c>, <c>Wi-Fi</c>…). SOLO para mostrar y para pasar al controlador que ya lo exige; nunca para identificar.</summary>
+    public string Name { get; init; } = "Unknown";
+    /// <summary>Descripción del controlador. Puede cambiar entre versiones de driver: no se usa para identificar.</summary>
+    public string Description { get; init; } = "Unknown";
+    /// <summary><c>InterfaceGuid</c> de <c>MSFT_NetAdapter</c>, en minúsculas y con llaves. Clave primaria.</summary>
+    public string? InterfaceGuid { get; init; }
+    /// <summary><c>NetCfgInstanceId</c> leído de la clase de red del registro. Debe coincidir con <see cref="InterfaceGuid"/>.</summary>
+    public string? NetCfgInstanceId { get; init; }
+    /// <summary><c>PnPDeviceID</c>: contiene el hardware ID (p. ej. <c>PCI\VEN_8086&amp;DEV_15F3</c>).</summary>
+    public string? HardwareId { get; init; }
+    public NetworkKind Kind { get; init; }
+    /// <summary>Velocidad de enlace negociada, en bits por segundo. <c>null</c> si no se pudo leer.</summary>
+    public ulong? LinkSpeedBitsPerSecond { get; init; }
+    /// <summary>Valor crudo de <c>NdisPhysicalMedium</c>. Se guarda para poder auditar el mapeo.</summary>
+    public int? NdisPhysicalMedium { get; init; }
+    public bool IsPhysical { get; init; }
+    public string State { get; init; } = "Unknown";
+    /// <summary>¿Es el adaptador por el que sale la ruta por defecto? Lo resuelve el probe de diagnóstico (5.5).</summary>
+    public bool? IsDefaultRoute { get; init; }
+}
+
+/// <summary>
+/// Cómo se pide un adaptador. Un selector con TODOS los campos nulos no es válido: se exige al menos una
+/// identidad de hardware, para que sea imposible "resolver por lo que sea".
+/// </summary>
+public sealed record NetworkAdapterSelector
+{
+    public string? InterfaceGuid { get; init; }
+    public string? NetCfgInstanceId { get; init; }
+    /// <summary>Fragmento del hardware ID que debe aparecer en <c>PnPDeviceID</c> (p. ej. <c>DEV_15F3</c>).</summary>
+    public string? HardwareIdContains { get; init; }
+
+    /// <summary>¿Hay al menos una identidad de hardware? Si no, el resolutor devuelve <c>null</c>.</summary>
+    public bool HasHardwareIdentity =>
+        !string.IsNullOrWhiteSpace(InterfaceGuid) || !string.IsNullOrWhiteSpace(NetCfgInstanceId) || !string.IsNullOrWhiteSpace(HardwareIdContains);
+}

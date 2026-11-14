@@ -147,7 +147,12 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
             // dirección y pueden no estar presentes en enlaces dúplex. Se prefiere Speed.
             LinkSpeedBitsPerSecond = WmiValues.UInt64(r, "Speed"),
             IsPhysical = WmiValues.Bool(r, "HardwareInterface") == true && WmiValues.Bool(r, "Virtual") != true,
-            State = WmiValues.String(r, "State") ?? "Unknown"
+            State = WmiValues.String(r, "State") ?? "Unknown",
+            // Capa 5.1 (R-I): identidad de hardware. Se normaliza el GUID para poder compararlo siempre
+            // igual; si el texto no es un GUID, queda null en vez de usarse como identificador.
+            InterfaceGuid = NormalizeInterfaceGuid(WmiValues.String(r, "InterfaceGuid")),
+            HardwareId = WmiValues.String(r, "PnPDeviceID"),
+            NdisPhysicalMedium = WmiValues.Int32(r, "NdisPhysicalMedium")
         }).ToArray();
         if (adapters.Length == 0)
         {
@@ -263,7 +268,8 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
         "NdisPhysicalMedium",    // antes: MediaType (inexistente)
         "Speed",                 // antes: LinkSpeed (inexistente)
         "HardwareInterface",
-        "Virtual"
+        "Virtual",
+        "PnPDeviceID"           // Capa 5.1: hardware ID para identificar por R-I
     ];
 
     /// <summary>
@@ -407,6 +413,13 @@ public sealed class WindowsHardwareProfiler(IWmiQuery wmi, IRegistry registry, I
 
         return $"{BaseText} {modules.Count} módulos iguales, dual-channel probable, no confirmable por WMI.";
     }
+
+    /// <summary>
+    /// Normaliza <c>InterfaceGuid</c> a minúsculas con llaves. Devuelve <c>null</c> si el texto no es un
+    /// GUID: un identificador que no parsea no se usa (R-I). Delega en el resolutor para que perfil y
+    /// resolutor normalicen exactamente igual.
+    /// </summary>
+    internal static string? NormalizeInterfaceGuid(string? value) => Network.WindowsNetworkAdapterResolver.NormalizeGuid(value);
 
     private static string BusName(int? bus) => bus switch { 3 => "ATA", 7 => "USB", 10 => "SAS", 11 => "SATA", 17 => "NVMe", 18 => "SCM", _ => "Unknown" };
     private static string ChassisName(int type) => type switch { 3 => "Desktop", 4 => "LowProfileDesktop", 8 => "Portable", 9 => "Laptop", 10 => "Notebook", 30 => "Tablet", 31 => "Convertible", 32 => "Detachable", 35 => "MiniPC", _ => $"Type{type}" };

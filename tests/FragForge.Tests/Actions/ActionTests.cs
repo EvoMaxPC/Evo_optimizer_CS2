@@ -669,44 +669,243 @@ public sealed class BcdeditActionTests
 
 public sealed class NetworkPropertyActionTests
 {
+    private const string EchoGuid = "{d72a2249-535c-4478-9fdd-9b3a439f6395}";
+
     private static ActionExecutionContext Context() => new() { OperationId = "test", Hardware = TestProfiles.Pn64() };
-    private static NetAdapterPropertyAction Create(FakeNetworkAdapterController controller, string keyword, params string[] value) => new(controller, ProtectionPolicy.CreateDefault(), Spec.Action("NetAdapterProperty", new { adapterName = "Ethernet", properties = new object[] { new { keyword, value } } }));
+
+    /// <summary>
+    /// La acción ya NO acepta un nombre de adaptador: se identifican por hardware (R-I). El fixture es el
+    /// I225-V real, y la propiedad se sirve con un lector programado para no depender de PowerShell.
+    /// </summary>
+    private static NetAdapterPropertyAction Create(
+        ScriptedReader reader,
+        string keyword = "*EEE",
+        params string[] value) =>
+        new(new FixedResolver(), reader, ProtectionPolicy.CreateDefault(),
+            Spec.Action("NetAdapterProperty", new
+            {
+                hardwareIdContains = "DEV_15F3",
+                properties = new object[] { new { keyword, value } }
+            }));
 
     [Fact]
     public async Task Apply_Revert_RestoresPreviousRegistryValue()
     {
-        var controller = new FakeNetworkAdapterController();
-        controller.Properties[("Ethernet", "*EEE")] = new NetworkPropertyCapture { AdapterName = "Ethernet", Keyword = "*EEE", Exists = true, RegistryValue = ["1"], DisplayValue = "Enabled" };
-        var action = Create(controller, "*EEE", "0");
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+        var action = Create(reader, "*EEE", "0");
+
         var before = await action.CaptureAsync(Context());
         await action.ApplyAsync(before, Context());
-        Assert.Equal(["0"], controller.Properties[("Ethernet", "*EEE")].RegistryValue);
+        Assert.Equal("0", reader.Values["*EEE"]);
+
         await action.RevertAsync(before, Context());
-        Assert.Equal(["1"], controller.Properties[("Ethernet", "*EEE")].RegistryValue);
+        Assert.Equal("1", reader.Values["*EEE"]);
+    }
+
+    /// <summary>5.6: el snapshot incluye TODAS las propiedades que se van a tocar, con su valor previo.</summary>
+    [Fact]
+    public async Task Capture_RecordsEveryTouchedPropertyBeforeWriting()
+    {
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+        var action = Create(reader, "*EEE", "0");
+
+        var state = Assert.IsType<NetworkPropertyActionState>(await action.CaptureAsync(Context()));
+
+        var captured = Assert.Single(state.Properties);
+        Assert.Equal("*EEE", captured.Keyword);
+        Assert.Equal(["1"], captured.RegistryValue);
+        Assert.True(captured.Exists);
+        // Nada se ha escrito todavía: capturar no es aplicar.
+        Assert.Equal("1", reader.Values["*EEE"]);
+    }
+
+    /// <summary>R-L: si el adaptador no enumera el valor, el preflight no deja aplicarlo.</summary>
+    [Fact]
+    public async Task Preflight_RejectsValueThatIsNotEnumerated()
+    {
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+
+        var ex = await Assert.ThrowsAsync<ActionNotApplicableException>(() => Create(reader, "*EEE", "9").PreflightAsync(Context()));
+        Assert.Contains("Valores válidos", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task DenylistedWakeProperty_IsRejectedAtPreflight()
     {
-        var controller = new FakeNetworkAdapterController();
-        controller.Properties[("Ethernet", "*WakeOnMagicPacket")] = new NetworkPropertyCapture { AdapterName = "Ethernet", Keyword = "*WakeOnMagicPacket", Exists = true, RegistryValue = ["1"] };
-        await Assert.ThrowsAsync<ProtectedTargetException>(() => Create(controller, "*WakeOnMagicPacket", "0").PreflightAsync(Context()));
+        var reader = new ScriptedReader();
+        reader.Values["*WakeOnMagicPacket"] = "1";
+        reader.Allowed["*WakeOnMagicPacket"] = ["0", "1"];
+
+        await Assert.ThrowsAsync<ProtectedTargetException>(() => Create(reader, "*WakeOnMagicPacket", "0").PreflightAsync(Context()));
+    }
+
+    /// <summary>
+    /// La denylist de red protege `*InterruptModeration`, `*FlowControl`, `*RSS`, `*RscIPv4/6` y las de
+    /// Wake. Por eso esos candidatos NO se implementaron como tweaks (5.4): chocarían con ella. Aquí se fija
+    /// que la acción los rechaza de verdad, uno por uno.
+    /// </summary>
+    [Theory]
+    [InlineData("*InterruptModeration")]
+    [InlineData("*FlowControl")]
+    [InlineData("*RSS")]
+    [InlineData("*RscIPv4")]
+    [InlineData("*RscIPv6")]
+    [InlineData("*WakeOnMagicPacket")]
+    public async Task DenylistedNetworkKeywords_AreAllRejectedAtPreflight(string keyword)
+    {
+        var reader = new ScriptedReader();
+        reader.Values[keyword] = "1";
+        reader.Allowed[keyword] = ["0", "1"];
+
+        await Assert.ThrowsAsync<ProtectedTargetException>(() => Create(reader, keyword, "0").PreflightAsync(Context()));
+    }
+
+    /// <summary>`*EEE` es la única de la familia que NO está protegida: es la que usa 5.3.</summary>
+    [Fact]
+    public async Task Eee_IsNotDenylisted_SoTheTweakCanApply()
+    {
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+
+        // No lanza: la política permite *EEE.
+        await Create(reader, "*EEE", "0").PreflightAsync(Context());
     }
 
     [Fact]
     public async Task MissingKeyword_IsNotApplicable()
     {
-        await Assert.ThrowsAsync<ActionNotApplicableException>(() => Create(new FakeNetworkAdapterController(), "*EEE", "0").PreflightAsync(Context()));
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => Create(new ScriptedReader(), "*EEE", "0").PreflightAsync(Context()));
     }
 
+    /// <summary>
+    /// Si no hay un adaptador único con esa identidad de hardware, la acción no aplica. No hay ninguna vía que
+    /// caiga al nombre visible: el antiguo <c>{AdapterDescription:...}</c> ya no existe en el parámetro.
+    /// </summary>
     [Fact]
-    public async Task AdapterToken_RequiresExactlyOnePhysicalMatch()
+    public async Task WithoutAMatchingAdapter_IsNotApplicable()
     {
-        var controller = new FakeNetworkAdapterController();
-        controller.Properties[("Ethernet", "*EEE")] = new NetworkPropertyCapture { AdapterName = "Ethernet", Keyword = "*EEE", Exists = true, RegistryValue = ["1"] };
-        var action = new NetAdapterPropertyAction(controller, ProtectionPolicy.CreateDefault(), Spec.Action("NetAdapterProperty", new { adapterName = "{AdapterDescription:I225-V}", properties = new object[] { new { keyword = "*EEE", value = new[] { "0" } } } }));
-        await action.PreflightAsync(Context());
-        Assert.Contains("Ethernet", controller.Properties.Keys.Select(k => k.Adapter));
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+        var action = new NetAdapterPropertyAction(new EmptyResolver(), reader, ProtectionPolicy.CreateDefault(),
+            Spec.Action("NetAdapterProperty", new { hardwareIdContains = "DEV_FFFF", properties = new object[] { new { keyword = "*EEE", value = new[] { "0" } } } }));
+
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.PreflightAsync(Context()));
+    }
+
+    /// <summary>Sin identidad de hardware en el parámetro, es un error de catálogo, no una aplicación a ciegas.</summary>
+    [Fact]
+    public async Task WithoutHardwareIdentity_IsACatalogError()
+    {
+        var action = new NetAdapterPropertyAction(new FixedResolver(), new ScriptedReader(), ProtectionPolicy.CreateDefault(),
+            Spec.Action("NetAdapterProperty", new { properties = new object[] { new { keyword = "*EEE", value = new[] { "0" } } } }));
+
+        await Assert.ThrowsAsync<CatalogValidationException>(() => action.PreflightAsync(Context()));
+    }
+
+    /// <summary>El dry-run avisa del corte de conexión ANTES de la lista de cambios (5.3).</summary>
+    [Fact]
+    public async Task DryRun_WarnsAboutTheLinkResetBeforeListingChanges()
+    {
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+
+        var text = await Create(reader, "*EEE", "0").DryRunAsync(Context());
+
+        Assert.StartsWith("AVISO", text, StringComparison.Ordinal);
+        Assert.Contains("cortar la conexión", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 5.6: si al revertir ya no se puede escribir (el valor dejó de estar enumerado, el adaptador desapareció),
+    /// la excepción sube tal cual. El motor la convierte en RollbackFailed; aquí no se traga.
+    /// </summary>
+    [Fact]
+    public async Task Revert_WhenTheValueCanNoLongerBeWritten_ThrowsSoTheEngineCanReportRollbackFailed()
+    {
+        var reader = new ScriptedReader();
+        reader.Values["*EEE"] = "1";
+        reader.Allowed["*EEE"] = ["0", "1"];
+        var action = Create(reader, "*EEE", "0");
+        var before = await action.CaptureAsync(Context());
+        await action.ApplyAsync(before, Context());
+
+        // El adaptador deja de enumerar "1": el revert ya no puede restaurar.
+        reader.Allowed["*EEE"] = ["0"];
+
+        await Assert.ThrowsAsync<ActionNotApplicableException>(() => action.RevertAsync(before, Context()));
+    }
+
+    /// <summary>
+    /// Lector en memoria: guarda el valor por keyword y la lista de valores enumerados. Sustituye a PowerShell
+    /// para poder probar la ACCIÓN (captura, R-L, revert) sin proceso ni adaptador real.
+    /// </summary>
+    private sealed class ScriptedReader() : NetworkAdvancedPropertyReader(new FakeProcessRunner())
+    {
+        public Dictionary<string, string> Values { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, string[]> Allowed { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public override Task<NetworkAdvancedProperty> ReadAsync(string interfaceGuid, string keyword, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Values.TryGetValue(keyword, out var value)
+                ? new NetworkAdvancedProperty
+                {
+                    InterfaceGuid = interfaceGuid,
+                    Keyword = keyword,
+                    Exists = true,
+                    RegistryValue = value,
+                    ValidRegistryValues = Allowed.TryGetValue(keyword, out var allowed) ? allowed : [],
+                    ValidDisplayValues = []
+                }
+                : NetworkAdvancedProperty.Missing(interfaceGuid, keyword));
+
+        public override Task<NetworkAdvancedProperty> WriteAsync(string interfaceGuid, string keyword, string registryValue, CancellationToken cancellationToken = default)
+        {
+            if (!Values.ContainsKey(keyword)) throw new ActionNotApplicableException($"El adaptador {interfaceGuid} no expone '{keyword}'.");
+            var allowed = Allowed.TryGetValue(keyword, out var a) ? a : [];
+            if (!allowed.Contains(registryValue, StringComparer.Ordinal))
+                throw new ActionNotApplicableException($"'{keyword}' no enumera el valor '{registryValue}' en este adaptador. Valores válidos: {string.Join(", ", allowed)}.");
+            Values[keyword] = registryValue;
+            return ReadAsync(interfaceGuid, keyword, cancellationToken);
+        }
+    }
+
+    private sealed class FixedResolver : INetworkAdapterResolver
+    {
+        public Task<IReadOnlyList<NetworkAdapterIdentity>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<NetworkAdapterIdentity>>([Echo()]);
+
+        public Task<NetworkAdapterIdentity?> ResolveAsync(NetworkAdapterSelector selector, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NetworkAdapterIdentity?>(Echo());
+
+        private static NetworkAdapterIdentity Echo() => new()
+        {
+            Name = "Ethernet",
+            Description = "Intel(R) Ethernet Controller I225-V",
+            InterfaceGuid = EchoGuid,
+            NetCfgInstanceId = EchoGuid,
+            HardwareId = @"PCI\VEN_8086&DEV_15F3&SUBSYS_87D21043&REV_01",
+            Kind = NetworkKind.Ethernet,
+            NdisPhysicalMedium = 14,
+            IsPhysical = true,
+            State = "2"
+        };
+    }
+
+    private sealed class EmptyResolver : INetworkAdapterResolver
+    {
+        public Task<IReadOnlyList<NetworkAdapterIdentity>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<NetworkAdapterIdentity>>([]);
+
+        public Task<NetworkAdapterIdentity?> ResolveAsync(NetworkAdapterSelector selector, CancellationToken cancellationToken = default) =>
+            Task.FromResult<NetworkAdapterIdentity?>(null);
     }
 }
 

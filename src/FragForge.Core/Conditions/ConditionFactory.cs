@@ -45,7 +45,21 @@ internal sealed record WindowsParameters { public int MinBuild { get; init; } = 
 internal sealed record ExpectedBoolParameters { public bool Expected { get; init; } = true; }
 internal sealed record VendorParameters { public required string Vendor { get; init; } }
 internal sealed record GpuParameters { public required GpuVendor Vendor { get; init; } public bool DedicatedOnly { get; init; } }
-internal sealed record AdapterParameters { public string? NameContains { get; init; } public string? DescriptionContains { get; init; } public NetworkKind? Kind { get; init; } public bool PhysicalOnly { get; init; } = true; }
+internal sealed record AdapterParameters
+{
+    public string? NameContains { get; init; }
+    public string? DescriptionContains { get; init; }
+    public NetworkKind? Kind { get; init; }
+    public bool PhysicalOnly { get; init; } = true;
+    /// <summary>
+    /// Capa 5.1 (R-I): exige que el hardware ID (<c>PnPDeviceID</c>) contenga este fragmento, p. ej.
+    /// <c>DEV_15F3</c>. Es la forma correcta de decir "solo el I225-V": la descripción cambia con el
+    /// driver y con el idioma, el hardware ID no.
+    /// </summary>
+    public string? HardwareIdContains { get; init; }
+    /// <summary>Capa 5.1 (R-I): exige un <c>InterfaceGuid</c> concreto. Tiene prioridad sobre el resto.</summary>
+    public string? InterfaceGuid { get; init; }
+}
 internal sealed record MemoryParameters { public MemoryChannelState State { get; init; } = MemoryChannelState.Dual; }
 internal sealed record SecurityParameters { public required string Feature { get; init; } public FeatureState State { get; init; } }
 internal sealed record FormFactorParameters { public bool? Portable { get; init; } public bool? Battery { get; init; } }
@@ -110,7 +124,14 @@ internal sealed class AdapterCondition(AdapterParameters p) : ITweakCondition
     public string Type => "adapter";
     public ConditionResult Evaluate(HardwareProfile profile)
     {
-        var matches = profile.NetworkAdapters.Where(a => (!p.PhysicalOnly || a.IsPhysical) && (p.NameContains is null || a.Name.Contains(p.NameContains, StringComparison.OrdinalIgnoreCase)) && (p.DescriptionContains is null || a.Description.Contains(p.DescriptionContains, StringComparison.OrdinalIgnoreCase)) && (p.Kind is null || a.Kind == p.Kind)).ToArray();
+        var matches = profile.NetworkAdapters.Where(a => (!p.PhysicalOnly || a.IsPhysical)
+            && (p.NameContains is null || a.Name.Contains(p.NameContains, StringComparison.OrdinalIgnoreCase))
+            && (p.DescriptionContains is null || a.Description.Contains(p.DescriptionContains, StringComparison.OrdinalIgnoreCase))
+            && (p.Kind is null || a.Kind == p.Kind)
+            // R-I: la identidad de hardware es la que manda. Si se pide hardware ID o GUID y el adaptador
+            // no lo tiene leído, NO cumple: no se asume que sea el correcto.
+            && (p.HardwareIdContains is null || (a.HardwareId?.Contains(p.HardwareIdContains, StringComparison.OrdinalIgnoreCase) ?? false))
+            && (p.InterfaceGuid is null || Guid.TryParse(p.InterfaceGuid, out var wanted) && Guid.TryParse(a.InterfaceGuid, out var actual) && wanted == actual)).ToArray();
         return matches.Length > 0 ? ConditionResult.Met($"Adaptador compatible: {matches[0].Name}.") : ConditionResult.Unmet("No se detectó el adaptador requerido.");
     }
 }
