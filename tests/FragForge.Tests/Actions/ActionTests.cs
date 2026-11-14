@@ -582,11 +582,12 @@ public sealed class PowerPlanActionTests
     }
 
     [Fact]
-    public void AmbiguousPlanNames_AreRejected()
+    public async Task AmbiguousPlanNames_AreRejected()
     {
         var runner = new FakeProcessRunner { Handler = request => string.Join(' ', request.Arguments) switch { "/list" => new ProcessResult(0, $"Power Scheme GUID: {PlanGuid}  (FragForge Performance)\nPower Scheme GUID: {PreviousGuid}  (fragforge performance)", "", false), "/getactivescheme" => new ProcessResult(0, $"Power Scheme GUID: {PreviousGuid}  (Balanced)", "", false), _ => new ProcessResult(0, "", "", false) } };
         var action = new PowerPlanAction(runner, Spec_());
-        var ex = Assert.ThrowsAsync<FragForgeException>(() => action.CaptureAsync(Context())).GetAwaiter().GetResult();
+        // xUnit1031: se espera con await en vez de bloquear el hilo con GetAwaiter().GetResult().
+        var ex = await Assert.ThrowsAsync<FragForgeException>(() => action.CaptureAsync(Context()));
         Assert.Equal("ambiguous_power_plan", ex.Code);
     }
 }
@@ -1012,10 +1013,10 @@ public sealed class PowerShellActionTests
     }
 
     [Fact]
-    public void NetworkTokens_AreRejected()
+    public async Task NetworkTokens_AreRejected()
     {
         var runner = new FakeProcessRunner();
         var action = new FragForge.Actions.Scripting.PowerShellAction(runner, ProtectionPolicy.CreateDefault(), Spec.Action("PowerShell", new { captureScript = "Invoke-WebRequest https://example.com", applyScript = "'ok'", verifyScript = "'{}'", revertScript = "'ok'", timeoutSeconds = 30 }));
-        Assert.ThrowsAsync<ProtectedTargetException>(() => action.PreflightAsync(Context(true))).GetAwaiter().GetResult();
+        await Assert.ThrowsAsync<ProtectedTargetException>(() => action.PreflightAsync(Context(true)));
     }
 }
