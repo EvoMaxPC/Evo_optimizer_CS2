@@ -57,7 +57,7 @@ public static class ConsoleOutput
         {
             Console.WriteLine($"- {result.Id}: {result.State} · {result.Message}");
             foreach (var change in result.PlannedChanges) Console.WriteLine($"  [{change.ActionIndex}] {change.Kind}: {change.Description}");
-            foreach (var warning in result.Warnings) Console.WriteLine($"  Aviso: {warning}");
+            foreach (var resultWarning in result.Warnings) Console.WriteLine($"  Aviso: {resultWarning}");
         }
         foreach (var warning in report.Warnings) Console.WriteLine($"Aviso: {warning}");
         foreach (var error in report.Errors) Console.Error.WriteLine($"Error: {error}");

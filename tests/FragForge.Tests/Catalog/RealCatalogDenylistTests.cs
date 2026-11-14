@@ -64,9 +64,9 @@ public sealed class RealCatalogDenylistTests
         foreach (var action in definition.Actions)
         {
             try { _ = factory.Create(action); }
-            catch (Exception ex) when (ex is ProtectedTargetException or CatalogValidationException)
+            catch (Exception filtered) when (filtered is ProtectedTargetException or CatalogValidationException)
             {
-                rejected.Add($"{definition.Id} [{action.Kind}]: {ex.Message}");
+                rejected.Add($"{definition.Id} [{action.Kind}]: {filtered.Message}");
             }
         }
         Assert.True(rejected.Count == 0, "Tweaks rechazados por la política real:\n  - " + string.Join("\n  - ", rejected));
