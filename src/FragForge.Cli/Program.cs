@@ -124,6 +124,8 @@ public static class Program
                 }
                 case "tools":
                     return parsed.Positionals.FirstOrDefault() == "verify" ? await MeasurementCommands.ToolsVerifyAsync(host.Services, parsed) : throw new ArgumentException("tools admite verify.");
+                case "maintenance":
+                    return await MaintenanceCommands.RunAsync(host.Services, parsed);
                 case "probe":
                     return await MeasurementCommands.ProbeAsync(host.Services, parsed);
                 case "mouse-test":
@@ -197,6 +199,9 @@ Capa 2 — inventario y debloat honesto (sin promesas de FPS):
   fragforge atlas [--json]
   fragforge myths [ID] [--json]
   fragforge footprint [--duration 60] [--label TEXT] [--json]
+
+Mantenimiento (lista cerrada de verbos; requiere --confirm VERBO):
+  fragforge maintenance retrim|component-cleanup [--confirm VERBO] [--dry-run] [--json]
 
 Opciones globales: --data-root RUTA --culture es-MX|en-US
 Códigos: 0 éxito; 1 fallo; 2 uso; 3 preflight/catálogo; 4 cancelación; 5 rollback crítico; 6 medición inválida.
