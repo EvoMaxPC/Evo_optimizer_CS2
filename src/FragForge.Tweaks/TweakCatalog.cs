@@ -201,6 +201,37 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
                 continue;
             }
 
+            // C2: los campos que DECIDEN COMPORTAMIENTO no se aceptan desde un catalogo externo.
+            //
+            // sessionEligible mete un tweak en la sesion de juego (GameSessionService.cs:58);
+            // restartsNetworkLink dispara el preflight de red y el aviso al aplicar
+            // (PreflightService.cs:18, TweakEngine.cs:134). Un externo que los declarara se saltaria
+            // barreras que el catalogo auditado pone a proposito. Y no hace falta que los declare para
+            // funcionar: son marcas de NUESTROS 32 tweaks, no algo que un tweak del usuario necesite.
+            //
+            // Se RECHAZA (no se ignora): ignorarlos dejaria al autor creyendo que su tweak entra en las
+            // sesiones o avisa del corte de red, cuando no es asi. Un rechazo con motivo se ve; un campo
+            // ignorado en silencio, no.
+            //
+            // Se distingue externo por el NOMBRE, que es la unica informacion de origen que hay aqui: los
+            // embebidos se llaman como su recurso (FragForge.Tweaks.Catalog.*), los externos como su ruta.
+            var esExterno = !name.StartsWith(EmbeddedResourcePrefix, StringComparison.Ordinal);
+            if (esExterno && (definition.SessionEligible || definition.RestartsNetworkLink))
+            {
+                var campos = new List<string>();
+                if (definition.SessionEligible) campos.Add("sessionEligible");
+                if (definition.RestartsNetworkLink) campos.Add("restartsNetworkLink");
+                rejected.Add(new CatalogRejection(name, definition.Id,
+                    $"'{definition.Id}': un catálogo externo no puede declarar {string.Join(" ni ", campos)}; son marcas reservadas al catálogo embebido. Quita el campo y el resto de la entrada se cargará."));
+                continue;
+            }
+            if (esExterno && definition.Profiles is not null)
+            {
+                rejected.Add(new CatalogRejection(name, definition.Id,
+                    $"'{definition.Id}': un catálogo externo no puede declarar 'profiles'; la membresía de perfiles es del catálogo embebido. Quita el campo y el resto de la entrada se cargará."));
+                continue;
+            }
+
             var problems = validator.ValidateSingle(definition).Concat(validator.ValidatePolicy(definition)).ToArray();
             if (problems.Length > 0)
             {
