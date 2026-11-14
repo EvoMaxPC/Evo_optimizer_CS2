@@ -27,6 +27,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private readonly Dictionary<string, TweakStatus> _statuses = new(StringComparer.OrdinalIgnoreCase);
     private Localizer _localizer;
     private CancellationTokenSource? _operation;
+    /// <summary>
+    /// Cuántos tweaks evaluó el último escaneo (0 si no hubo). Solo se usa para rehacer el mensaje.
+    /// </summary>
+    private int _lastScanEvaluated;
+    /// <summary>
+    /// Mensaje de estado que dejó el ÚLTIMO escaneo, tal cual se escribió (texto ya formado, con una
+    /// copia congelada del contador dentro), o null si todavía no se escaneó. Se guarda el texto, no solo
+    /// el número, para poder comprobar si el mensaje actual SIGUE siendo ese: si otra acción ya lo
+    /// reemplazó ("Aplicación completada. Snapshot: …"), el cambio de perfil no debe pisarla.
+    /// </summary>
+    private string? _lastScanStatus;
 
     public ObservableCollection<TweakItemViewModel> Tweaks { get; } = [];
     public ObservableCollection<string> Logs { get; } = [];
@@ -53,7 +64,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Texto del contador: cuántos tweaks del perfil se están mostrando de cuántos existen.</summary>
-    public string TweakCountText => $"Mostrando {Tweaks.Count} de {_catalog.Definitions.Count} tweaks en el perfil {SelectedProfile}.";
+    public string TweakCountText => TweakCountFormatter.Format(SelectedProfile, Tweaks.Count, _catalog.Definitions.Count);
 
     private static string DescribeProfile(TweakProfile profile) => profile switch
     {
@@ -106,10 +117,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             var scan = await _engine.ScanAsync(token, progress);
             HardwareSummary = BuildHardwareSummary(scan.Hardware);
+            _lastScanEvaluated = scan.Tweaks.Count;
             _statuses.Clear();
             foreach (var status in scan.Tweaks) _statuses[status.Id] = status;
             RebuildTweaks();
-            StatusMessage = $"Escaneo completado: {scan.Tweaks.Count} evaluados; {TweakCountText}";
+            _lastScanStatus = BuildScanStatusMessage(scan.Tweaks.Count);
+            StatusMessage = _lastScanStatus;
         });
     }
     [RelayCommand(CanExecute = nameof(CanOperate))]
@@ -208,7 +221,19 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         // La tabla filtra por perfil: el contador tiene que decir cuántos se ven, no cuántos hay.
         OnPropertyChanged(nameof(TweakCountText));
         OnPropertyChanged(nameof(SelectedProfileOption));
+        // El mensaje del último escaneo lleva DENTRO una copia del contador, formada cuando se escaneó.
+        // Notificar TweakCountText no rehace ese texto: hay que volver a formarlo, o la barra de estado
+        // sigue anunciando el perfil anterior mientras la tabla ya cambió.
+        // Solo se rehace si el mensaje actual SIGUE siendo exactamente el del escaneo: si algo lo
+        // reemplazó (un error, el resultado de aplicar, "Listo"), no se pisa.
+        if (ScanStatusText.IsStillTheScanMessage(StatusMessage, _lastScanStatus))
+        {
+            _lastScanStatus = BuildScanStatusMessage(_lastScanEvaluated);
+            StatusMessage = _lastScanStatus;
+        }
     }
+    /// <summary>Mensaje de estado de un escaneo. Única definición: lo usan el escaneo y el cambio de perfil.</summary>
+    private string BuildScanStatusMessage(int evaluated) => ScanStatusText.Format(evaluated, TweakCountText);
     private async Task ChangeCultureAsync(string value)
     {
         try
