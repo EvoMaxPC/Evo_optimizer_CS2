@@ -47,16 +47,50 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
     /// carga). Antes se concatenaban y un solo JSON inválido del usuario abortaba TODO el catálogo.
     /// </para>
     /// </summary>
-    public async Task<TweakCatalog> LoadEmbeddedAsync(string? additionalDirectory = null, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Los documentos JSON incrustados en el binario, en orden estable. Se extrajo de
+    /// <see cref="LoadEmbeddedAsync"/> para que la carga resiliente pueda saber qué ids ya están ocupados por
+    /// el catálogo embebido sin duplicar la lectura de recursos.
+    /// </summary>
+    private static async Task<List<(string Name, string Json)>> ReadEmbeddedDocumentsAsync(CancellationToken cancellationToken)
     {
         var assembly = typeof(JsonTweakCatalogLoader).Assembly;
         var embedded = new List<(string Name, string Json)>();
-        foreach (var resource in assembly.GetManifestResourceNames().Where(n => n.StartsWith("FragForge.Tweaks.Catalog.", StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal)).OrderBy(n => n, StringComparer.Ordinal))
+        foreach (var resource in assembly.GetManifestResourceNames().Where(n => n.StartsWith(EmbeddedResourcePrefix, StringComparison.Ordinal) && n.EndsWith(".json", StringComparison.Ordinal)).OrderBy(n => n, StringComparer.Ordinal))
         {
             using var stream = assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);
             embedded.Add((resource, await reader.ReadToEndAsync(cancellationToken)));
         }
+        return embedded;
+    }
+
+    private const string EmbeddedResourcePrefix = "FragForge.Tweaks.Catalog.";
+
+    /// <summary>
+    /// Ids que ya ocupa el catálogo EMBEBIDO, con el nombre del recurso que los aporta. Se leen del binario,
+    /// no de una lista paralela que se pudiera quedar desactualizada. Un documento ilegible se ignora aquí: su
+    /// validación es asunto de la ruta estricta, que es la que debe lanzar si el catálogo de la entrega se rompe.
+    /// </summary>
+    private static Dictionary<string, string> EmbeddedIdsByResource()
+    {
+        var byResource = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, json) in ReadEmbeddedDocumentsAsync(CancellationToken.None).GetAwaiter().GetResult())
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String && id.GetString() is { Length: > 0 } value)
+                    byResource[name] = value;
+            }
+            catch (Exception ex) when (ex is JsonException or IOException) { /* la ruta estricta es la que valida */ }
+        }
+        return byResource;
+    }
+
+    public async Task<TweakCatalog> LoadEmbeddedAsync(string? additionalDirectory = null, CancellationToken cancellationToken = default)
+    {
+        var embedded = await ReadEmbeddedDocumentsAsync(cancellationToken);
 
         var external = new List<(string Name, string Json)>();
         if (additionalDirectory is not null && Directory.Exists(additionalDirectory))
@@ -123,7 +157,21 @@ public sealed class JsonTweakCatalogLoader(TweakCatalogValidator validator)
     {
         var accepted = new List<TweakDefinition>();
         var rejected = new List<CatalogRejection>();
-        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // El conjunto de ids arranca con los del catálogo EMBEBIDO, no vacío (Capa 10.4,
+        // docs/seguridad.md:87 "Un id que choque con uno embebido se rechaza" y :179 "la primera definición
+        // gana"). Antes solo se reservaban los ids que iban llegando en `documents`: por la ruta de la app
+        // (LoadEmbeddedAsync) los embebidos van DELANTE y quedaban reservados de rebote, pero llamada con solo
+        // externos —que es justo como la ejercita el test— no había nada reservado, así que un externo con el id
+        // de un tweak auditado se ACEPTABA en vez de rechazarse.
+        //
+        // Se excluye el embebido cuyo documento ya viene en `documents`: en la ruta de la app los embebidos
+        // están en la lista y son ellos los que reservan su id al pasar. Si se reservaran aquí, se rechazarían
+        // a sí mismos. En las dos situaciones la regla es la misma: el PRIMERO que llega se queda el id, y un
+        // externo que lo repita se cae.
+        var present = documents.Select(d => d.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var ids = new HashSet<string>(
+            EmbeddedIdsByResource().Where(pair => !present.Contains(pair.Key)).Select(pair => pair.Value),
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var (name, json) in documents)
         {
