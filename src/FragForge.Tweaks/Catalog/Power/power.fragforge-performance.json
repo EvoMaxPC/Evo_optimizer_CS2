@@ -59,7 +59,7 @@
   "conflictsWith": [],
   "dependsOn": [],
   "expectedImpact": {
-    "fps": "Variable",
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B",
     "1%lows": "Posible mejora de consistencia; puede empeorar por temperatura",
     "inputLatency": "None",
     "network": "None",

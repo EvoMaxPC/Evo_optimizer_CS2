@@ -39,7 +39,7 @@
   "conflictsWith": [],
   "dependsOn": [],
   "expectedImpact": {
-    "fps": "Moderado/variable",
+    "fps": "No cuantificado: depende del resto de la carga. A validar con A/B.",
     "1%lows": "Posible mejora si hay competencia de CPU",
     "inputLatency": "None",
     "network": "None",

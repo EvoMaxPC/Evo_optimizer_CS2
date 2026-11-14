@@ -66,7 +66,7 @@
   "conflictsWith": [],
   "dependsOn": [],
   "expectedImpact": {
-    "fps": "Variable; puede reducir trabajo de captura si estaba activo",
+    "fps": "No se promete efecto en FPS; el objetivo es consistencia de frametime, a validar con A/B Puede reducir trabajo de captura si estaba activo.",
     "1%lows": "Posible mejora modesta si había captura en segundo plano",
     "inputLatency": "None",
     "network": "None",
