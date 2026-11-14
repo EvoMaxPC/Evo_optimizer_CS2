@@ -135,10 +135,12 @@ public static class PresentMonCsvParser
             .ThenBy(r => r.Address, StringComparer.Ordinal)
             .FirstOrDefault();
 
+        // Una clave vacía significa "no había dirección en el CSV" (columna ausente o celda NA).
+        // Se usa "" internamente para agrupar, pero NUNCA se reporta como dirección: R-L.
         string? chosenAddress = null;
         if (chosen is not null)
         {
-            chosenAddress = chosen.Address;
+            chosenAddress = chosen.Address.Length == 0 ? null : chosen.Address;
 
             if (all.Length > 1)
             {
@@ -148,7 +150,7 @@ public static class PresentMonCsvParser
                 // Motivo de la elección + por cada descartada, filas y mediana de MsBetweenPresents.
                 var detail = string.Join(" | ", all
                     .OrderByDescending(r => r.FrameCount)
-                    .Select(r => $"{r.Address}: filas={r.FrameCount}, medianaMsBetweenPresents={Format(r.MedianFrameTime)}, display={(r.HasDisplayTracking ? "sí" : "no")}{(ReferenceEquals(r, chosen) ? " [elegida]" : " [descartada]")}"));
+                    .Select(r => $"{(r.Address.Length == 0 ? "(sin dirección)" : r.Address)}: filas={r.FrameCount}, medianaMsBetweenPresents={Format(r.MedianFrameTime)}, display={(r.HasDisplayTracking ? "sí" : "no")}{(ReferenceEquals(r, chosen) ? " [elegida]" : " [descartada]")}"));
                 warnings.Add(reason + " -> " + detail);
             }
         }

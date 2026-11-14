@@ -198,6 +198,43 @@ public sealed class CsvParserTests
     }
 
     [Fact]
+    public void WithoutSwapChainColumn_AddressIsNull_NotAnEmptyString()
+    {
+        // RED-FIRST: si no hay columna SwapChainAddress, todas las filas caen en la misma clave
+        // interna (""). Eso está bien para agrupar, pero reportar "" como dirección es afirmar una
+        // dirección que no se conoce. R-L: se devuelve null.
+        var csv = "Application,MsBetweenPresents,PresentMode,MsCPUBusy\n" +
+                  "cs2.exe,16.7,Hardware: Legacy Flip,8.0\n" +
+                  "cs2.exe,16.8,Hardware: Legacy Flip,8.1\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+
+        Assert.Equal(2, series.FrameCount);
+        Assert.Null(series.SwapChainAddress);
+        // El resumen existe (hubo una sola agrupación) pero no inventa una dirección.
+        var only = Assert.Single(series.SwapChains);
+        Assert.Equal(string.Empty, only.Address);
+        Assert.True(only.Chosen);
+    }
+
+    [Fact]
+    public void RowsWithNaSwapChainAddress_AreGroupedSeparately_AndTheirAddressIsNull()
+    {
+        // Filas con dirección NA no se pueden atribuir a una cadena concreta: no se mezclan con la
+        // cadena real ni se les inventa su dirección.
+        var csv = PresentMonFixtures.Header260 + "\n" +
+                  PresentMonFixtures.ZeroRow1 + "\n" + PresentMonFixtures.ZeroRow2 + "\n" +
+                  PresentMonFixtures.ZeroRow3 + "\n" +
+                  // La misma fila de 0x0 pero con SwapChainAddress=NA (columna 2, índice 2).
+                  "cs2.exe,9556,NA,Other,0,0,1,Hardware: Legacy Flip,7500.0000,NA,16.50000000000000,16.40000000000000,0.00000000000000,1.20000000000000,16.2000,7483.1724,16.5000,16.5000,0.0000,1.2000,16.0000,15.8000,0.4000,0.4000,7483.1724,NA,NA,NA\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+
+        Assert.Equal(2, series.SwapChains.Count);
+        Assert.Equal("0x0", series.SwapChainAddress); // gana la que tiene dirección Y display, con 3 filas
+        Assert.Equal(3, series.FrameCount);           // la fila NA NO se mezcla con las de 0x0
+        Assert.Contains(series.SwapChains, c => c.Discarded && c.Address.Length == 0);
+    }
+
+    [Fact]
     public void SingleChain_WithMoreRows_IsStillTheOnlyOne_AndHasNoReason()
     {
         // Una sola swapchain repetida: no hay elección que justificar, aunque tenga muchas filas.
