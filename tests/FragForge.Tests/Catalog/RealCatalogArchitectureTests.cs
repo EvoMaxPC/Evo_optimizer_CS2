@@ -137,6 +137,30 @@ public sealed class RealCatalogArchitectureTests
         Assert.Empty(failures);
     }
 
+    /// <summary>
+    /// F0.5: los CUATRO contadores, no solo el de Safe. El reparto 3/7/9/12 es un número que el usuario ve
+    /// en la barra de estado ("3 de 30") y que la 9c citaba sin ningún test que lo fijara:
+    /// <c>CatalogTests.ProfileMembership…</c> compara la tabla ID POR ID, así que un cambio de regla en
+    /// <see cref="ProfileSelector"/> podía mover los contadores sin que nada fallara.
+    /// </summary>
+    /// <remarks>
+    /// Se escribe el número a mano a propósito, contra la costumbre de R-N: aquí NO se fija el tamaño del
+    /// catálogo (que crece), se fija cuántos tweaks entran en cada perfil, que es un contrato de producto.
+    /// Si un cambio legítimo mueve estos números, el test falla y obliga a decidirlo, que es justo lo
+    /// que se quiere.
+    /// </remarks>
+    [Fact]
+    public async Task ProfileCounts_AreThreeSevenNineTwelve()
+    {
+        var catalog = await LoadRealCatalogAsync();
+
+        var counts = new[] { TweakProfile.Safe, TweakProfile.Balanced, TweakProfile.Competitive, TweakProfile.Advanced }
+            .Select(p => ProfileSelector.Select(catalog.Definitions, p).Count())
+            .ToArray();
+
+        Assert.Equal([3, 7, 9, 12], counts);
+    }
+
     [Fact]
     public async Task SafeProfile_IsTheSmallestOfTheFour_SoItIsASafeDefault()
     {
