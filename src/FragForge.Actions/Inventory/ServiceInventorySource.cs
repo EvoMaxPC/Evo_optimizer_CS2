@@ -27,7 +27,7 @@ public sealed partial class WindowsServiceInventorySource(IRegistry registry) : 
         var raw = new List<(string Name, string DisplayName, string StartMode, string State, string? Path, string? Account, string[] DependsOn)>();
         try
         {
-            using var searcher = new ManagementObjectSearcher(new ManagementScope(@"root\cimv2"), new ObjectQuery("SELECT Name,DisplayName,StartMode,State,PathName,StartName FROM Win32_Service"), new EnumerationOptions { Timeout = TimeSpan.FromSeconds(30) });
+            using var searcher = new ManagementObjectSearcher(new ManagementScope(@"root\cimv2"), new ObjectQuery("SELECT Name,DisplayName,StartMode,State,PathName,StartName FROM Win32_Service"), new System.Management.EnumerationOptions { Timeout = TimeSpan.FromSeconds(30) });
             using var results = searcher.Get();
             foreach (var item in results.Cast<ManagementObject>())
             {
