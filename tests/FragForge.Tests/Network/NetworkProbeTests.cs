@@ -110,6 +110,8 @@ public sealed class NetworkProbeTests
     [InlineData(new long[] { 1, 2, 3, 4 }, 3)]        // par → (2+3)/2 = 2.5 → 3  (AwayFromZero)
     [InlineData(new long[] { 1, 2, 3, 4, 5, 6 }, 4)]  // par → (3+4)/2 = 3.5 → 4
     [InlineData(new long[] { 10, 20 }, 15)]           // par → (10+20)/2 = 15 exacto
+    [InlineData(new long[] { 30, 30, 31, 32 }, 31)]   // 30.5 en ms reales: AwayFromZero → 31 (ToEven daria 30)
+    [InlineData(new long[] { 28, 29, 30, 31 }, 30)]   // 29.5 → 30, para que el anterior no pase por casualidad
     public void Median_HandlesEvenAndOddCounts(long[] values, long expected)
     {
         Assert.Equal(expected, NetworkProbeResult.Median(values.OrderBy(v => v).ToArray()));

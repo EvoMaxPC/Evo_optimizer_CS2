@@ -259,15 +259,26 @@ public sealed record NetworkProbeResult
     }
 
     /// <summary>
-    /// Mediana. Con número par de muestras promedia las dos centrales. Devuelve entero por redondeo
-    /// (<see cref="MidpointRounding.AwayFromZero"/>).
+    /// Mediana. Con número par de muestras promedia las dos centrales; con impar, la central exacta.
     ///
-    /// Sin muestras no hay mediana y NO se inventa un 0: se lanza, igual que en <see cref="Percentile"/>.
-    /// Antes caia en la rama par y hacia `sorted[n / 2 - 1]` = `sorted[-1]`, que revienta con
-    /// IndexOutOfRangeException: un error de indice no dice nada de la causa. Los llamadores de hoy
-    /// comprueban el vacio antes (MouseRateProbe.cs:69, IMeasurement.cs:96, Verdict.cs:144) y
-    /// <see cref="NetworkProbeResult.Create"/> retorna antes de llegar aqui (NetworkProbe.cs:239),
-    /// asi que esto no cambia ningun comportamiento: solo convierte un fallo criptico en uno explicito.
+    /// REDONDEO DEL PAR: <see cref="MidpointRounding.AwayFromZero"/>. Con muestras en milisegundos, el
+    /// caso real es 4 muestras [30, 30, 31, 32]: las centrales son 30 y 31, la media es 30.5 y el
+    /// resultado es 31 ms. Es la misma regla que <c>Math.Round</c> con .5 en el resto del informe, y
+    /// <b>no</b> es el redondeo bancario (ToEven), que daria 30 y haria que dos corridas con las mismas
+    /// muestras discrepen de un `Math.Round` normal. Se elige explícito para no depender del default.
+    ///
+    /// SIN MUESTRAS no hay mediana y NO se inventa un 0: se lanza <see cref="ArgumentException"/>, igual
+    /// que en <see cref="Percentile"/>. Antes caia en la rama par y hacia `sorted[n / 2 - 1]` =
+    /// `sorted[-1]`, que revienta con IndexOutOfRangeException: un error de indice no dice nada de la
+    /// causa.
+    ///
+    /// Llamadores (comprobado con git grep; este metodo es `internal` y solo lo usa este ensamblado):
+    ///   NetworkProbe.cs:245   unico llamador de produccion, y :239 retorna antes si received == 0,
+    ///                         asi que nunca se le pasa una lista vacia.
+    ///   NetworkProbeTests.cs:115  tests de los valores esperados.
+    ///   NetworkProbeTests.cs:126  test explicito del vacio.
+    /// (Los `Statistics.Median` de MouseRateProbe.cs:69, IMeasurement.cs:96 y Verdict.cs:144 son OTRO
+    /// metodo: el `double` de FragForge.Core, que devuelve NaN con entrada vacia. No pasan por aqui.)
     /// </summary>
     internal static long Median(IReadOnlyList<long> sorted)
     {
