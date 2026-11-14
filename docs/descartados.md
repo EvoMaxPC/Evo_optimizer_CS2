@@ -287,3 +287,73 @@ uno se borraría lo que puso el otro. Habría sido un conflicto real. Se dejó c
 (`2a737441-1930-4402-8d77-b2bebba308a3` / `48e6b7a6-50f5-4782-a5d4-53bb8f07e226` = 0, CA y CC) y
 `power.fragforge-performance` **no** los cubre (solo escribe `893dee8e-…` y `0cc5b647-…` = 100). Se revisó antes
 de escribir nada y no se añadió un segundo tweak.
+
+---
+
+## Capa 5 — Red
+
+### `*InterruptModeration` off en el I225-V — **descartado: choca con la denylist**
+
+**No se implementó.** No es por falta de fundamento técnico: desactivar la moderación de interrupciones hace
+que el adaptador interrumpa por paquete, lo que puede reducir la latencia de interrupción. Pero
+`*InterruptModeration` figura en `networkPropertyKeywords` de `denylist.json`, y **la denylist no se debilita**
+(REGLA). La acción lo rechaza con `ProtectedTargetException` y hay un test que lo fija keyword por keyword.
+
+Por qué está protegida tiene sentido: la moderación de interrupciones afecta al consumo y al calor de todo el
+equipo, y el proyecto decidió que no se toca desde el catálogo.
+
+### `*FlowControl` off — **descartado: choca con la denylist**
+
+Mismo caso: `*FlowControl` está en `networkPropertyKeywords`. Además, la evidencia es baja incluso sin la
+denylist: en una red doméstica sin congestión el control de flujo apenas actúa, y en un enlace saturado quitarlo
+puede aumentar la pérdida. No hay fuente que demuestre mejora en CS2.
+
+### RSS y RSC (`*RSS`, `*RscIPv4`, `*RscIPv6`) — **descartados: denylist**
+
+Las cuatro keywords están protegidas. En particular **Receive Segment Coalescing** afecta a la latencia de TCP y
+CS2 va por UDP (Steam Datagram Relay): aunque se pudiera escribir, no ayudaría al juego. El propio encargo lo
+reconoce ("no ayuda a UDP").
+
+### `Set-NetOffloadGlobalSetting -ReceiveSegmentCoalescing` — **descartado**
+
+Es un ajuste **global del sistema**, no del adaptador: afecta a todas las conexiones del equipo, no solo al
+juego, y no es reversible por adaptador con el snapshot actual. Además solo interviene en TCP; CS2 usa UDP. No
+se implementa.
+
+### LSO (`*LsoV2IPv4` / `*LsoV2IPv6`) — **descartado**
+
+Offload de segmentación en **transmisión TCP**. No está en la denylist, pero no toca UDP ni el camino de
+recepción del juego, y no hay fuente con efecto medible en CS2. Folclore para este caso de uso.
+
+### TcpAckFrequency / TCPNoDelay por interfaz — **descartado**
+
+Los dos son ajustes de TCP. CS2 usa **UDP** (Steam Datagram Relay), así que no pueden afectar a su tráfico. Su
+efecto, si existe, es sobre otras aplicaciones TCP del equipo.
+
+### NetworkThrottlingIndex — **descartado**
+
+Ver la sección de Capa 7: folclore sin fuente sólida. Se descarta otra vez aquí por ser un candidato de red.
+
+### Cambios de DNS — **descartado**
+
+El DNS resuelve nombres; no interviene en la latencia de un flujo UDP ya establecido contra un relay. Cambiar
+los servidores DNS no es un ajuste de latencia de juego y puede empeorar la privacidad y el rendimiento de
+resolución. Fuera del alcance.
+
+### QoS DSCP — **descartado**
+
+Marcar paquetes con DSCP solo sirve si el **router** respeta esas marcas y aplica colas. Depende de un
+dispositivo que FragForge no controla ni puede verificar, y en una red doméstica el tráfico suele recibir
+best-effort. Sin forma de medirlo desde el equipo, no entra.
+
+### Wi-Fi AX210: ahorro de energía y roaming — **descartado (no se implementó)**
+
+El encargo lo condiciona a que el adaptador de la ruta por defecto **sea Wi-Fi**. En esta PC la ruta de juego es
+Ethernet (I225-V); el AX210 está como alternativa. Además, los nombres de esas propiedades varían por driver y
+habría que enumerarlas en el equipo real, cosa que no se puede hacer aquí. Se deja **solo la recomendación en
+texto**: para jugar, Ethernet; el Wi-Fi queda como respaldo.
+
+### Forzar el tipo de medio o la velocidad del enlace — **descartado**
+
+La velocidad y el estado **se leen, no se fuerzan**. Fijar una velocidad en un adaptador 2.5G puede dejar el
+enlace sin negociar y cortar la conexión de forma persistente.
