@@ -114,3 +114,36 @@ public sealed class TempDirectory : IDisposable
         try { if (Directory.Exists(Path)) Directory.Delete(Path, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 }
+
+/// <summary>
+/// Catálogo mínimo para tests: los IDs indicados con una acción InspectOnly (solo lectura) y sin
+/// requisitos de reinicio. No toca el catálogo embebido.
+/// </summary>
+public sealed class FakeCatalog : ITweakCatalog
+{
+    private readonly Dictionary<string, TweakDefinition> _definitions;
+
+    public FakeCatalog(params string[] ids)
+    {
+        _definitions = ids.ToDictionary(
+            id => id,
+            id => new TweakDefinition
+            {
+                Id = id,
+                Category = "test",
+                Title = new LocalizedText { EsMx = id, EnUs = id },
+                Description = new LocalizedText { EsMx = id, EnUs = id },
+                Evidence = EvidenceLevel.High,
+                Risk = RiskLevel.Safe,
+                RequiresReboot = false,
+                Actions = [new ActionSpec { Kind = "InspectOnly" }],
+                ExpectedImpact = new ExpectedImpact()
+            },
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    public IReadOnlyList<TweakDefinition> Definitions => _definitions.Values.OrderBy(d => d.Id, StringComparer.OrdinalIgnoreCase).ToArray();
+    public TweakDefinition Get(string id) => _definitions.TryGetValue(id, out var definition) ? definition : throw new KeyNotFoundException(id);
+    public bool TryGet(string id, out TweakDefinition? definition) => _definitions.TryGetValue(id, out definition);
+    public string GetDefinitionHash(string id) => _definitions.ContainsKey(id) ? "fake-hash" : throw new KeyNotFoundException(id);
+}
