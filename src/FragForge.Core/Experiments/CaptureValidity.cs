@@ -88,8 +88,11 @@ public static class CaptureValidityGate
 
         if (series.GpuUnavailable) reasons.Add("GPU no disponible (todas las filas de MsGPUBusy son 0 o NA)");
 
-        if (series.Warnings.Any(w => w.StartsWith("varias swapchains", StringComparison.Ordinal)))
-            reasons.Add("más de una swapchain en la captura");
+        if (series.SwapChains.Count > 1)
+            reasons.Add("varias swapchains en el proceso");
+
+        if (series.IsNonStandardLayout)
+            reasons.Add("formato de CSV no estándar");
 
         if (requestedDuration is { } duration && duration > TimeSpan.Zero && refreshHz is > 0)
         {
