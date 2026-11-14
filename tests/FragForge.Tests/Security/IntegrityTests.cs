@@ -53,16 +53,19 @@ public sealed class IntegrityTests
     /// datos, no con un IndexOutOfRange ni un NullReference a mitad.
     /// </summary>
     /// <remarks>
-    /// HALLAZGO, no una virtud: <see cref="FileJournal.ReadAllAsync"/> NO captura nada (líneas 46-57), así que
-    /// la excepción sale hasta quien llama, y <c>ReportService.CreateAsync:17</c> lo llama sin `try`. Con el
-    /// journal corrupto, generar el informe falla entero. Se documenta aquí porque un test que dijera
-    /// "devuelve una lista vacía" estaría describiendo un comportamiento que el código NO tiene.
-    /// No se arregla en esta ronda: cambiar <c>ReadAllAsync</c> para que trague y devuelva lo legible toca
-    /// una firma pública y es decisión de producto (¿historial vacío o error visible?). Queda anotado.
+    /// CORREGIDO en la ronda de fallos 1 (D). El comentario anterior afirmaba que ReadAllAsync siempre
+    /// propaga; NO es cierto para el contenido vacío. <see cref="FileJournal.ReadAllAsync"/> recorre las
+    /// líneas (FileJournal.cs:50): con "" hay CERO líneas, así que devuelve una lista vacía sin lanzar, y
+    /// <see cref="FileJournal.VerifyIntegrityAsync"/> (FileJournal.cs:63-71) la da por VÁLIDA con 0 entradas.
+    /// Es un fichero sin entradas, no un fichero dañado: no hay nada que verificar. El daño real
+    /// —contenido que no es JSON, o una línea vacía suelta— sí propaga.
+    ///
+    /// El test se separa por caso en vez de asumir que todos se comportan igual. Si algún día se decide
+    /// que un journal vacío es un error, este test es el sitio donde se cambia.
     /// </remarks>
     [Theory]
     [InlineData("\"esto no es json")]
-    [InlineData("")]
+    [InlineData("   ")]
     public async Task ACorruptJournal_CannotBeRead_AndSaysSo(string contenido)
     {
         using var directory = new TempDirectory();
@@ -72,12 +75,35 @@ public sealed class IntegrityTests
         await File.WriteAllTextAsync(paths.Journal, contenido);
         var journal = new FileJournal(paths);
 
-        // Lo que NO pasa: devolver silenciosamente una lista vacía.
+        // Lo que NO pasa: devolver silenciosamente una lista vacía. Con contenido basura o una línea en
+        // blanco, ReadAllAsync propaga (FileJournal.cs:52-53) y la verificación describe el daño sin
+        // propagar (FileJournal.cs:73).
         await Assert.ThrowsAnyAsync<Exception>(() => journal.ReadAllAsync());
-        // Lo que SÍ: la verificación de integridad es la que sabe describir el daño sin propagar.
         var integrity = await journal.VerifyIntegrityAsync();
         Assert.False(integrity.IsValid);
         Assert.False(string.IsNullOrWhiteSpace(integrity.Error));
+    }
+
+    /// <summary>
+    /// Un journal con CERO entradas no es un journal dañado: es un journal vacío. ReadAllAsync devuelve [] sin
+    /// lanzar (FileJournal.cs:50, cero líneas que recorrer) y la integridad de cero entradas es válida
+    /// (FileJournal.cs:71). Se fija aquí para que el contrato quede escrito y no se confunda con el de arriba.
+    /// </summary>
+    [Fact]
+    public async Task AnEmptyJournal_IsNotCorrupt_ItSimplyHasNoEntries()
+    {
+        using var directory = new TempDirectory();
+        var paths = new FragForgePaths(directory.Path);
+        paths.EnsureCreated();
+        Directory.CreateDirectory(Path.GetDirectoryName(paths.Journal)!);
+        await File.WriteAllTextAsync(paths.Journal, "");
+        var journal = new FileJournal(paths);
+
+        Assert.Empty(await journal.ReadAllAsync());
+        var integrity = await journal.VerifyIntegrityAsync();
+        Assert.True(integrity.IsValid);
+        Assert.Equal(0, integrity.Entries);
+        Assert.Null(integrity.Error);
     }
 
     /// <summary>
