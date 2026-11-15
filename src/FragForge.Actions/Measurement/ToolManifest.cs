@@ -32,9 +32,9 @@ public sealed record ToolVerification(ToolStatus Status, string ToolKey, string?
 /// <summary>
 /// Verifica herramientas externas contra un manifiesto embebido.
 ///
-/// REGLA: no se inventan hashes. El manifiesto se entrega con <c>sha256 = null</c> y la verificación
-/// FALLA con un mensaje explícito hasta que el usuario añada el hash del binario oficial. FragForge
-/// NUNCA descarga nada: si el archivo no está en <c>%ProgramData%\FragForge\tools\</c>, no hay herramienta.
+/// REGLA: no se inventan hashes. El manifiesto incluye el SHA-256 de PresentMon 2.6.0 x64
+/// medido por el usuario en su copia local. Solo se aprueba un archivo cuyo hash coincida.
+/// FragForge NUNCA descarga nada: si el archivo no está en <c>%ProgramData%\FragForge\tools\</c>, no hay herramienta.
 /// </summary>
 public sealed class ToolVerifier(string toolsDirectory, ToolAllowlist allowlist)
 {
