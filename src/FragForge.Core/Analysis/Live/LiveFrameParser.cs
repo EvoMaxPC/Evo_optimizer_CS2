@@ -9,10 +9,10 @@ public enum LiveLineKind
     /// <summary>La línea era un frame válido.</summary>
     Frame,
 
-    /// <summary>La línea está truncada o no trae la columna de frametime.</summary>
+    /// <summary>La línea está truncada o tiene tiempo o frametime inválido.</summary>
     Malformed,
 
-    /// <summary>La columna de frametime trae NA o basura: no es un frame y no es 0 (R-L).</summary>
+    /// <summary>La columna de frametime trae NA o está vacía: no es un frame y no es 0 (R-L).</summary>
     Na,
 
     /// <summary>Línea vacía o en blanco: se ignora.</summary>
@@ -52,13 +52,13 @@ public sealed class LiveFrameParser
     private int _timeIndex = -1;
     private double _timeScale = 1.0;
 
-    /// <summary>Líneas truncadas o sin la columna de frametime en el encabezado.</summary>
+    /// <summary>Líneas truncadas o con tiempo o frametime inválido.</summary>
     public long MalformedLines { get; private set; }
 
-    /// <summary>Filas con NA o basura en MsBetweenPresents: no son frames y no son 0.</summary>
+    /// <summary>Filas con NA o celda vacía en MsBetweenPresents: no son frames y no son 0.</summary>
     public long NaFrames { get; private set; }
 
-    /// <summary>Filas con valor de tiempo NA o no numérico, habiendo columna de tiempo.</summary>
+    /// <summary>Filas con tiempo ausente, habiendo columna de tiempo.</summary>
     public long RowsWithoutTime { get; private set; }
 
     /// <summary><c>true</c> cuando ya se vio el encabezado (la primera línea no vacía).</summary>
@@ -125,29 +125,31 @@ public sealed class LiveFrameParser
             return new LiveLineResult(LiveLineKind.Malformed, null);
         }
 
+        double? timeMs = null;
+        if (_timeIndex >= 0 && _timeIndex < cells.Length && !FrameReader.IsMissingNumber(cells[_timeIndex]))
+        {
+            if (!FrameReader.TryParseDouble(cells[_timeIndex], out var rawTime) || !double.IsFinite(rawTime * _timeScale))
+            {
+                MalformedLines++;
+                return new LiveLineResult(LiveLineKind.Malformed, null);
+            }
+            timeMs = rawTime * _timeScale;
+        }
+
         if (!FrameReader.TryParseDouble(cells[_primaryIndex], out var frameTimeMs))
         {
-            // NA (o basura numérica) en la columna principal: se cuenta como NA y se excluye.
-            NaFrames++;
-            return new LiveLineResult(LiveLineKind.Na, null);
+            if (FrameReader.IsMissingNumber(cells[_primaryIndex]))
+            {
+                NaFrames++;
+                return new LiveLineResult(LiveLineKind.Na, null);
+            }
+            MalformedLines++;
+            return new LiveLineResult(LiveLineKind.Malformed, null);
         }
 
         var application = ReadString(cells, _applicationIndex) ?? FrameReader.NoApplication;
         var swapChain = ReadString(cells, _swapChainIndex) ?? FrameReader.NoSwapChain;
-
-        double? timeMs = null;
-        if (_timeIndex >= 0)
-        {
-            if (_timeIndex < cells.Length && FrameReader.TryParseDouble(cells[_timeIndex], out var rawTime))
-            {
-                timeMs = rawTime * _timeScale;
-            }
-            else
-            {
-                // Valor de tiempo NA o no numérico: el frame vale, el tiempo no se sabe (R-L).
-                RowsWithoutTime++;
-            }
-        }
+        if (_timeIndex >= 0 && timeMs is null) RowsWithoutTime++;
 
         return new LiveLineResult(LiveLineKind.Frame, new LiveFrame(application, swapChain, frameTimeMs, timeMs));
     }

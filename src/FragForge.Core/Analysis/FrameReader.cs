@@ -72,6 +72,8 @@ public static class FrameReader
             };
 
         var secondaryIndex = FindColumn(headers, SecondaryColumn);
+        var timeIndex = FindColumn(headers, "TimeInMs");
+        if (timeIndex < 0) timeIndex = FindColumn(headers, "TimeInSeconds");
         var applicationIndex = FindColumn(headers, ApplicationColumn);
         var swapChainIndex = FindColumn(headers, SwapChainColumn);
 
@@ -89,15 +91,21 @@ public static class FrameReader
             // Fila truncada: no llega ni a la columna principal. Se cuenta, no aborta.
             if (cells.Length <= primaryIndex) { malformed++; continue; }
 
+            if (timeIndex >= 0 && timeIndex < cells.Length && !IsMissingNumber(cells[timeIndex])
+                && !TryParseDouble(cells[timeIndex], out _)) { malformed++; continue; }
+
             var application = ReadString(cells, applicationIndex) ?? NoApplication;
             var swapChain = ReadString(cells, swapChainIndex) ?? NoSwapChain;
             var key = (application, swapChain);
 
             if (!TryParseDouble(cells[primaryIndex], out var primary))
             {
-                // NA (o basura numérica) en la columna principal: se cuenta como NA y se excluye.
-                naFrames++;
-                builders.TryAdd(key, new SeriesBuilder(secondaryIndex >= 0));
+                if (IsMissingNumber(cells[primaryIndex]))
+                {
+                    naFrames++;
+                    builders.TryAdd(key, new SeriesBuilder(secondaryIndex >= 0));
+                }
+                else malformed++;
                 continue;
             }
 
@@ -159,6 +167,9 @@ public static class FrameReader
     private static double? ReadDouble(string[] cells, int index) =>
         index >= 0 && index < cells.Length && TryParseDouble(cells[index], out var value) ? value : null;
 
+    internal static bool IsMissingNumber(string raw) =>
+        string.IsNullOrWhiteSpace(raw) || raw.Trim().Equals(NaMarker, StringComparison.OrdinalIgnoreCase);
+
     internal static bool TryParseDouble(string raw, out double value)
     {
         var trimmed = raw.Trim();
@@ -167,7 +178,7 @@ public static class FrameReader
             value = 0;
             return false;
         }
-        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
     }
 
     /// <summary>

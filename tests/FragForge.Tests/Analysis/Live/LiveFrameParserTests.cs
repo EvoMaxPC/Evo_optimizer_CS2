@@ -24,6 +24,32 @@ public sealed class LiveFrameParserTests
         "dwm.exe,1480,0x0,Other,-1,0,0,Hardware: Legacy Flip,424.3585,NA,118.25510000000000,116.65940000000001,0.00000000000000,0.35770000000000,1.7416,306.1034,118.2551,118.2551,0.0000,118.2907,0.3221,0.3221,0.0000,4.0394,306.1034,NA,NA,NA";
 
     [Fact]
+    public void Feed_NonFiniteAndInvalidNumbers_AreMalformed_AndNaTimeIsNull()
+    {
+        var parser = new LiveFrameParser();
+        Assert.Equal(LiveLineKind.Header, parser.Feed("Application,TimeInMs,MsBetweenPresents").Kind);
+        foreach (var value in new[] { "NaN", "Infinity", "-Infinity", "bad", "∞", "1e999" })
+        {
+            Assert.Equal(LiveLineKind.Malformed, parser.Feed($"cs2.exe,{value},10").Kind);
+            Assert.Equal(LiveLineKind.Malformed, parser.Feed($"cs2.exe,1,{value}").Kind);
+        }
+        var missingTime = parser.Feed("cs2.exe,NA,12.5");
+        var valid = parser.Feed("cs2.exe,1e2,1.5e1");
+        var missingFrame = parser.Feed("cs2.exe,1,NA");
+        // 6 valores inválidos × 2 columnas = 12 malformadas; 1 NA de frametime y 1 tiempo desconocido.
+        Assert.Equal(12L, parser.MalformedLines);
+        Assert.Equal(1L, parser.NaFrames);
+        Assert.Equal(1L, parser.RowsWithoutTime);
+        Assert.Equal(LiveLineKind.Frame, missingTime.Kind);
+        Assert.Null(missingTime.Frame!.TimeMs);
+        Assert.Equal(12.5, missingTime.Frame.FrameTimeMs);
+        Assert.Equal(LiveLineKind.Frame, valid.Kind);
+        Assert.Equal(100.0, valid.Frame!.TimeMs);
+        Assert.Equal(15.0, valid.Frame.FrameTimeMs);
+        Assert.Equal(LiveLineKind.Na, missingFrame.Kind);
+    }
+
+    [Fact]
     public void Feed_EncabezadoRealYFilasReales_ParseaTiempoYFrametime()
     {
         var previousCulture = CultureInfo.CurrentCulture;

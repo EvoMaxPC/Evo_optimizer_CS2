@@ -21,10 +21,10 @@ public sealed record FrameStream
     /// <summary>Una serie por (aplicación, swapchain). Orden determinista: por app y luego por swapchain.</summary>
     public IReadOnlyList<FrameSeriesKey> Series { get; init; } = [];
 
-    /// <summary>Filas cuya métrica principal era <c>NA</c> (o no parseable). Se cuentan y se excluyen; jamás valen 0.</summary>
+    /// <summary>Filas cuya métrica principal era <c>NA</c> o vacía. Se cuentan y se excluyen; jamás valen 0.</summary>
     public int NaFrames { get; init; }
 
-    /// <summary>Líneas con menos celdas que la columna principal, o no parseables en esa celda. Se cuentan.</summary>
+    /// <summary>Líneas truncadas o con tiempo o métrica principal no parseables. Se cuentan.</summary>
     public int MalformedLines { get; init; }
 
     /// <summary>Columnas del encabezado tal cual, para poder citar qué se leyó por nombre.</summary>

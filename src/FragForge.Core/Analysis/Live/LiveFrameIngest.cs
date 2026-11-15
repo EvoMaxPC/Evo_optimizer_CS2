@@ -5,9 +5,9 @@ namespace FragForge.Core.Analysis.Live;
 /// <param name="HasFrameTimeColumn">El encabezado trae MsBetweenPresents.</param>
 /// <param name="HasTimeColumn">El encabezado trae TimeInMs o TimeInSeconds.</param>
 /// <param name="FramesParsed">Frames válidos parseados (los que llegaron al acumulador).</param>
-/// <param name="MalformedLines">Líneas truncadas o sin columna de frametime.</param>
-/// <param name="NaFrames">Filas con NA o basura en MsBetweenPresents.</param>
-/// <param name="RowsWithoutTime">Filas con valor de tiempo NA o no numérico.</param>
+/// <param name="MalformedLines">Líneas truncadas o con tiempo o frametime inválido.</param>
+/// <param name="NaFrames">Filas con NA o celda vacía en MsBetweenPresents.</param>
+/// <param name="RowsWithoutTime">Frames con valor de tiempo ausente.</param>
 /// <param name="OverlongLines">Líneas descartadas por superar el tope de longitud.</param>
 /// <param name="DiscardedPartialLines">Línea parcial descartada al completar el stream (0 o 1).</param>
 public sealed record LiveIngestCounters(

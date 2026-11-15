@@ -35,6 +35,23 @@ public sealed class FrameReaderTests
     private static FrameStream Parse(params string[] lines) => FrameReader.Read(new StringReader(string.Join('\n', lines)));
 
     [Fact]
+    public void NonFiniteAndInvalidNumbers_AreMalformed_WhileNaRemainsMissing()
+    {
+        const string csv = "Application,TimeInMs,MsBetweenPresents,MsBetweenDisplayChange\n" +
+            "cs2.exe,NaN,10,2\ncs2.exe,Infinity,10,2\ncs2.exe,-Infinity,10,2\n" +
+            "cs2.exe,1,NaN,2\ncs2.exe,1,Infinity,2\ncs2.exe,1,-Infinity,2\n" +
+            "cs2.exe,bad,10,2\ncs2.exe,1,bad,2\ncs2.exe,1,NA,2\n" +
+            "cs2.exe,NA,12.5,NA\ncs2.exe,1e2,1.5e1,3\n";
+        var stream = FrameReader.Read(new StringReader(csv));
+        var series = Assert.Single(stream.Series);
+        // 6 no finitas + 2 texto inválido = 8 malformadas; 1 NA principal; 2 frames: 12.5 y 15.
+        Assert.Equal(8, stream.MalformedLines);
+        Assert.Equal(1, stream.NaFrames);
+        Assert.Equal([12.5, 15.0], series.Primary);
+        Assert.Equal([null, 3.0], series.Secondary);
+    }
+
+    [Fact]
     public void ReadsPrimaryColumnByName_NotByPosition()
     {
         // Mismo dato, columnas del encabezado en OTRO orden: si se leyera por posición saldría otra cosa.
@@ -147,10 +164,10 @@ public sealed class FrameReaderTests
             Row("game.exe", "0x1", "20"));
 
         var series = Assert.Single(stream.Series);
-        // Cálculo a mano: 4 líneas -> 1 truncada (malformed) + 1 no numérica (NA) + 2 válidas [10, 20].
+        // Cálculo a mano: 4 líneas -> 1 truncada + 1 no numérica = 2 malformadas, 0 NA y 2 válidas [10, 20].
         Assert.Equal([10.0, 20.0], series.Primary);
-        Assert.Equal(1, stream.MalformedLines);
-        Assert.Equal(1, stream.NaFrames);
+        Assert.Equal(2, stream.MalformedLines);
+        Assert.Equal(0, stream.NaFrames);
     }
 
     [Fact]
