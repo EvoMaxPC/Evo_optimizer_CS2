@@ -41,9 +41,11 @@ public sealed class LivePresentMonSessionTests
     {
         public int Calls;
         public bool Throw;
+        public IReadOnlyList<string>? Arguments;
         public ILivePresentMonProcess Start(string exePath, IReadOnlyList<string> arguments)
         {
             Calls++;
+            Arguments = arguments;
             if (Throw) throw new InvalidOperationException("launcher boom");
             return process;
         }
@@ -58,6 +60,27 @@ public sealed class LivePresentMonSessionTests
     {
         async Task Wait() { while (!predicate()) await Task.Yield(); }
         await Wait().WaitAsync(TimeSpan.FromSeconds(5)); // límite de seguridad, no criterio temporal de la prueba
+    }
+
+    [Fact]
+    public async Task SessionName_GeneratedOrProvided_IsPassedToLauncher()
+    {
+        var p = new FakeProcess(); var l = new FakeLauncher(p);
+        await using var generated = Create(l);
+        Assert.Null(generated.EffectiveSessionName);
+        await generated.StartAsync();
+        var actual = generated.EffectiveSessionName;
+        Assert.NotNull(actual);
+        // 14 caracteres de prefijo + 8 hexadecimales = 22.
+        Assert.Equal(22, actual.Length);
+        Assert.StartsWith("FragForgeLive-", actual);
+        Assert.Equal(actual, l.Arguments![4]); // --session_name en índice 3, valor en 4
+
+        var p2 = new FakeProcess(); var l2 = new FakeLauncher(p2);
+        await using var custom = Create(l2, options: new LiveSessionOptions { SessionName = "sesion-propia" });
+        await custom.StartAsync();
+        Assert.Equal("sesion-propia", custom.EffectiveSessionName);
+        Assert.Equal("sesion-propia", l2.Arguments![4]);
     }
 
     [Fact]
