@@ -43,7 +43,22 @@
     <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
       <StackPanel>
         <TextBlock Text="{Binding Localizer[hardware.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}" Margin="0,0,0,4"/>
-        <TextBlock Text="{Binding HardwareSummary}" TextWrapping="Wrap" FontSize="12"/>
+        <TextBlock Text="{Binding HardwareSummary}" TextWrapping="Wrap" FontSize="12">
+          <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding HardwareItems.Count}" Value="0"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="180">
+          <ItemsControl ItemsSource="{Binding HardwareItems}" Grid.IsSharedSizeScope="True">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid Margin="0,1">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" SharedSizeGroup="HardwareLabels"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <TextBlock Grid.Column="0" Text="{Binding Label}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,16,0"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
       </StackPanel>
     </Border>
 
@@ -78,9 +93,9 @@
               <DataGridCheckBoxColumn Header="" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="36"/>
               <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="Tweak" Binding="{Binding Title}" Width="230" IsReadOnly="True"/>
               <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="Categoría" Binding="{Binding Category}" Width="80" IsReadOnly="True"/>
-              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="{Binding DataContext.Localizer[evidence.column], RelativeSource={RelativeSource AncestorType=Window}}" Binding="{Binding Evidence}" Width="85" IsReadOnly="True"/>
-              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="{Binding DataContext.Localizer[risk.column], RelativeSource={RelativeSource AncestorType=Window}}" Binding="{Binding Risk}" Width="85" IsReadOnly="True"/>
-              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="{Binding DataContext.Localizer[reboot.required], RelativeSource={RelativeSource AncestorType=Window}}" Binding="{Binding RebootDisplay}" Width="70" IsReadOnly="True"/>
+              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Binding="{Binding Evidence}" Width="85" IsReadOnly="True"><DataGridTextColumn.Header><TextBlock Text="{Binding DataContext.Localizer[evidence.column], RelativeSource={RelativeSource AncestorType=Window}}"/></DataGridTextColumn.Header></DataGridTextColumn>
+              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Binding="{Binding Risk}" Width="85" IsReadOnly="True"><DataGridTextColumn.Header><TextBlock Text="{Binding DataContext.Localizer[risk.column], RelativeSource={RelativeSource AncestorType=Window}}"/></DataGridTextColumn.Header></DataGridTextColumn>
+              <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Binding="{Binding RebootDisplay}" Width="70" IsReadOnly="True"><DataGridTextColumn.Header><TextBlock Text="{Binding DataContext.Localizer[reboot.required], RelativeSource={RelativeSource AncestorType=Window}}"/></DataGridTextColumn.Header></DataGridTextColumn>
               <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="Estado" Binding="{Binding StateDisplay}" Width="120" IsReadOnly="True"/>
               <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="Anticheat" Binding="{Binding AnticheatNote}" Width="170" IsReadOnly="True"/>
               <DataGridTextColumn ElementStyle="{StaticResource GridCellText}" Header="Motivo" Binding="{Binding Reason}" Width="*" IsReadOnly="True"/>
