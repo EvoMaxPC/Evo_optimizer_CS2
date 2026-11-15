@@ -351,3 +351,9 @@ FragForge nunca escribe `localconfig.vdf` ni modifica archivos de Steam para est
 `fragforge memoria` consulta WMI en modo lectura para mostrar memoria del sistema y agrupar procesos por nombre.
 La clasificación protegida es preventiva y no demuestra que cerrar otro proceso sea seguro; faltantes se muestran como desconocidos.
 Este comando no cierra ni modifica procesos, y el working set no garantiza memoria liberada al cerrar.
+
+### PF-1: confirmación sin protección del sistema
+
+Si la protección del sistema está desactivada, no disponible o no se pudo confirmar, `apply` queda bloqueado salvo que el usuario confirme para esa invocación con `--acepto-sin-punto-de-restauracion` (después de los IDs y sin valor). En ese caso no se crea punto de restauración y el reporte lo indica; el snapshot y journal de FragForge siguen siendo obligatorios. La confirmación no se guarda para siguientes aplicaciones.
+La confirmación no anula el bloqueo R-J de los tweaks seleccionados, la elevación, la denylist, los objetivos protegidos ni las precondiciones. Si la protección está habilitada, se sigue intentando crear el punto y no se muestra el aviso de confirmación.
+Sin punto de restauración, la vuelta atrás depende del revert de FragForge mediante su journal y de los respaldos manuales del usuario. El revert no requiere esta confirmación.
