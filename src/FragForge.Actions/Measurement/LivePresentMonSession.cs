@@ -43,10 +43,10 @@ public sealed record LiveSessionOptions
     /// <summary>Nombre de sesión ETW; null genera un nombre nuevo al iniciar.</summary>
     public string? SessionName { get; init; }
 
-    /// <summary>Gracia ante falta de frames nuevos antes de declarar <see cref="LiveSessionState.Stalled"/>.</summary>
-    public TimeSpan StallGrace { get; init; } = DefaultStallGrace;
+    /// <summary>Gracia ante falta de frames; null (por defecto) nunca declara Stalled, para partida completa.</summary>
+    public TimeSpan? StallGrace { get; init; }
 
-    /// <summary>Gracia por defecto ante falta de frames, no validada.</summary>
+    /// <summary>Gracia sugerida para quien active detección de stall, no validada.</summary>
     public static readonly TimeSpan DefaultStallGrace = TimeSpan.FromSeconds(30);
 }
 
@@ -167,10 +167,18 @@ public sealed class LivePresentMonSession : IAsyncDisposable
         lock (_gate)
         {
             kill = _state == LiveSessionState.Running
-                && _nowMs() - _lastFrameMs > _options.StallGrace.TotalMilliseconds
+                && _options.StallGrace is TimeSpan grace
+                && _nowMs() - _lastFrameMs > grace.TotalMilliseconds
                 && SetTerminalLocked(LiveSessionState.Stalled);
         }
         if (kill) KillOnce();
+    }
+
+    /// <summary>Segundos desde el último frame recibido, o null si aún no llegó ninguno.</summary>
+    public double? SecondsSinceLastFrame()
+    {
+        lock (_gate)
+            return _lastFramesParsed == 0 ? null : (_nowMs() - _lastFrameMs) / 1000.0;
     }
 
     public Task StopAsync()
