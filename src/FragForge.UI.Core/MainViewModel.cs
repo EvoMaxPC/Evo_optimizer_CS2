@@ -340,7 +340,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(PreviewSummary));
             StatusMessage = report.Success
                 ? PreviewSummary
-                : "La vista previa no se pudo completar: " + string.Join(" ", report.Errors);
+                : "La vista previa no se pudo completar: " + string.Join(" ", report.Errors.Select(error => report.PreflightBlocked ? PreflightPresentation.ForApp(error) : error));
         });
     }
 
@@ -456,7 +456,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             // Las advertencias del motor (entre ellas la del corte de red) no se pierden: se muestran junto al
             // resultado, porque el usuario tiene que poder ver que la conexión puede caerse.
             var warnings = report.Warnings.Count > 0 ? " Avisos: " + string.Join(" | ", report.Warnings) : "";
-            StatusMessage = (report.Success ? (dryRun ? "Dry-run completado sin cambios." : $"Aplicación completada. Snapshot: {report.SnapshotId}") : string.Join(" ", report.Errors)) + warnings;
+            StatusMessage = (report.Success ? (dryRun ? "Dry-run completado sin cambios." : $"Aplicación completada. Snapshot: {report.SnapshotId}") : string.Join(" ", report.Errors.Select(error => report.PreflightBlocked ? PreflightPresentation.ForApp(error) : error))) + warnings;
         });
     }
     [RelayCommand(CanExecute = nameof(CanOperate))]
@@ -513,6 +513,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         var progress = new Progress<EngineProgress>(p => { ProgressValue = Math.Clamp(p.Fraction * 100, 0, 100); StatusMessage = $"[{p.Stage}] {p.TweakId} {p.Message}"; });
         try { await operation(_operation.Token, progress); }
         catch (OperationCanceledException) { StatusMessage = "Operación cancelada."; }
+        catch (PreflightFailedException ex) { StatusMessage = PreflightPresentation.ForApp(ex.Message); PostToUi(() => Logs.Add("[Error] " + PreflightPresentation.ForApp(ex.Message))); }
         catch (Exception ex) { StatusMessage = ex.Message; PostToUi(() => Logs.Add("[Error] " + ex)); }
         finally { IsBusy = false; _operation.Dispose(); _operation = null; }
     }

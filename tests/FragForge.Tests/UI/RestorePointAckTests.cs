@@ -24,10 +24,12 @@ public sealed class RestorePointAckTests
     {
         public List<ApplyOptions> Calls { get; } = [];
         public BatchReport Next { get; set; } = Blocked("restore-unavailable");
+        public PreflightFailedException? Failure { get; set; }
         public TaskCompletionSource<BatchReport>? Pending { get; set; }
         public Task<BatchReport> ApplyAsync(IEnumerable<string> ids, ApplyOptions options, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null)
         {
             Calls.Add(options);
+            if (Failure is not null) throw Failure;
             return Pending?.Task ?? Task.FromResult(Next);
         }
         public Task<ScanReport> ScanAsync(CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null) => throw new NotSupportedException();
@@ -55,6 +57,68 @@ public sealed class RestorePointAckTests
             new StubPreflight(), new FakeHardwareProfiler(), new StubContext());
         vm.Tweaks[0].IsSelected = true;
         return (vm, engine);
+    }
+
+    [Fact]
+    public async Task RestoreBlock_UsesAppInstructionsAndPreservesOtherBlockAndWarnings()
+    {
+        var (vm, engine) = await CreateAsync();
+        using var cleanup = vm;
+        engine.Next = new BatchReport
+        {
+            OperationId = "bloqueada", Success = false, PreflightBlocked = true,
+            BlockingPreflightCheckIds = ["restore-unavailable", "admin"],
+            Errors = ["El preflight bloqueó la aplicación: La protección del sistema está desactivada o no pudo confirmarse. Habilítala en Protección del sistema o usa --enable-system-protection; --no-restore-point solo omite el punto, no el snapshot/journal. Si querés aplicar igual, repetí el comando con --acepto-sin-punto-de-restauracion Se requieren privilegios de administrador."],
+            Warnings = ["Aviso independiente."]
+        };
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("El preflight bloqueó la aplicación: La protección del sistema está desactivada o no pudo confirmarse. Habilitá la protección del sistema en Windows o desde Mantenimiento. Si corresponde, usá la confirmación de la tarjeta para aplicar sin punto de restauración. Se requieren privilegios de administrador. Avisos: Aviso independiente.", vm.StatusMessage);
+        Assert.False(vm.NeedsRestorePointAck);
+        Assert.Single(engine.Calls);
+    }
+
+    [Fact]
+    public async Task RestoreRecheck_DoesNotSuggestCliFlags()
+    {
+        var (vm, engine) = await CreateAsync();
+        using var cleanup = vm;
+        engine.Next = new BatchReport { OperationId = "bloqueada", Success = false, PreflightBlocked = true,
+            Errors = ["La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal."] };
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task UnknownPreflightCliInstruction_UsesNeutralMessage()
+    {
+        var (vm, engine) = await CreateAsync();
+        using var cleanup = vm;
+        engine.Next = new BatchReport { OperationId = "bloqueada", Success = false, PreflightBlocked = true,
+            Errors = ["Bloqueado. Ejecutá --opcion-nueva."] };
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("El preflight no se pudo completar. Ejecutá Doctor para revisar los motivos.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task PreviewBlocked_UsesAppInstructions()
+    {
+        var (vm, engine) = await CreateAsync();
+        using var cleanup = vm;
+        engine.Next = new BatchReport { OperationId = "bloqueada", Success = false, PreflightBlocked = true,
+            Errors = ["La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal."] };
+        await vm.PreviewCommand.ExecuteAsync(null);
+        Assert.Equal("La vista previa no se pudo completar: La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task PreflightException_DoesNotExposeCliInstructionsInStatusOrLog()
+    {
+        var (vm, engine) = await CreateAsync();
+        using var cleanup = vm;
+        engine.Failure = new PreflightFailedException("La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal.", new PreflightReport(false, []));
+        await vm.ApplyCommand.ExecuteAsync(null);
+        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
+        Assert.Contains("[Error] La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.Logs);
     }
 
     [Fact]
