@@ -55,6 +55,49 @@ public sealed class LocalConfigLaunchOptionsTests
         Assert.Contains("Opciones de lanzamiento: " + value + "\n", Report(inspection));
     }
 
+    [Theory]
+    [InlineData("Apps", "LaunchOptions")]
+    [InlineData("apps", "launchoptions")]
+    public async Task ObservedPathSpelling_PreservesTrailingSpace(string apps, string key)
+    {
+        using var temp = new TempDirectory();
+        File.WriteAllText(Prepare(temp.Path), "\"UserLocalConfigStore\" { \"Software\" { \"Valve\" { \"Steam\" { \"" + apps + "\" { \"730\" { \"" + key + "\" \"-novid -nojoy \" } } } } } }");
+        var inspection = await Inspect(temp.Path);
+        // El valor sintético contiene un espacio antes de la comilla de cierre: se conserva.
+        Assert.Equal("-novid -nojoy ", inspection.LaunchOptions);
+        Assert.False(inspection.LaunchOptionsKnownAbsent);
+    }
+
+    [Fact]
+    public async Task ObservedAppsSpelling_WithoutLaunchOptions_IsKnownAbsent()
+    {
+        using var temp = new TempDirectory();
+        File.WriteAllText(Prepare(temp.Path), "\"UserLocalConfigStore\" { \"Software\" { \"Valve\" { \"Steam\" { \"Apps\" { \"730\" { } } } } } }");
+        var inspection = await Inspect(temp.Path);
+        // La ruta con Apps contiene 0 claves LaunchOptions para 730.
+        Assert.Null(inspection.LaunchOptions);
+        Assert.True(inspection.LaunchOptionsKnownAbsent);
+        Assert.Contains("Opciones de lanzamiento: sin opciones configuradas", Report(inspection));
+        Assert.DoesNotContain("Opciones de lanzamiento: no se sabe", Report(inspection));
+    }
+
+    [Fact]
+    public async Task ObservedAppsSpelling_OnlyOtherAppHasOptions_DoesNotLeak()
+    {
+        using var temp = new TempDirectory();
+        File.WriteAllText(Prepare(temp.Path), "\"UserLocalConfigStore\" { \"Software\" { \"Valve\" { \"Steam\" { \"Apps\" { \"228980\" { \"LaunchOptions\" \"valor_sintetico_ajeno\" } \"730\" { } } } } } }");
+        var inspection = await Inspect(temp.Path);
+        var report = Report(inspection);
+        // Hay 1 valor en otra app y 0 en 730; no se publica el valor ajeno.
+        Assert.Null(inspection.LaunchOptions);
+        Assert.True(inspection.LaunchOptionsKnownAbsent);
+        Assert.Contains("Opciones de lanzamiento: sin opciones configuradas", report);
+        Assert.DoesNotContain("Opciones de lanzamiento: no se sabe", report);
+        Assert.DoesNotContain("valor_sintetico_ajeno", System.Text.Json.JsonSerializer.Serialize(inspection));
+        Assert.DoesNotContain("valor_sintetico_ajeno", report);
+        Assert.DoesNotContain(inspection.Notes, note => note.Contains("valor_sintetico_ajeno", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task MissingKey_IsKnownAbsent()
     {
