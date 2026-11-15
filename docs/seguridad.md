@@ -347,3 +347,7 @@ Las confirmaciones usan «No» por defecto. La pestaña y sus interacciones no s
 La hoja lee en solo lectura `userdata/<cuenta activa>/config/localconfig.vdf` para buscar las opciones de lanzamiento de la app 730.
 Solo se extrae `LaunchOptions` de la ruta esperada; no se guarda ni muestra el resto del archivo. La ruta concreta no se verificó en una instalación real en esta ronda.
 FragForge nunca escribe `localconfig.vdf` ni modifica archivos de Steam para esta lectura.
+
+`fragforge memoria` consulta WMI en modo lectura para mostrar memoria del sistema y agrupar procesos por nombre.
+La clasificación protegida es preventiva y no demuestra que cerrar otro proceso sea seguro; faltantes se muestran como desconocidos.
+Este comando no cierra ni modifica procesos, y el working set no garantiza memoria liberada al cerrar.
