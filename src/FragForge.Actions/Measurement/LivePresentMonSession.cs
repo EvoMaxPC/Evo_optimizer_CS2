@@ -77,6 +77,7 @@ public sealed class LivePresentMonSession : IAsyncDisposable
     private Task? _stopTask;
     private LiveSessionState _state = LiveSessionState.NotStarted;
     private string? _failureMessage;
+    private string? _killError;
     private string? _effectiveSessionName;
     private string _stderrTail = "";
     private int? _exitCode;
@@ -100,6 +101,8 @@ public sealed class LivePresentMonSession : IAsyncDisposable
     public LiveFrameIngest Ingest { get; }
     public LiveSessionState State { get { lock (_gate) return _state; } }
     public string? FailureMessage { get { lock (_gate) return _failureMessage; } }
+    /// <summary>Error al cerrar PresentMon, o null si no se informó ninguno.</summary>
+    public string? KillError { get { lock (_gate) return _killError; } }
     /// <summary>Nombre usado al iniciar, o null si aún no se intentó lanzar PresentMon.</summary>
     public string? EffectiveSessionName { get { lock (_gate) return _effectiveSessionName; } }
     public string StderrTail { get { lock (_gate) return _stderrTail; } }
@@ -292,6 +295,11 @@ public sealed class LivePresentMonSession : IAsyncDisposable
         }
         try { process.Kill(); }
         catch (InvalidOperationException) { }
+        catch (Exception ex)
+        {
+            lock (_gate)
+                _killError ??= $"No se pudo cerrar PresentMon: {ex.Message}. Cerralo a mano desde el Administrador de tareas.";
+        }
     }
 
     private static long DefaultNowMs() => SharedClock.ElapsedMilliseconds;
