@@ -74,4 +74,21 @@ public sealed class MatchReportFormatterTests
         Assert.DoesNotContain("1% bajo: 0.0 FPS", report);
     }
 
+    [Fact]
+    public void Environment_LabelsResolutionComparisonWithoutChangingValue()
+    {
+        var report = MatchReportFormatter.Format(new MatchReportInput { Environment = new MatchEnvironment { ResolutionComparisonText = "no se sabe" }, GeneratedAtLocal = Time });
+        // Un valor desconocido se presenta como tal, no como cero.
+        Assert.Contains("\nComparación de resolución: no se sabe\n", report);
+    }
+
+    [Fact]
+    public void Environment_LabelsEachDisplayWithoutChangingValues()
+    {
+        var report = MatchReportFormatter.Format(new MatchReportInput { Environment = new MatchEnvironment { DisplayModes = ["DISPLAY1 1024x768@180Hz", "DISPLAY2 640x480@60Hz"] }, GeneratedAtLocal = Time });
+        // Dos pantallas activas producen dos líneas con sus valores originales.
+        Assert.Contains("\nPantallas activas: DISPLAY1 1024x768@180Hz\n", report);
+        Assert.Contains("\nPantallas activas: DISPLAY2 640x480@60Hz\n", report);
+    }
+
 }

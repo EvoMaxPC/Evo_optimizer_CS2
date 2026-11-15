@@ -68,8 +68,8 @@ public static class MatchReportFormatter
             lines.Add("Área cliente: " + Dimensions(env.ClientWidth, env.ClientHeight));
             lines.Add("Monitor: " + Dimensions(env.MonitorWidth, env.MonitorHeight));
             lines.Add("La ventana cubre el monitor: " + YesNo(env.WindowCoversMonitor));
-            lines.Add(env.ResolutionComparisonText);
-            foreach (var mode in env.DisplayModes) lines.Add(mode);
+            lines.Add("Comparación de resolución: " + env.ResolutionComparisonText);
+            foreach (var mode in env.DisplayModes) lines.Add("Pantallas activas: " + mode);
             foreach (var note in env.WindowNotes) lines.Add(note);
             lines.Add("Administrador: " + YesNo(env.IsElevated));
         }
