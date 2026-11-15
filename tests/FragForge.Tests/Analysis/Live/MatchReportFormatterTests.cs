@@ -63,4 +63,15 @@ public sealed class MatchReportFormatterTests
         Assert.Contains("LaunchOptions: cambió de a a b", different);
         Assert.Contains("Resolución configurada: no se sabe", different);
     }
+    [Fact]
+    public void InsufficientLow1_UsesExactReason()
+    {
+        var stats = FrameStatisticsCalculator.Compute(Enumerable.Repeat(10.0, 900).ToArray());
+        var view = new LiveViewSnapshot("total", null, 900, null, stats, null, []);
+        var report = MatchReportFormatter.Format(new MatchReportInput { Total = view, GeneratedAtLocal = Time });
+        // 900 < 1000: el calculador da null y el motivo exacto; no es 0 FPS.
+        Assert.Contains("1% bajo: insuficiente: 900 frames, se necesitan 1000.", report);
+        Assert.DoesNotContain("1% bajo: 0.0 FPS", report);
+    }
+
 }
