@@ -47,7 +47,7 @@
     </Border>
 
     <!-- ===== Pestañas ===== -->
-    <TabControl Grid.Row="2" Background="Transparent" BorderBrush="{StaticResource BorderBrush}"
+    <TabControl x:Name="MainTabs" Grid.Row="2" Background="Transparent" BorderBrush="{StaticResource BorderBrush}"
                 AutomationProperties.Name="FragForge" KeyboardNavigation.TabNavigation="Local">
 
       <TabItem Header="{Binding Localizer[tab.summary]}">
@@ -157,6 +157,31 @@
             <Button Content="{Binding Localizer[security.refresh]}" Command="{Binding ReadSecurityCommand}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
           </StackPanel>
         </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="Medición">
+        <Grid Margin="8" DataContext="{Binding Measurement, RelativeSource={RelativeSource AncestorType=Window}}">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <TextBlock Text="{Binding NoticeText}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+          <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Duración en segundos (vacío: partida completa):" VerticalAlignment="Center"/>
+              <TextBox Width="100" Margin="8,0" Text="{Binding Duration, UpdateSourceTrigger=PropertyChanged}"/>
+              <CheckBox Content="{Binding SaveLogText}" IsChecked="{Binding SaveLog}" VerticalAlignment="Center"/>
+              <TextBlock Text="{Binding StateText}" VerticalAlignment="Center" Margin="12,0"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+              <Button Content="Iniciar" Command="{Binding StartCommand}"/>
+              <Button Content="Ver ahora" Command="{Binding ShowNowCommand}"/>
+              <Button Content="Marcar segmento" Command="{Binding ToggleSegmentCommand}"/>
+              <Button Content="Terminar" Command="{Binding FinishCommand}"/>
+              <Button Content="Cerrar pestaña" Click="CloseMeasurementTab_Click"/>
+            </StackPanel>
+          </StackPanel>
+          <TextBox Grid.Row="2" Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True"
+                   FontFamily="Consolas" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                   TextWrapping="NoWrap" AutomationProperties.Name="Informe de medición"/>
+        </Grid>
       </TabItem>
 
       <TabItem Header="{Binding Localizer[tab.maintenance]}">

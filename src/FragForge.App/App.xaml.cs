@@ -42,7 +42,8 @@ public partial class App : Application
                 foreach (var error in recovery.Errors) viewModel.Logs.Add("[Sesion] " + error);
             }
             catch (Exception ex) { viewModel.Logs.Add("[Sesion] No se pudo recuperar la sesion anterior: " + ex.Message); }
-            var window = new MainWindow { DataContext = viewModel };
+            var measurement = new MeasurementViewModel(() => new MeasurementSession(Dispatcher));
+            var window = new MainWindow(measurement) { DataContext = viewModel };
             MainWindow = window;
             window.Show();
             await viewModel.ScanCommand.ExecuteAsync(null);
