@@ -92,6 +92,16 @@
           <Border Grid.Column="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="10,0,0,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
               <StackPanel>
+                <Border Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,12">
+                  <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding NeedsRestorePointAck}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                  <StackPanel>
+                    <TextBlock Text="La protección del sistema está desactivada. Podés aplicar igual, pero Windows no va a poder volver solo al estado anterior. La vuelta atrás es el revert de FragForge." TextWrapping="Wrap" Foreground="{StaticResource WarningBrush}"/>
+                    <CheckBox IsChecked="{Binding RestorePointAckChecked}" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,12,0,8">
+                      <TextBlock Text="Entiendo que no hay punto de restauración del sistema y que la única vuelta atrás es el revert de FragForge." TextWrapping="Wrap"/>
+                    </CheckBox>
+                    <Button Content="Aplicar de todos modos" Command="{Binding ApplyWithoutRestoreCommand}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Left"/>
+                  </StackPanel>
+                </Border>
                 <TextBlock Text="{Binding Localizer[preview.title]}" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
                 <TextBlock Text="{Binding PreviewSummary}" TextWrapping="Wrap" Margin="0,4,0,4"/>
                 <ListBox ItemsSource="{Binding PlannedChanges}" MaxHeight="240" Background="{StaticResource Bg0Brush}" BorderBrush="{StaticResource BorderBrush}"

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -8,6 +9,7 @@ using FragForge.Core.Abstractions;
 using FragForge.Core.Engine;
 using FragForge.Core.Localization;
 using FragForge.Core.Models;
+using FragForge.Core.Preflight;
 using FragForge.Core.Sessions;
 using FragForge.Tweaks.Localization;
 
@@ -46,6 +48,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     /// reemplazó ("Aplicación completada. Snapshot: …"), el cambio de perfil no debe pisarla.
     /// </summary>
     private string? _lastScanStatus;
+    private int _selectionRevision;
 
     public ObservableCollection<TweakItemViewModel> Tweaks { get; } = [];
     public ObservableCollection<string> Logs { get; } = [];
@@ -126,6 +129,23 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool enableSystemProtection;
     [ObservableProperty] private bool force;
     [ObservableProperty] private bool allowPowerShell;
+    [ObservableProperty] private bool needsRestorePointAck;
+    [ObservableProperty] private bool restorePointAckChecked;
+
+    partial void OnNeedsRestorePointAckChanged(bool value) => ApplyWithoutRestoreCommand.NotifyCanExecuteChanged();
+    partial void OnRestorePointAckCheckedChanged(bool value) => ApplyWithoutRestoreCommand.NotifyCanExecuteChanged();
+    private bool CanApplyWithoutRestore() => !IsBusy && NeedsRestorePointAck && RestorePointAckChecked;
+    private void ResetRestorePointAck()
+    {
+        RestorePointAckChecked = false;
+        NeedsRestorePointAck = false;
+    }
+    private void OnTweakPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(TweakItemViewModel.IsSelected)) return;
+        _selectionRevision++;
+        ResetRestorePointAck();
+    }
 
     public MainViewModel(ITweakEngine engine, ITweakCatalog catalog, Localizer localizer, IReportService reports, IUiLogSink sink, IConfirmationService confirmation, IFileDialogService files, IPreflightService preflight, IHardwareProfiler profiler, IApplicationContext context)
     {
@@ -273,9 +293,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private bool CanOperate() => !IsBusy;
     partial void OnIsBusyChanged(bool value)
     {
-        ScanCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); DryRunCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged(); RevertOperationCommand.NotifyCanExecuteChanged(); RefreshOperationsCommand.NotifyCanExecuteChanged(); RevertCommand.NotifyCanExecuteChanged(); SnapshotCommand.NotifyCanExecuteChanged(); ExportCommand.NotifyCanExecuteChanged(); DoctorCommand.NotifyCanExecuteChanged(); BrowseCs2Command.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged();
+        ScanCommand.NotifyCanExecuteChanged(); ApplyWithoutRestoreCommand.NotifyCanExecuteChanged(); ApplyCommand.NotifyCanExecuteChanged(); DryRunCommand.NotifyCanExecuteChanged(); PreviewCommand.NotifyCanExecuteChanged(); RevertOperationCommand.NotifyCanExecuteChanged(); RefreshOperationsCommand.NotifyCanExecuteChanged(); RevertCommand.NotifyCanExecuteChanged(); SnapshotCommand.NotifyCanExecuteChanged(); ExportCommand.NotifyCanExecuteChanged(); DoctorCommand.NotifyCanExecuteChanged(); BrowseCs2Command.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged();
     }
-    partial void OnSelectedProfileChanged(TweakProfile value) => RebuildTweaks();
+    partial void OnSelectedProfileChanged(TweakProfile value)
+    {
+        _selectionRevision++;
+        ResetRestorePointAck();
+        RebuildTweaks();
+    }
     partial void OnCultureChanged(string value) => _ = ChangeCultureAsync(value);
 
     [RelayCommand(CanExecute = nameof(CanOperate))]
@@ -300,6 +325,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private async Task PreviewAsync()
     {
+        ResetRestorePointAck();
         var selected = Tweaks.Where(t => t.IsSelected).ToArray();
         if (selected.Length == 0) { StatusMessage = "Selecciona al menos un tweak para previsualizar."; return; }
         var options = BuildApplyOptions(dryRun: true, EmptyAcknowledgements);
@@ -374,6 +400,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private Task ApplyAsync() => ApplyCoreAsync(false);
     [RelayCommand(CanExecute = nameof(CanOperate))]
     private Task DryRunAsync() => ApplyCoreAsync(true);
+    [RelayCommand(CanExecute = nameof(CanApplyWithoutRestore))]
+    private Task ApplyWithoutRestoreAsync() => CanApplyWithoutRestore() ? ApplyCoreAsync(false, true) : Task.CompletedTask;
     /// <summary>
     /// Opciones de aplicación en un solo sitio: las usa el dry-run de la vista previa y el apply real, para que
     /// no puedan divergir (una vista previa que no refleja lo que se aplica no sirve de nada).
@@ -391,8 +419,10 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         AllowPowerShellActions = AllowPowerShell
     };
 
-    private async Task ApplyCoreAsync(bool dryRun)
+    private async Task ApplyCoreAsync(bool dryRun, bool acceptWithoutRestore = false)
     {
+        ResetRestorePointAck();
+        var selectionRevision = _selectionRevision;
         var selected = Tweaks.Where(t => t.IsSelected).ToArray();
         if (selected.Length == 0) { StatusMessage = "Selecciona al menos un tweak."; return; }
         var acknowledgements = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -413,12 +443,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
                 if (!_confirmation.ConfirmRisk(_localizer["risk.first"] + "\n" + message, "No lo apliques durante una partida.", _localizer["risk.title"])) { StatusMessage = "Confirmación cancelada."; return; }
             }
         }
-        var options = BuildApplyOptions(dryRun, acknowledgements);
+        var options = BuildApplyOptions(dryRun, acknowledgements) with { AcceptWithoutSystemRestore = acceptWithoutRestore };
         await RunAsync(async (token, progress) =>
         {
             var report = await _engine.ApplyAsync(selected.Select(t => t.Id), options, token, progress);
             foreach (var result in report.Results) _statuses[result.Id] = new TweakStatus(result.Id, result.State, result.Message, [], []);
             RebuildTweaks();
+            NeedsRestorePointAck = !dryRun && !acceptWithoutRestore && selectionRevision == _selectionRevision && report.PreflightBlocked
+                && report.BlockingPreflightCheckIds.Count == 1 && report.BlockingPreflightCheckIds[0] == PreflightService.RestoreUnavailableId;
             // Las advertencias del motor (entre ellas la del corte de red) no se pierden: se muestran junto al
             // resultado, porque el usuario tiene que poder ver que la conexión puede caerse.
             var warnings = report.Warnings.Count > 0 ? " Avisos: " + string.Join(" | ", report.Warnings) : "";
@@ -485,11 +517,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     private void RebuildTweaks()
     {
         var selected = Tweaks.Where(t => t.IsSelected).Select(t => t.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in Tweaks) item.PropertyChanged -= OnTweakPropertyChanged;
         Tweaks.Clear();
         foreach (var definition in ProfileSelector.Select(_catalog.Definitions, SelectedProfile))
         {
             _statuses.TryGetValue(definition.Id, out var status);
-            Tweaks.Add(new TweakItemViewModel(definition, status, _localizer) { IsSelected = selected.Contains(definition.Id) });
+            var item = new TweakItemViewModel(definition, status, _localizer) { IsSelected = selected.Contains(definition.Id) };
+            item.PropertyChanged += OnTweakPropertyChanged;
+            Tweaks.Add(item);
         }
         // La tabla filtra por perfil: el contador tiene que decir cuántos se ven, no cuántos hay.
         OnPropertyChanged(nameof(TweakCountText));
@@ -540,7 +575,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         return builder.ToString().TrimEnd();
     }
     private void OnLogMessage(object? sender, string line) => PostToUi(() => { Logs.Add(line); while (Logs.Count > 500) Logs.RemoveAt(0); });
-    public void Dispose() { _sink.MessageWritten -= OnLogMessage; _operation?.Cancel(); _operation?.Dispose(); _sessionWatch?.Cancel(); _sessionWatch?.Dispose(); }
+    public void Dispose() { foreach (var item in Tweaks) item.PropertyChanged -= OnTweakPropertyChanged; _sink.MessageWritten -= OnLogMessage; _operation?.Cancel(); _operation?.Dispose(); _sessionWatch?.Cancel(); _sessionWatch?.Dispose(); }
 }
 
 /// <summary>Opción del combo de perfiles: el enum (valor) y un texto para mostrar.</summary>
