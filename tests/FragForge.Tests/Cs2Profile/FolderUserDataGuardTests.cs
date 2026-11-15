@@ -99,6 +99,6 @@ public sealed class FolderUserDataGuardTests
         Assert.True(result.Written);
         Assert.Equal(Path.Combine(destination, "fragforge-cs2.cfg"), result.TargetPath);
         Assert.Equal("fps_max 240\n", await File.ReadAllTextAsync(result.TargetPath!));
-        Assert.Equal(1, Directory.GetFileSystemEntries(destination).Length);
+        Assert.Single(Directory.GetFileSystemEntries(destination));
     }
 }
