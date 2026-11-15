@@ -116,7 +116,17 @@ public static class MatchReportFormatter
             lines.AddRange(h.Notes);
         }
         else lines.Add("tirones: no disponible");
-        lines.AddRange(view.Notes);
+        foreach (var note in view.Notes) lines.Add(FormatSeriesNote(note));
+    }
+
+    private static string FormatSeriesNote(string note)
+    {
+        const string prefix = "hay ";
+        const string suffix = " series más";
+        if (!note.StartsWith(prefix, StringComparison.Ordinal) || !note.EndsWith(suffix, StringComparison.Ordinal)) return note;
+        var number = note.AsSpan(prefix.Length, note.Length - prefix.Length - suffix.Length);
+        if (!int.TryParse(number, NumberStyles.None, Inv, out var count) || count < 1 || !number.SequenceEqual(count.ToString(Inv))) return note;
+        return "hay " + count.ToString(Inv) + (count == 1 ? " serie más" : " series más") + "; esta vista muestra solo la serie con más frames acumulados";
     }
 
     private static string Metric(double? value, FrameStatistics? stats, string key, string unit, string format)

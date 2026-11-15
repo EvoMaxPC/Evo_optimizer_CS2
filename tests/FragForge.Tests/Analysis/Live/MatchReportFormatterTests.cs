@@ -107,4 +107,23 @@ public sealed class MatchReportFormatterTests
         Assert.DoesNotContain(note, lines.Skip(Array.IndexOf(lines, "Segmento:")));
     }
 
+    [Theory]
+    [InlineData(1, "hay 1 serie más; esta vista muestra solo la serie con más frames acumulados")]
+    [InlineData(2, "hay 2 series más; esta vista muestra solo la serie con más frames acumulados")]
+    public void SeriesNote_ExplainsUncombinedSeriesInEachView(int extraSeries, string expected)
+    {
+        var accumulator = new LiveFrameAccumulator();
+        accumulator.Add(new LiveFrame("cs2.exe", "principal", 10, 0));
+        accumulator.Add(new LiveFrame("cs2.exe", "principal", 10, 10));
+        for (var i = 0; i < extraSeries; i++) accumulator.Add(new LiveFrame("cs2.exe", i.ToString(System.Globalization.CultureInfo.InvariantCulture), 20, 0));
+        accumulator.MarkStart();
+        accumulator.Add(new LiveFrame("cs2.exe", "principal", 10, 20));
+        accumulator.MarkEnd();
+        var report = MatchReportFormatter.Format(new MatchReportInput { Total = accumulator.GetTotal(), Last30 = accumulator.GetLastWindow(), Segment = accumulator.GetSegment(), GeneratedAtLocal = Time });
+        // La serie principal tiene 3 frames; hay 1 o 2 series adicionales de 1 frame cada una.
+        Assert.Equal(3, report.Split('\n').Count(line => line == expected));
+        Assert.DoesNotContain("hay 1 series más\n", report);
+        Assert.DoesNotContain("hay 2 series más\n", report);
+    }
+
 }
