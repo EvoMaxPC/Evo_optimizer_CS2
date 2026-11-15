@@ -61,6 +61,15 @@ public sealed class LiveFrameParser
     /// <summary>Filas con valor de tiempo NA o no numérico, habiendo columna de tiempo.</summary>
     public long RowsWithoutTime { get; private set; }
 
+    /// <summary><c>true</c> cuando ya se vio el encabezado (la primera línea no vacía).</summary>
+    public bool HeaderSeen => _headerSeen;
+
+    /// <summary><c>true</c> cuando el encabezado trae la columna de frametime (MsBetweenPresents).</summary>
+    public bool HasFrameTimeColumn => _headerSeen && _primaryIndex >= 0;
+
+    /// <summary><c>true</c> cuando el encabezado trae columna de tiempo (TimeInMs o TimeInSeconds).</summary>
+    public bool HasTimeColumn => _headerSeen && _timeIndex >= 0;
+
     /// <summary>
     /// Procesa una línea. Acepta <c>\r\n</c> y <c>\n</c> (el CSV real termina en CRLF). La primera línea
     /// no vacía es el encabezado.
