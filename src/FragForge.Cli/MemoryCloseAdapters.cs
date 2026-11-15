@@ -13,11 +13,12 @@ public sealed class WmiCloseIdentityReader(IWmiQuery wmi) : ICloseIdentityReader
     public async Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken)
     {
         Latest = [];
-        var rows = await wmi.QueryAsync(@"root\cimv2", "Win32_Process", ["Name", "ProcessId", "CreationDate"], cancellationToken: cancellationToken);
+        var rows = await wmi.QueryAsync(@"root\cimv2", "Win32_Process", ["Name", "ProcessId", "CreationDate", "ParentProcessId"], cancellationToken: cancellationToken);
         Latest = rows.Select(row =>
         {
             var id = WmiValues.UInt64(row, "ProcessId");
-            return new CloseIdentity(WmiValues.String(row, "Name"), id is <= long.MaxValue ? (long)id.Value : null, ParseCreationDate(WmiValues.String(row, "CreationDate")));
+            var parent = WmiValues.UInt64(row, "ParentProcessId");
+            return new CloseIdentity(WmiValues.String(row, "Name"), id is <= long.MaxValue ? (long)id.Value : null, ParseCreationDate(WmiValues.String(row, "CreationDate")), parent is <= long.MaxValue ? (long)parent.Value : null);
         }).ToArray();
         return Latest;
     }
@@ -90,6 +91,7 @@ public sealed class WindowsCloseProcess(Process process) : ICloseProcess
             return new DateTimeOffset(utc.AddTicks(-(utc.Ticks % 10)));
         }
     }
+    public bool HasExited { get { process.Refresh(); return process.HasExited; } }
     public bool CloseMainWindow() => process.CloseMainWindow();
     public async Task<bool> WaitForExitAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -102,6 +104,7 @@ public sealed class WindowsCloseProcess(Process process) : ICloseProcess
     public void Dispose() => process.Dispose();
 }
 
+// Deshabilitado: el apagado no permite excluir los ancestros.
 public static class BuildServerShutdown
 {
     public static ProcessStartInfo CreateStartInfo(IReadOnlyList<string> arguments)

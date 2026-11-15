@@ -30,7 +30,10 @@ public static class ProtectedProcesses
 public sealed record ProcessMemoryRow(string? Name, long? ProcessId, double? WorkingSetMb, double? PrivateMb, string Classification, string Reason);
 public sealed record ProcessMemoryGroup(string Name, int Instances, double? WorkingSetMb, double? PrivateMb, string Classification, string Reason);
 public sealed record SystemMemorySnapshot(double? AvailableMb, double? CommittedMb, double? PercentCommittedBytesInUse);
-public sealed record MemorySnapshot(SystemMemorySnapshot? System, IReadOnlyList<ProcessMemoryGroup> Processes);
+public sealed record MemorySnapshot(SystemMemorySnapshot? System, IReadOnlyList<ProcessMemoryGroup> Processes)
+{
+    public IReadOnlyList<ProcessMemoryRow>? ProcessRows { get; init; }
+}
 
 public static class ProcessMemoryGrouping
 {

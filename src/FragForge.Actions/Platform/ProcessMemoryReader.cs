@@ -20,11 +20,11 @@ public sealed class ProcessMemoryReader(IWmiQuery wmi)
             var (classification, reason) = ProtectedProcesses.Classify(name, pid);
             return new ProcessMemoryRow(name, pid, ToMb(WmiValues.UInt64(row, "WorkingSetSize")),
                 ToMb(WmiValues.UInt64(row, "PrivatePageCount")), classification, reason);
-        });
+        }).ToArray();
         var system = memory.FirstOrDefault();
         return new MemorySnapshot(system is null ? null : new SystemMemorySnapshot(
             WmiValues.UInt64(system, "AvailableMBytes"), ToMb(WmiValues.UInt64(system, "CommittedBytes")),
-            WmiValues.UInt64(system, "PercentCommittedBytesInUse")), ProcessMemoryGrouping.Group(rows));
+            WmiValues.UInt64(system, "PercentCommittedBytesInUse")), ProcessMemoryGrouping.Group(rows)) { ProcessRows = rows };
     }
 
     private static double? ToMb(ulong? bytes) => bytes is null ? null : bytes.Value / 1048576.0;
