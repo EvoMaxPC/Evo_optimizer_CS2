@@ -83,7 +83,7 @@ public static class MatchReportFormatter
             Pairs(lines, "StoredConvars", sheet.StoredConvars);
             Pairs(lines, "AutoexecConvars", sheet.AutoexecConvars);
             foreach (var conflict in sheet.Conflicts) lines.Add("Conflicto: " + conflict);
-            lines.Add("Opciones de lanzamiento: " + (sheet.LaunchOptions ?? "no se sabe"));
+            lines.Add("Opciones de lanzamiento: " + (sheet.LaunchOptions is not null ? sheet.LaunchOptions : sheet.LaunchOptionsKnownAbsent ? "sin opciones configuradas" : "no se sabe"));
             foreach (var note in sheet.Notes) lines.Add(note);
             if (input.SheetAtEnd is { } end)
             {

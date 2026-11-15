@@ -11,6 +11,7 @@ public sealed record MatchConfigSheet
     public IReadOnlyList<KeyValuePair<string, string>> AutoexecConvars { get; init; } = [];
     public IReadOnlyList<string> Conflicts { get; init; } = [];
     public string? LaunchOptions { get; init; }
+    public bool LaunchOptionsKnownAbsent { get; init; }
     public int? ConfiguredRefreshHz { get; init; }
     public IReadOnlyList<string> Notes { get; init; } = [];
     public int? ConfiguredWidth { get; init; }
@@ -81,6 +82,7 @@ public static class MatchConfigSheetBuilder
             AutoexecConvars = Sort(inspection.AutoexecConvars),
             Conflicts = inspection.Conflicts.ToArray(),
             LaunchOptions = inspection.LaunchOptions,
+            LaunchOptionsKnownAbsent = inspection.LaunchOptionsKnownAbsent,
             ConfiguredRefreshHz = inspection.ConfiguredRefreshHz,
             Notes = inspection.Notes.Concat(resolutionNotes).ToArray(),
             ConfiguredWidth = width,

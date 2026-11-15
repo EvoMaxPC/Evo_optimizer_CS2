@@ -47,6 +47,9 @@ public sealed record Cs2Inspection
     /// <summary>Opciones de lanzamiento de 730 leídas del <c>localconfig.vdf</c>, o <c>null</c>. Solo lectura.</summary>
     public string? LaunchOptions { get; init; }
 
+    /// <summary>Archivo válido sin clave de opciones para la app 730; false no indica ausencia.</summary>
+    public bool LaunchOptionsKnownAbsent { get; init; }
+
     /// <summary>Texto recomendado de opciones de lanzamiento. Se muestra; NO se escribe en Steam.</summary>
     public string RecommendedLaunchOptions { get; init; } = "";
 

@@ -135,7 +135,8 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
             StoredConvars = stored,
             AutoexecConvars = autoexecValues,
             Conflicts = autoexec is null ? [] : Cs2ConfigParser.FindConvarConflicts(stored, autoexecValues),
-            LaunchOptions = launch,
+            LaunchOptions = launch.Value,
+            LaunchOptionsKnownAbsent = launch.Success && !launch.Found,
             ConfiguredRefreshHz = Cs2ConfigParser.ParseRefreshHz(videoSettings)
         };
     }
@@ -215,35 +216,17 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
         }
     }
 
-    private async Task<string?> ReadLaunchOptionsAsync(string? steamRoot, uint? accountId, List<string> notes, CancellationToken cancellationToken)
+    private static async Task<LocalConfigLaunchOptionsReader.Result> ReadLaunchOptionsAsync(string? steamRoot, uint? accountId, List<string> notes, CancellationToken cancellationToken)
     {
-        if (steamRoot is null || accountId is null) return null;
-        var localConfig = Path.Combine(steamRoot, "userdata", accountId.Value.ToString(CultureInfo.InvariantCulture), "config", "localconfig.vdf");
-        var text = await ReadTextAsync(localConfig, [], cancellationToken);
-        if (text is null) return null;
-        // Se busca la clave por nombre y se toma el valor de ESA entrada. Nunca por posición de línea.
-        var node = TryParseVdf(text);
-        if (node is null) { notes.Add("localconfig.vdf no se pudo interpretar; no se muestran las opciones de lanzamiento."); return null; }
-        return FindLaunchOptions(node, depth: 0);
-    }
-
-    private static VdfLike? TryParseVdf(string text)
-    {
-        try { return VdfLike.Parse(text); }
-        catch (Exception ex) when (ex is InvalidDataException or FormatException) { return null; }
-    }
-
-    private static string? FindLaunchOptions(VdfLike node, int depth)
-    {
-        if (depth > 24) return null;
-        foreach (var child in node.Children)
+        if (steamRoot is null || accountId is null)
         {
-            if (child.Key.Equals("LaunchOptions", StringComparison.OrdinalIgnoreCase) && child.Value is not null) return child.Value;
-            if (child.Node is null) continue;
-            var nested = FindLaunchOptions(child.Node, depth + 1);
-            if (nested is not null) return nested;
+            notes.Add("No se pudo determinar la cuenta de Steam para leer localconfig.vdf.");
+            return new(false, false, null, null);
         }
-        return null;
+        var path = Path.Combine(steamRoot, "userdata", accountId.Value.ToString(CultureInfo.InvariantCulture), "config", "localconfig.vdf");
+        var result = await LocalConfigLaunchOptionsReader.ReadAsync(path, cancellationToken);
+        if (result.Error is not null) notes.Add(result.Error);
+        return result;
     }
 
     private static async Task<string?> ReadTextAsync(string path, List<string> notes, CancellationToken cancellationToken)
@@ -277,66 +260,4 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
         }
     }
 
-    /// <summary>
-    /// Árbol VDF mínimo SOLO para <c>localconfig.vdf</c> (que es enorme y tolerante). No sustituye a
-    /// <see cref="ValveDataFormat"/>: ese valida que el archivo entero sea correcto, y aquí basta con poder
-    /// recorrer pares clave/valor.
-    /// </summary>
-    private sealed record VdfLike(string? Value, IReadOnlyList<(string Key, string? Value, VdfLike? Node)> Children)
-    {
-        public static VdfLike Parse(string text)
-        {
-            var index = 0;
-            return ParseBlock(text, ref index, 0);
-        }
-
-        private static VdfLike ParseBlock(string text, ref int index, int depth)
-        {
-            if (depth > 24) throw new InvalidDataException("Anidamiento excesivo.");
-            var children = new List<(string, string?, VdfLike?)>();
-            while (true)
-            {
-                SkipTrivia(text, ref index);
-                if (index >= text.Length) return new VdfLike(null, children);
-                if (text[index] == '}') { index++; return new VdfLike(null, children); }
-                var key = ParseToken(text, ref index);
-                SkipTrivia(text, ref index);
-                if (index >= text.Length) { children.Add((key, "", null)); return new VdfLike(null, children); }
-                if (text[index] == '{') { index++; children.Add((key, null, ParseBlock(text, ref index, depth + 1))); continue; }
-                children.Add((key, ParseToken(text, ref index), null));
-            }
-        }
-
-        private static void SkipTrivia(string text, ref int index)
-        {
-            while (index < text.Length)
-            {
-                if (char.IsWhiteSpace(text[index])) { index++; continue; }
-                if (text[index] == '/' && index + 1 < text.Length && text[index + 1] == '/')
-                {
-                    while (index < text.Length && text[index] != '\n') index++;
-                    continue;
-                }
-                break;
-            }
-        }
-
-        private static string ParseToken(string text, ref int index)
-        {
-            SkipTrivia(text, ref index);
-            if (index >= text.Length) throw new InvalidDataException("Fin inesperado.");
-            if (text[index] != '"') throw new InvalidDataException("Se esperaba una cadena entre comillas.");
-            index++;
-            var start = index;
-            while (index < text.Length && text[index] != '"')
-            {
-                if (text[index] == '\\' && index + 1 < text.Length) index += 2;
-                else index++;
-            }
-            if (index >= text.Length) throw new InvalidDataException("Cadena sin cerrar.");
-            var raw = text[start..index];
-            index++;
-            return raw;
-        }
-    }
 }
