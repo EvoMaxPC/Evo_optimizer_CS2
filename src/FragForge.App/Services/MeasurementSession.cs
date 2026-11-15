@@ -35,8 +35,8 @@ public sealed class MeasurementSession(Dispatcher dispatcher) : IMeasurementSess
 
     private sealed class Prompt(Dispatcher dispatcher, Action<string, bool> output) : IConsolePrompt
     {
-        public void WriteLine(string text) => output(text, false);
-        public void WriteWarning(string text) => output(text, true);
+        public void WriteLine(string text) => dispatcher.Invoke(() => output(text, false));
+        public void WriteWarning(string text) => dispatcher.Invoke(() => output(text, true));
         public string? Ask(string question) => null;
         public bool? Confirm(string question) => dispatcher.Invoke(() =>
             MessageBox.Show(Application.Current.MainWindow, question, "FragForge", MessageBoxButton.YesNo,

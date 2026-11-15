@@ -5,7 +5,7 @@ namespace FragForge.Cli;
 /// tocar <see cref="Console"/>, que es estado global del proceso y en xUnit se comparte entre tests.
 /// </summary>
 /// <remarks>
-/// Vive en FragForge.Cli y no en Core/Abstractions a propósito: no es un contrato del motor, es una
+/// Vive en la biblioteca de medición y no en Core/Abstractions a propósito: no es un contrato del motor, es una
 /// necesidad de la capa de presentación, y añadirla a Abstractions habría cambiado interfaces que esta
 /// ronda no debe tocar.
 /// </remarks>
