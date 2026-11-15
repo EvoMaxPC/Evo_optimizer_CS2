@@ -4,17 +4,14 @@ using FragForge.Core.Models;
 
 namespace FragForge.Cli;
 
-// All operating-system and console access is supplied by the caller. A null identity result is unknown.
-public sealed record CloseIdentity(string? Name, long? Pid, DateTimeOffset? StartTime);
-public interface ICloseIdentityReader
-{
-    Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken);
-}
+public sealed record CloseIdentity(string? Name, long? Pid, DateTimeOffset? StartTime, long? ParentPid = null);
+public interface ICloseIdentityReader { Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken); }
 public interface ICloseProcess : IDisposable
 {
     string? Name { get; }
     long? Pid { get; }
     DateTimeOffset? StartTime { get; }
+    bool HasExited { get; }
     bool CloseMainWindow();
     Task<bool> WaitForExitAsync(TimeSpan timeout, CancellationToken cancellationToken);
     void Kill();
@@ -38,77 +35,106 @@ public sealed class MemoryCloseLogic(
     ICloseConsole console,
     Func<DateTimeOffset> clock,
     long ownPid,
-    Func<string, CancellationToken, Task>? beforeActions = null)
+    Func<string, CancellationToken, Task> writeLine)
 {
-    private static readonly string[] BrowserNames = ["firefox", "chrome", "msedge", "brave", "opera"];
-    private static readonly string[] ServerNames = ["VBCSCompiler", "MSBuild", "dotnet"];
-    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan MeasureDelay = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan ServerTimeout = TimeSpan.FromSeconds(30);
-    private const string ShutdownOption = "apagar servidores de compilación de .NET";
-    private const string Footer = "La memoria libre puede volver a bajar. Esto no es una promesa de FPS.";
+    private static readonly string[] Browsers = ["firefox", "chrome", "msedge", "brave", "opera"];
+    private static readonly string[] Terminals = ["dotnet", "powershell", "pwsh", "conhost", "WindowsTerminal", "cmd"];
+    private sealed class LogFailure(Exception inner) : Exception("No se pudo escribir el registro.", inner);
+    private sealed class AncestorFailure : Exception { }
+
+    // Incluye el padre aunque haya desaparecido; al agotar el límite se falla de forma conservadora.
+    public static bool TryAncestors(IReadOnlyList<CloseIdentity>? rows, long ownPid, out IReadOnlyDictionary<long, string> result)
+    {
+        var found = new Dictionary<long, string>();
+        result = found;
+        if (rows is null || rows.Count(x => x.Pid == ownPid) != 1) return false;
+        long pid = ownPid;
+        for (var depth = 0; depth <= 32; depth++)
+        {
+            if (found.ContainsKey(pid)) return true;
+            var matches = rows.Where(x => x.Pid == pid).ToArray();
+            if (matches.Length > 1) return false;
+            found[pid] = matches.Length == 0 ? "no se sabe" : matches[0].Name ?? "no se sabe";
+            if (matches.Length == 0) return true;
+            if (matches[0].ParentPid is not long parent || parent < 0) return false;
+            if (parent == 0 || found.ContainsKey(parent)) return true;
+            if (depth == 32) return false;
+            pid = parent;
+        }
+        return false;
+    }
 
     public async Task<MemoryCloseResult> RunAsync(string[] args, CancellationToken cancellationToken = default)
     {
+        _ = shutdownServers; // La opción no puede excluir los ancestros.
         var log = new StringBuilder();
-        void Record(string text) => log.AppendLine(text);
-        async Task Say(string text) { Record(text); await console.WriteLineAsync(text); }
+        async Task Record(string text)
+        {
+            log.AppendLine(text);
+            try { await writeLine(text, cancellationToken); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { throw new LogFailure(ex); }
+        }
+        async Task Say(string text) { await Record(text); await console.WriteLineAsync(text); }
+        async Task<string?> Answer(string label)
+        {
+            var answer = await console.ReadLineAsync();
+            await Record(label + ": " + (answer ?? "(fin de entrada)"));
+            return answer;
+        }
         MemoryCloseResult Result(int code) => new(code, log.ToString());
-        if (!MemoryCommands.TryParseTop(args, out var top)) { await Say("Uso: fragforge memoria cerrar [--top N], N entre 1 y 200."); return Result(2); }
-        if (console.IsInputRedirected) { await Say("Entrada redirigida: se requiere una consola interactiva."); return Result(2); }
+        var excluded = new Dictionary<long, string>();
+        async Task<IReadOnlyList<CloseIdentity>> RefreshAncestors()
+        {
+            IReadOnlyList<CloseIdentity>? rows;
+            try { rows = await identities.ReadAsync(cancellationToken); }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception) { throw new AncestorFailure(); }
+            if (!TryAncestors(rows, ownPid, out var chain)) throw new AncestorFailure();
+            foreach (var pair in chain) excluded[pair.Key] = pair.Value;
+            return rows!;
+        }
+        async Task<bool> Excluded(long pid) { await RefreshAncestors(); return excluded.ContainsKey(pid); }
         try
         {
-            Record("Hora: " + clock().ToString("O", CultureInfo.InvariantCulture));
+            await Record("Hora: " + clock().ToString("O", CultureInfo.InvariantCulture));
+            if (!MemoryCommands.TryParseTop(args, out var top)) { await Say("Uso: fragforge memoria cerrar [--top N], N entre 1 y 200."); return Result(2); }
+            if (console.IsInputRedirected) { await Say("Entrada redirigida: se requiere una consola interactiva."); return Result(2); }
             var view = await snapshot(cancellationToken);
-            var initial = await identities.ReadAsync(cancellationToken);
-            if (initial is null) { await Say("Identidades desconocidas; no se puede seleccionar procesos."); return Result(1); }
-            var ownNames = initial.Where(x => x.Pid == ownPid).Select(x => ProtectedProcesses.Normalize(x.Name)).Where(x => x.Length > 0).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (ownNames.Count == 0) { await Say("Nombre del proceso propio desconocido; no se puede seleccionar procesos."); return Result(1); }
-            var groups = view.Processes.Where(g => g.Classification != "protegido" &&
-                ProtectedProcesses.Classify(g.Name, 5).Classification != "protegido" && !ownNames.Contains(ProtectedProcesses.Normalize(g.Name)))
-                .OrderByDescending(g => g.WorkingSetMb.HasValue).ThenByDescending(g => g.WorkingSetMb)
-                .ThenBy(g => g.Name, StringComparer.OrdinalIgnoreCase).Take(top).ToArray();
-            await Say("El PID padre no está en el snapshot de M-1; solo se excluye el propio PID.");
+            await RefreshAncestors();
+            if (view.ProcessRows is null) throw new AncestorFailure();
+            await Say("PID propios y ancestros excluidos: " + string.Join(", ", excluded.Select(x => x.Key.ToString(CultureInfo.InvariantCulture) + " (" + x.Value + ")")));
+            var eligible = view.ProcessRows.Where(row => row.ProcessId.HasValue && !excluded.ContainsKey(row.ProcessId.Value) && ProtectedProcesses.Classify(row.Name, row.ProcessId).Classification != "protegido").ToArray();
+            var groups = ProcessMemoryGrouping.Group(eligible).Where(g => g.Classification != "protegido").Take(top).ToArray();
             await Say("MB estimados: las páginas compartidas pueden contarse de más.");
             for (var i = 0; i < groups.Length; i++)
                 await Say($"{i + 1}: {groups[i].Name} / {groups[i].Instances.ToString(CultureInfo.InvariantCulture)} instancias / {Format(groups[i].WorkingSetMb)} MB estimados");
-            bool offerServers = view.Processes.Any(g => ServerNames.Contains(ProtectedProcesses.Normalize(g.Name), StringComparer.OrdinalIgnoreCase));
-            if (offerServers) await Say($"{groups.Length + 1}: {ShutdownOption}");
             await Say("Números a cerrar (ej: 1,3) o Enter para salir:");
-            var input = await console.ReadLineAsync();
+            var input = await Answer("Selección ingresada");
             if (string.IsNullOrEmpty(input)) return Result(0);
-            if (!ParseSelection(input, groups.Length + (offerServers ? 1 : 0), out var selected))
-            { await Say("Selección inválida; no se cerró nada."); return Result(2); }
-            var chosen = selected.Where(i => i <= groups.Length).Select(i => groups[i - 1]).ToArray();
-            bool shutdown = offerServers && selected.Contains(groups.Length + 1);
-            // Layer a: capture identities for the selected groups before confirmation.
-            IReadOnlyList<CloseIdentity>? before;
-            try { before = await identities.ReadAsync(cancellationToken); }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception) { before = null; }
+            if (!ParseSelection(input, groups.Length, out var selection)) { await Say("Selección inválida; no se cerró nada."); return Result(2); }
+            var chosen = selection.Select(i => groups[i - 1]).ToArray();
+            var before = await RefreshAncestors();
             var captured = new List<CloseIdentity>();
-            var capturedPids = new HashSet<long>();
             foreach (var group in chosen)
             {
-                var matches = before?.Where(x => SameName(x.Name, group.Name)).ToArray();
-                if (matches is null || matches.Length == 0) { await Say($"{group.Name}: identidad desconocida; omitido."); continue; }
-                foreach (var item in matches)
+                foreach (var row in eligible.Where(x => SameName(x.Name, group.Name)))
                 {
-                    if (!Allowed(item) || item.Pid == ownPid || !capturedPids.Add(item.Pid!.Value)) { await Say($"{group.Name}: identidad desconocida, duplicada o protegida; omitido."); continue; }
-                    captured.Add(item);
-                    Record($"Identidad seleccionada: {item.Name} PID {item.Pid} inicio {item.StartTime:O}");
+                    var id = before.SingleOrDefault(x => x.Pid == row.ProcessId);
+                    if (excluded.ContainsKey(row.ProcessId!.Value)) { await Say($"{group.Name} PID {row.ProcessId}: ancestro excluido; omitido."); continue; }
+                    if (id is null || !Allowed(id) || !SameName(id.Name, row.Name))
+                    { await Say($"{group.Name}: identidad desconocida, duplicada o protegida; omitido."); continue; }
+                    captured.Add(id);
+                    await Say($"Identidad seleccionada: {id.Name} PID {id.Pid} inicio {id.StartTime:O} / {Format(row.WorkingSetMb)} MB estimados");
                 }
             }
-            await Say("Selección: " + string.Join(", ", chosen.Select(g => g.Name).Concat(shutdown ? [ShutdownOption] : Array.Empty<string>())));
-            if (chosen.Any(g => BrowserNames.Contains(ProtectedProcesses.Normalize(g.Name), StringComparer.OrdinalIgnoreCase)))
-                await Say("Se pueden perder pestañas o formularios sin guardar.");
+            await Say("Selección: " + string.Join(", ", chosen.Select(g => g.Name)));
+            if (chosen.Any(g => Browsers.Contains(ProtectedProcesses.Normalize(g.Name), StringComparer.OrdinalIgnoreCase))) await Say("Se pueden perder pestañas o formularios sin guardar.");
+            if (chosen.Any(g => Terminals.Contains(ProtectedProcesses.Normalize(g.Name), StringComparer.OrdinalIgnoreCase))) await Say("Puede cerrar terminales, compilaciones o programas .NET que estés usando.");
             await Say("¿Confirmar? [s/N]");
-            if (!IsYes(await console.ReadLineAsync())) return Result(0);
-            // The real command must persist its initial record before any process action.
-            if (beforeActions is not null) await beforeActions(log.ToString(), cancellationToken);
-            var memoryBefore = await availableMemory(cancellationToken);
-            await Say("Disponible antes (MB): " + Format(memoryBefore));
-            bool actionFailed = false;
+            if (!IsYes(await Answer("Respuesta de confirmación"))) return Result(0);
+            var beforeMemory = await availableMemory(cancellationToken);
+            await Say("Disponible antes (MB): " + Format(beforeMemory));
+            bool failed = false;
             foreach (var group in chosen)
             {
                 var pending = new List<(CloseIdentity Identity, ICloseProcess Process)>();
@@ -119,70 +145,77 @@ public sealed class MemoryCloseLogic(
                         ICloseProcess? process = null;
                         try
                         {
-                            // Layer b: query again before opening anything.
-                            var now = await identities.ReadAsync(cancellationToken);
-                            var current = now?.SingleOrDefault(x => x.Pid == id.Pid);
-                            if (!SameIdentity(id, current) || !Allowed(current) || current!.Pid == ownPid)
-                            { await Say($"{group.Name} PID {id.Pid}: identidad cambiada o desconocida; omitido."); continue; }
-                            process = opener.Open(id.Pid!.Value);
-                            // Layer c: verify the identity from the obtained object before any action.
-                            if (!MatchesHandle(id, process)) { await Say($"{group.Name} PID {id.Pid}: identidad del objeto distinta o protegida; omitido."); continue; }
-                            try
-                            {
-                                if (process.CloseMainWindow() && await process.WaitForExitAsync(CloseTimeout, cancellationToken))
-                                    await Say($"{group.Name} PID {id.Pid}: cierre amable completado.");
-                                else
-                                {
-                                    await Say($"{group.Name} PID {id.Pid}: sin ventana o no cerró; pendiente de confirmación.");
-                                    pending.Add((id, process));
-                                    process = null;
-                                }
-                            }
+                            var now = await RefreshAncestors();
+                            var current = now.SingleOrDefault(x => x.Pid == id.Pid);
+                            if (excluded.ContainsKey(id.Pid!.Value)) { await Say($"{group.Name} PID {id.Pid}: ancestro excluido; omitido."); continue; }
+                            if (!SameIdentity(id, current)) { await Say($"{group.Name} PID {id.Pid}: identidad cambiada o desconocida; omitido."); continue; }
+                            process = opener.Open(id.Pid.Value);
+                            if (await Excluded(id.Pid.Value) || !MatchesHandle(id, process)) { await Say($"{group.Name} PID {id.Pid}: identidad del objeto distinta o protegida; omitido."); continue; }
+                            await Record($"Intención cierre amable: {id.Name} PID {id.Pid} inicio {id.StartTime:O}");
+                            if (await Excluded(id.Pid.Value) || !MatchesHandle(id, process)) { await Say($"{group.Name} PID {id.Pid}: identidad cambiada o ancestro; omitido."); continue; }
+                            bool closed;
+                            try { closed = process.CloseMainWindow() && await process.WaitForExitAsync(TimeSpan.FromSeconds(10), cancellationToken); }
                             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                            catch (Exception) { actionFailed = true; await Say($"{group.Name} PID {id.Pid}: error en cierre amable."); }
+                            catch (Exception) { failed = true; await Say($"{group.Name} PID {id.Pid}: error en cierre amable."); continue; }
+                            if (closed) await Say($"{group.Name} PID {id.Pid}: cierre amable completado.");
+                            else
+                            {
+                                await Say($"{group.Name} PID {id.Pid}: sin ventana o no cerró; pendiente de confirmación.");
+                                pending.Add((id, process)); process = null;
+                            }
                         }
+                        catch (LogFailure) { throw; }
+                        catch (AncestorFailure) { throw; }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-                        // Layer e: all verification/open/action exceptions fail closed.
                         catch (Exception) { await Say($"{group.Name} PID {id.Pid}: no se pudo verificar o cerrar; omitido."); }
                         finally { process?.Dispose(); }
                     }
-                    if (pending.Count > 0)
+                    var alive = new List<(CloseIdentity Identity, ICloseProcess Process)>();
+                    foreach (var item in pending)
                     {
-                        await Say($"¿Forzar el cierre de {group.Name}? [s/N]");
-                        if (IsYes(await console.ReadLineAsync()))
-                            foreach (var (id, process) in pending)
-                            {
-                                try
-                                {
-                                    // Layer d: repeat object verification immediately before each Kill.
-                                    if (!MatchesHandle(id, process)) { await Say($"{group.Name} PID {id.Pid}: identidad cambiada; omitido."); continue; }
-                                    try { process.Kill(); await Say($"{group.Name} PID {id.Pid}: cierre forzado solicitado."); }
-                                    catch (Exception) { actionFailed = true; await Say($"{group.Name} PID {id.Pid}: error en cierre forzado."); }
-                                }
-                                catch (Exception) { await Say($"{group.Name} PID {id.Pid}: no se pudo verificar o forzar; omitido."); }
-                            }
-                        else foreach (var (id, _) in pending) await Say($"{group.Name} PID {id.Pid}: cierre forzado no confirmado.");
+                        try
+                        {
+                            if (item.Process.HasExited) { await Say($"{group.Name} PID {item.Identity.Pid}: ya terminó."); continue; }
+                            if (await Excluded(item.Identity.Pid!.Value)) { await Say($"{group.Name} PID {item.Identity.Pid}: ancestro excluido; omitido."); continue; }
+                            if (!MatchesHandle(item.Identity, item.Process)) { await Say($"{group.Name} PID {item.Identity.Pid}: identidad cambiada; omitido."); continue; }
+                            alive.Add(item); await Say($"Pendiente: {item.Identity.Name} PID {item.Identity.Pid}");
+                        }
+                        catch (LogFailure) { throw; }
+                        catch (AncestorFailure) { throw; }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                        catch (Exception) { await Say($"{group.Name} PID {item.Identity.Pid}: no se pudo verificar; omitido."); }
+                    }
+                    if (alive.Count == 0) continue;
+                    await Say($"¿Forzar el cierre de {alive.Count.ToString(CultureInfo.InvariantCulture)} proceso(s) de {group.Name}? [s/N]");
+                    if (!IsYes(await Answer("Respuesta de cierre forzado"))) { foreach (var item in alive) await Say($"{group.Name} PID {item.Identity.Pid}: cierre forzado no confirmado."); continue; }
+                    foreach (var (id, process) in alive)
+                    {
+                        try
+                        {
+                            if (await Excluded(id.Pid!.Value) || !MatchesHandle(id, process) || process.HasExited) { await Say($"{group.Name} PID {id.Pid}: identidad cambiada o ancestro; omitido."); continue; }
+                            await Record($"Intención cierre forzado: {id.Name} PID {id.Pid} inicio {id.StartTime:O}");
+                            if (await Excluded(id.Pid.Value) || !MatchesHandle(id, process) || process.HasExited) { await Say($"{group.Name} PID {id.Pid}: identidad cambiada o ancestro; omitido."); continue; }
+                            process.Kill(); await Say($"{group.Name} PID {id.Pid}: cierre forzado solicitado.");
+                        }
+                        catch (LogFailure) { throw; }
+                        catch (AncestorFailure) { throw; }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                        catch (Exception) { failed = true; await Say($"{group.Name} PID {id.Pid}: no se pudo verificar o forzar; omitido."); }
                     }
                 }
                 finally { foreach (var item in pending) item.Process.Dispose(); }
             }
-            bool serverFailed = false;
-            if (shutdown)
-            {
-                var success = await shutdownServers(["build-server", "shutdown"], ServerTimeout, cancellationToken);
-                serverFailed = !success;
-                await Say(success ? "Servidores de compilación: apagado solicitado." : "Servidores de compilación: no se pudo completar el apagado.");
-            }
-            await delay(MeasureDelay, cancellationToken);
-            var memoryAfter = await availableMemory(cancellationToken);
-            await Say("Disponible después (MB): " + Format(memoryAfter));
-            await Say("Delta disponible (MB): " + Format(memoryBefore.HasValue && memoryAfter.HasValue ? memoryAfter.Value - memoryBefore.Value : null));
-            await Say(Footer);
-            return Result(serverFailed || actionFailed ? 1 : 0);
+            await delay(TimeSpan.FromSeconds(3), cancellationToken);
+            var after = await availableMemory(cancellationToken);
+            await Say("Disponible después (MB): " + Format(after));
+            await Say("Delta disponible (MB): " + Format(beforeMemory.HasValue && after.HasValue ? after.Value - beforeMemory.Value : null));
+            await Say("La memoria libre puede volver a bajar. Esto no es una promesa de FPS.");
+            return Result(failed ? 1 : 0);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        { Record("Operación cancelada; el estado puede ser desconocido."); return Result(1); }
-        catch (Exception) { await Say("Error: no se pudo completar la operación; el estado puede ser desconocido."); return Result(1); }
+        catch (LogFailure) { await console.WriteLineAsync("Aviso: no se pudo escribir el registro; no se realizó la siguiente acción."); return Result(1); }
+        catch (AncestorFailure) { await console.WriteLineAsync("No se pudo resolver la cadena de ancestros; no se ofrecerán más cierres."); try { await Record("No se pudo resolver la cadena de ancestros; no se ofrecerán más cierres."); } catch (LogFailure) { } return Result(1); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { log.AppendLine("Operación cancelada; el estado puede ser desconocido."); return Result(1); }
+        catch (Exception) { try { await Say("No se pudo completar la operación; no se sabe el estado."); } catch (LogFailure) { await console.WriteLineAsync("Aviso: no se pudo escribir el registro."); } return Result(1); }
     }
 
     private static bool ParseSelection(string text, int max, out int[] selected)
@@ -190,9 +223,7 @@ public sealed class MemoryCloseLogic(
         var result = new List<int>();
         foreach (var part in text.Split(','))
         {
-            if (part.Length == 0 || !part.All(c => c is >= '0' and <= '9') ||
-                !int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value < 1 || value > max || result.Contains(value))
-            { selected = []; return false; }
+            if (part.Length == 0 || !part.All(c => c is >= '0' and <= '9') || !int.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out int value) || value < 1 || value > max || result.Contains(value)) { selected = []; return false; }
             result.Add(value);
         }
         selected = result.ToArray(); return true;
@@ -200,9 +231,7 @@ public sealed class MemoryCloseLogic(
     private static bool IsYes(string? answer) => string.Equals(answer, "s", StringComparison.OrdinalIgnoreCase);
     private static string Format(double? value) => value?.ToString("0.0", CultureInfo.InvariantCulture) ?? "no se sabe";
     private static bool SameName(string? a, string? b) => string.Equals(ProtectedProcesses.Normalize(a), ProtectedProcesses.Normalize(b), StringComparison.OrdinalIgnoreCase);
-    private static bool Allowed(CloseIdentity? id) => id is not null && id.StartTime.HasValue && id.Pid.HasValue &&
-        ProtectedProcesses.Classify(id.Name, id.Pid).Classification != "protegido";
-    private static bool SameIdentity(CloseIdentity? a, CloseIdentity? b) => Allowed(a) && Allowed(b) &&
-        a!.Pid == b!.Pid && a.StartTime == b.StartTime && SameName(a.Name, b.Name);
+    private static bool Allowed(CloseIdentity? id) => id is not null && id.StartTime.HasValue && id.Pid.HasValue && ProtectedProcesses.Classify(id.Name, id.Pid).Classification != "protegido";
+    private static bool SameIdentity(CloseIdentity? a, CloseIdentity? b) => Allowed(a) && Allowed(b) && a!.Pid == b!.Pid && a.StartTime == b.StartTime && SameName(a.Name, b.Name);
     private static bool MatchesHandle(CloseIdentity id, ICloseProcess process) => SameIdentity(id, new CloseIdentity(process.Name, process.Pid, process.StartTime));
 }
