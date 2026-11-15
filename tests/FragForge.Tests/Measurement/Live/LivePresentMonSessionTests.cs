@@ -28,12 +28,18 @@ public sealed class LivePresentMonSessionTests
         public readonly FakeReader Reader = new();
         private readonly TaskCompletionSource<int> _exit = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Kills;
+        public Exception? KillException;
         public string Error = "";
         public TextReader StandardOutput => Reader;
         public Task<string> ReadStandardErrorAsync() => Task.FromResult(Error);
         public Task<int> WaitForExitAsync(CancellationToken token) => _exit.Task.WaitAsync(token);
         public void End(int code) { Reader.End(); _exit.TrySetResult(code); }
-        public void Kill() { Interlocked.Increment(ref Kills); End(1); }
+        public void Kill()
+        {
+            Interlocked.Increment(ref Kills);
+            if (KillException is not null) throw KillException;
+            End(1);
+        }
         public void Dispose() { }
     }
 
@@ -169,7 +175,8 @@ public sealed class LivePresentMonSessionTests
     {
         long now = 0;
         var p = new FakeProcess(); var l = new FakeLauncher(p);
-        await using var s = Create(l, clock: () => Interlocked.Read(ref now));
+        await using var s = Create(l, options: new LiveSessionOptions { StallGrace = LiveSessionOptions.DefaultStallGrace },
+            clock: () => Interlocked.Read(ref now));
         await s.StartAsync(); p.Reader.Send(Header + Row);
         await Until(() => s.State == LiveSessionState.Running);
         var grace = (long)LiveSessionOptions.DefaultStallGrace.TotalMilliseconds;
@@ -181,6 +188,110 @@ public sealed class LivePresentMonSessionTests
         Assert.Equal(1, p.Kills);
         await s.StopAsync();
         Assert.Equal(LiveSessionState.Stalled, s.State);
+    }
+
+    [Fact]
+    public async Task NoStallGrace_DoesNotStopLongMatch()
+    {
+        long now = 1000;
+        var p = new FakeProcess(); var l = new FakeLauncher(p);
+        await using var s = Create(l, clock: () => Interlocked.Read(ref now));
+        await s.StartAsync(); p.Reader.Send(Header + Row);
+        await Until(() => s.State == LiveSessionState.Running);
+        // Por defecto null: aunque pasen 10.000.000 - 1.000 = 9.999.000 ms,
+        // no hay transición a Stalled y no se llama a Kill.
+        Interlocked.Exchange(ref now, 10_000_000);
+        s.CheckStall();
+        Assert.Equal(LiveSessionState.Running, s.State);
+        Assert.Equal(0, p.Kills);
+    }
+
+    [Fact]
+    public async Task SecondsSinceLastFrame_ReportsUnknownThenElapsed()
+    {
+        long now = 1000;
+        var p = new FakeProcess(); var l = new FakeLauncher(p);
+        await using var s = Create(l, clock: () => Interlocked.Read(ref now));
+        await s.StartAsync();
+        // Sin frames todavía, no se conoce el tiempo transcurrido.
+        Assert.Null(s.SecondsSinceLastFrame());
+        p.Reader.Send(Header + Row);
+        await Until(() => s.State == LiveSessionState.Running);
+        Interlocked.Exchange(ref now, 3500);
+        // (3500 - 1000) / 1000.0 = 2.5 segundos.
+        Assert.Equal(2.5, s.SecondsSinceLastFrame()!.Value, 1e-9);
+    }
+
+    [Fact]
+    public async Task Stop_KillDenied_ReportsErrorWithoutThrowing()
+    {
+        var p = new FakeProcess { KillException = new System.ComponentModel.Win32Exception("denegado") };
+        var l = new FakeLauncher(p);
+        await using var s = Create(l);
+        await s.StartAsync();
+        var stop = s.StopAsync();
+        await Until(() => s.KillError is not null);
+        // El proceso falso no termina al fallar Kill: cerramos su stream manualmente.
+        p.End(0);
+        await stop;
+        // Una solicitud de parada produce un intento; la excepción no altera Stopped.
+        Assert.Equal(LiveSessionState.Stopped, s.State);
+        Assert.Contains("denegado", s.KillError!);
+        Assert.Equal(1, p.Kills);
+    }
+
+    [Fact]
+    public async Task Completed_KillDenied_ReportsErrorAndKeepsCompleted()
+    {
+        var p = new FakeProcess { KillException = new System.ComponentModel.Win32Exception("denegado") };
+        var l = new FakeLauncher(p);
+        await using var s = Create(l, options: new LiveSessionOptions { DurationSeconds = 1 });
+        await s.StartAsync();
+        // t=0 se acepta; t=1000 alcanza el límite de 1000 ms y completa.
+        p.Reader.Send(Header + Row + "cs2.exe,0x0,1000,10\r\n");
+        await Until(() => s.KillError is not null);
+        Assert.Equal(LiveSessionState.Completed, s.State);
+        Assert.Contains("denegado", s.KillError!);
+        Assert.Equal(1, p.Kills);
+        p.End(0);
+        await s.StopAsync();
+    }
+
+    [Fact]
+    public async Task Stall_KillDenied_ReportsErrorAndKeepsStalled()
+    {
+        long now = 0;
+        var p = new FakeProcess { KillException = new System.ComponentModel.Win32Exception("denegado") };
+        var l = new FakeLauncher(p);
+        await using var s = Create(l, options: new LiveSessionOptions { StallGrace = TimeSpan.FromSeconds(30) },
+            clock: () => Interlocked.Read(ref now));
+        await s.StartAsync(); p.Reader.Send(Header + Row);
+        await Until(() => s.State == LiveSessionState.Running);
+        // 30001 - 0 = 30001 ms > 30000 ms: Stalled y un intento de Kill.
+        Interlocked.Exchange(ref now, 30001);
+        s.CheckStall();
+        Assert.Equal(LiveSessionState.Stalled, s.State);
+        Assert.Contains("denegado", s.KillError!);
+        Assert.Equal(1, p.Kills);
+        p.End(0);
+        await s.StopAsync();
+    }
+
+    [Fact]
+    public async Task Stop_AlreadyExitedException_IsSilent()
+    {
+        var p = new FakeProcess { KillException = new InvalidOperationException("ya terminó") };
+        var l = new FakeLauncher(p);
+        await using var s = Create(l);
+        await s.StartAsync();
+        var stop = s.StopAsync();
+        await Until(() => Volatile.Read(ref p.Kills) == 1);
+        p.End(0);
+        await stop;
+        // Un intento que indica proceso ya terminado no produce KillError.
+        Assert.Equal(1, p.Kills);
+        Assert.Equal(LiveSessionState.Stopped, s.State);
+        Assert.Null(s.KillError);
     }
 
     [Fact]
