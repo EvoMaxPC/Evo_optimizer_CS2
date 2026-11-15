@@ -15,6 +15,8 @@ public sealed record SwapChainSummary(string Address, int FrameCount, double? Me
 /// </summary>
 public sealed record FrameSeries
 {
+    /// <summary>Filas truncadas o con tiempo o frametime no parseables en el CSV.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public int MalformedLines { get; init; }
     public IReadOnlyList<double> FrameTimesMs { get; init; } = [];
     public IReadOnlyList<double?> CpuBusyMs { get; init; } = [];
     public IReadOnlyList<double?> GpuBusyMs { get; init; } = [];

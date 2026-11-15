@@ -26,6 +26,22 @@ public sealed class CsvParserTests
         cs2.exe,4242,0x1,DXGI,1,0,1,Independent Flip,5.000,3.950,2.200,1.000,5.050,0.000,9.100
         """;
 
+    [Fact]
+    public void NonFiniteAndInvalidNumbers_AreMalformed_WhileNaTimeIsNull()
+    {
+        const string csv = "Application,TimeInMs,MsBetweenPresents,MsCPUBusy\n" +
+            "cs2.exe,NaN,10,2\ncs2.exe,Infinity,10,2\ncs2.exe,-Infinity,10,2\n" +
+            "cs2.exe,1,NaN,2\ncs2.exe,1,Infinity,2\ncs2.exe,1,-Infinity,2\n" +
+            "cs2.exe,bad,10,2\ncs2.exe,1,bad,2\ncs2.exe,1,NA,2\n" +
+            "cs2.exe,NA,12.5,NA\ncs2.exe,1e2,1.5e1,3\n";
+        var series = PresentMonCsvParser.Parse(new StringReader(csv));
+        // 6 no finitas + 2 texto inválido = 8 malformadas; NA principal excluido; quedan 2 frames.
+        Assert.Equal(8, series.MalformedLines);
+        Assert.Equal([12.5, 15.0], series.FrameTimesMs);
+        Assert.Equal([null, 100.0], series.TimesMs);
+        Assert.Equal([null, 3.0], series.CpuBusyMs);
+    }
+
     // ---------------------------------------------------------------- contrato 2.6.0 (una swapchain)
 
     [Fact]

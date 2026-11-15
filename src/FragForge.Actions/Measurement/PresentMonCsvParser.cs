@@ -100,14 +100,22 @@ public static class PresentMonCsvParser
         var perSwapChain = new Dictionary<string, SwapChainRows>(StringComparer.OrdinalIgnoreCase);
         var application = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
+        var malformed = 0;
         string? line;
         while ((line = reader.ReadLine()) is not null)
         {
             if (line.Length == 0) continue;
             var cells = SplitCsvLine(line);
             // Fila truncada: sin la celda de frametime no hay dato, se descarta entera.
-            if (cells.Length <= frameTimeIndex) continue;
-            if (!TryParseDouble(cells[frameTimeIndex], out var frameTime) || frameTime <= 0) continue;
+            if (cells.Length <= frameTimeIndex) { malformed++; continue; }
+            if (idx.Time >= 0 && idx.Time < cells.Length && !IsMissingNumber(cells[idx.Time])
+                && !TryParseDouble(cells[idx.Time], out _)) { malformed++; continue; }
+            if (!TryParseDouble(cells[frameTimeIndex], out var frameTime))
+            {
+                if (!IsMissingNumber(cells[frameTimeIndex])) malformed++;
+                continue;
+            }
+            if (frameTime <= 0) continue;
 
             var swapChain = idx.ReadString(cells, idx.SwapChain) ?? string.Empty;
             if (!perSwapChain.TryGetValue(swapChain, out var rows))
@@ -170,6 +178,7 @@ public static class PresentMonCsvParser
 
         return new FrameSeries
         {
+            MalformedLines = malformed,
             FrameTimesMs = series.FrameTimes,
             CpuBusyMs = series.CpuBusy,
             CpuWaitMs = series.CpuWait,
@@ -375,9 +384,11 @@ public static class PresentMonCsvParser
         return result.ToArray();
     }
 
+    private static bool IsMissingNumber(string raw) =>
+        string.IsNullOrWhiteSpace(raw) || raw.Trim().Equals(NaMarker, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
-    /// Parsea un número del CSV. "NA" y vacío devuelven false (⇒ null aguas arriba), nunca 0.
-    /// InvariantCulture es obligatorio: la captura real usa punto decimal.
+    /// Parsea un número finito del CSV con cultura invariante; NA y vacío no son números.
     /// </summary>
     internal static bool TryParseDouble(string raw, out double value)
     {
@@ -387,6 +398,6 @@ public static class PresentMonCsvParser
             value = 0;
             return false;
         }
-        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        return double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value);
     }
 }
