@@ -1,4 +1,3 @@
-using System.Reflection;
 using FragForge.Cli;
 using Xunit;
 
@@ -6,10 +5,9 @@ namespace FragForge.Tests.Cli;
 
 public sealed class ConsoleKeyReaderTests
 {
-    // CLI no expone sus internos a tests; se inyectan los delegados sin tocar la consola real.
+    // Se inyectan los delegados sin tocar la consola real.
     private static ConsoleKeyReader Create(Func<bool> redirected, Func<bool> available, Func<ConsoleKey> read) =>
-        (ConsoleKeyReader)Activator.CreateInstance(typeof(ConsoleKeyReader), BindingFlags.Instance | BindingFlags.NonPublic,
-            binder: null, args: new object[] { redirected, available, read }, culture: null)!;
+        new(redirected, available, read);
 
     [Fact]
     public void Redirected_NeverReadsKeys()

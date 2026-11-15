@@ -18,7 +18,7 @@ public sealed class ConsoleKeyReader : IConsoleKeyReader
     public ConsoleKeyReader() : this(() => Console.IsInputRedirected, () => Console.KeyAvailable,
         () => Console.ReadKey(intercept: true).Key) { }
 
-    internal ConsoleKeyReader(Func<bool> isRedirected, Func<bool> keyAvailable, Func<ConsoleKey> readKey)
+    public ConsoleKeyReader(Func<bool> isRedirected, Func<bool> keyAvailable, Func<ConsoleKey> readKey)
     {
         _isRedirected = isRedirected;
         _keyAvailable = keyAvailable;
