@@ -11,8 +11,8 @@ en `docs/handoff/FragForge-Capa10-Informe.md`.
 
 ## 1. El principio, escrito
 
-FragForge **no inyecta**. No abre handles a `cs2.exe`. No modifica archivos del juego. No toca Steam ni
-procesos de anticheat. No lee memoria de ningún proceso del juego.
+FragForge **no inyecta** ni lee memoria de procesos del juego. No modifica archivos del juego. El cierre
+confirmado excluye CS2, Steam y anticheat; sobre la carrera de apertura de handles, ver M-2.
 
 Ese principio no es una promesa de marketing: es la restricción de diseño de todo el código. Las acciones
 que existen son de sistema operativo (registro, servicios, tareas programadas, BCD, planes de energía,
@@ -32,6 +32,8 @@ El texto que la app muestra (y que ningún tweak puede contradecir) es:
 > de anticheat. Los requisitos de cada anticheat (VAC, FACEIT, etc.) los define su proveedor: revisa los
 > requisitos del proveedor. Esta app no afirma compatibilidad con ninguno.
 
+La frase sobre handles de ese texto es absoluta; para `memoria cerrar` no puede garantizarse por la carrera descrita en M-2.
+
 **Lo que este documento NO afirma, a propósito:** que FragForge sea "seguro con VAC", "compatible con
 FACEIT" ni "detectable/no detectable". No hay fuente que lo respalde, y una app que promete eso está
 mintiendo. Los requisitos los define cada proveedor y cambian sin avisar.
@@ -43,8 +45,8 @@ mintiendo. Los requisitos los define cada proveedor y cambian sin avisar.
 | No hace | Cómo se garantiza |
 |---|---|
 | Inyectar DLL/código en procesos | No existe ninguna acción de inyección en `TweakActionFactory.SupportedKinds` |
-| Abrir handles a `cs2.exe` | No hay `OpenProcess` en el código; la única lectura de procesos es de nombres |
-| Matar procesos del juego/anticheat/Steam | **No existe ninguna acción de matar procesos** en el código (ni `KillProcess` ni `OpenProcess`): no hay nada que pueda matarlos. R-M cubre el caso de que algún día se añada |
+| Abrir deliberadamente handles a `cs2.exe` | La exclusión se comprueba antes de obtener el proceso; existe la carrera descrita en M-2 |
+| Matar procesos del juego/anticheat/Steam | `memoria cerrar` los excluye y verifica identidad tras obtener el proceso y antes de forzar; ver límites en M-2 |
 | Leer/escribir memoria de un juego | No hay `ReadProcessMemory`/`WriteProcessMemory` en el repositorio |
 | Modificar archivos del juego | Las acciones de archivo están limitadas por `filePrefixes` de la denylist |
 | Tocar Secure Boot o TPM | `HKLM\SYSTEM\CurrentControlSet\Control\SecureBoot` está en la denylist, y no existe acción de firmware |
@@ -359,3 +361,14 @@ Este comando no cierra ni modifica procesos, y el working set no garantiza memor
 Si la protección del sistema está desactivada, no disponible o no se pudo confirmar, `apply` queda bloqueado salvo que el usuario confirme para esa invocación con `--acepto-sin-punto-de-restauracion` (después de los IDs y sin valor). En ese caso no se crea punto de restauración y el reporte lo indica; el snapshot y journal de FragForge siguen siendo obligatorios. La confirmación no se guarda para siguientes aplicaciones.
 La confirmación no anula el bloqueo R-J de los tweaks seleccionados, la elevación, la denylist, los objetivos protegidos ni las precondiciones. Si la protección está habilitada, se sigue intentando crear el punto y no se muestra el aviso de confirmación.
 Sin punto de restauración, la vuelta atrás depende del revert de FragForge mediante su journal y de los respaldos manuales del usuario. El revert no requiere esta confirmación.
+
+
+### M-2: cierre de procesos con confirmación
+
+`fragforge memoria cerrar [--top N]` muestra grupos por memoria estimada y pide confirmación. Primero solicita cierre amable; para forzar pide una segunda confirmación por grupo. Excluye CS2, Steam y steamwebhelper, vgc, vgk, vgtray, lghub*, procesos de sistema y el propio proceso. El PID padre no forma parte del snapshot M-1 y se informa esa limitación. Las identidades se leen mediante WMI; una identidad desconocida o cambiada se omite.
+
+No se puede garantizar que nunca se abra un handle a un proceso protegido: el PID puede cambiar de dueño entre la consulta y la apertura. Por eso la identidad se comprueba antes de confirmar, tras confirmar, tras obtener el proceso y antes de cada Kill, y ante cualquier duda se omite.
+
+El registro de R-M para esta acción es `%ProgramData%\FragForge\memoria\cierre-yyyyMMdd-HHmmss.txt`, no el journal de tweaks. Se reserva sin sobrescribir antes de actuar y se completa al finalizar; si no se puede reservar, no se actúa. Si falla la escritura, se avisa y se devuelve error. Si hay colisiones se usan sufijos `-02` a `-99`; si están todos ocupados, se aborta. Una interrupción abrupta puede dejar solo el registro inicial.
+
+La memoria libre puede volver a bajar. Esto no es una promesa de FPS. El working set suma páginas compartidas y puede sobreestimar lo que ocupa un grupo. La función no ha sido verificada en vivo en esta ronda.
