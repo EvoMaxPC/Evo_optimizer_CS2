@@ -112,7 +112,12 @@ fragforge status [--json]
 fragforge snapshot list|create|show [ID] [--label TEXTO] [--no-restore-point]
 fragforge export-report --out reporte.html|reporte.json
 fragforge doctor [--json]
+fragforge match [--duration SEGUNDOS] [--guardar-log]
 ```
+
+`match` mide CS2 en vivo con PresentMon, sin overlay ni inyección. Requiere Windows y administrador;
+F9 marca un segmento, F10 muestra una vista parcial y F11 o Ctrl+C termina con resumen. Sin duración
+espera hasta terminar manualmente; sin `--guardar-log` no guarda el resumen. No verificado en vivo.
 
 Códigos de salida: `0` éxito · `1` fallo · `2` uso · `3` preflight/catálogo · `4` cancelación · `5` rollback crítico.
 

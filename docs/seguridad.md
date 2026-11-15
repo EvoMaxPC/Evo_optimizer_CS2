@@ -323,3 +323,9 @@ el valor de `autoexec` y el que Steam guarda en `cs2_convars.vcfg` discrepan, `C
 de los dos valores y añade «no está verificada»; no afirma cuál gana. No hay fuente citable para el orden
 de aplicación, y depende de cuándo se ejecute `autoexec` y de si el convar se escribe al salir. Cualquier
 texto que diga «el valor del autoexec manda» sería una suposición.
+
+### Medición `match` (no verificada en vivo)
+
+- Solo cierra el PresentMon que lanzó, mediante la sesión.
+- Ctrl+C termina con resumen; cerrar la consola con la X puede dejar PresentMon huérfano: el próximo `match` lo detecta y avisa, si puede identificarlo.
+- Las hotkeys F9–F11 se registran solo durante la medición.
