@@ -32,8 +32,11 @@ public sealed record Cs2Inspection
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>?> VideoSettingsByAccount { get; init; }
         = new Dictionary<string, IReadOnlyDictionary<string, string>?>(StringComparer.Ordinal);
 
-    /// <summary>Convars guardadas por CS2 (<c>cs2_convars.vcfg</c>), clave → valor.</summary>
-    public IReadOnlyDictionary<string, string> StoredConvars { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Convars guardadas en los archivos locales de la cuenta activa, clave → valor.</summary>
+    public IReadOnlyDictionary<string, string> StoredConvars { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>False si no se pudo verificar completamente la lectura de convars.</summary>
+    public bool StoredConvarsKnown { get; init; }
 
     /// <summary>Convars del <c>autoexec.cfg</c> del jugador, clave → valor. Solo lectura.</summary>
     public IReadOnlyDictionary<string, string> AutoexecConvars { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

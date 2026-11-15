@@ -12,7 +12,7 @@ namespace FragForge.Actions.Files;
 /// <item>cs2.exe con <see cref="ICs2Resolver"/> (Steam → appmanifest).</item>
 /// <item>La cuenta activa con <c>HKCU\Software\Valve\Steam\ActiveProcess\ActiveUser</c>.</item>
 /// <item>La carpeta <c>userdata\&lt;cuenta&gt;</c> correspondiente.</item>
-/// <item>De esa cuenta: <c>730\local\cfg\cs2_video.txt</c>, <c>cs2_convars.vcfg</c> y el
+/// <item>De esa cuenta: <c>730\local\cfg\cs2_video.txt</c>, los dos archivos locales de convars y el
 ///       <c>autoexec.cfg</c> (este último en la carpeta del juego o junto a los cfg).</item>
 /// <item>Las opciones de lanzamiento del <c>localconfig.vdf</c>, SOLO para mostrarlas.</item>
 /// </list>
@@ -117,13 +117,13 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
         // --- Configuración de la cuenta activa ---
         var cfg = Path.Combine(activeUserData, "730", "local", "cfg");
         var video = await ReadTextAsync(Path.Combine(cfg, "cs2_video.txt"), notes, cancellationToken);
-        var storedConvars = await ReadTextAsync(Path.Combine(cfg, "cs2_convars.vcfg"), notes, cancellationToken);
+        var saved = await StoredConvarReader.ReadAsync(cfg, notes, cancellationToken);
         var autoexec = await ReadFirstOfAsync(notes, cancellationToken,
             Path.Combine(cfg, "autoexec.cfg"),
             Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(executable))) ?? cfg, "csgo", "cfg", "autoexec.cfg"));
 
         var videoSettings = video is null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : Safe(() => Cs2ConfigParser.ParseVideoSettings(video), notes, "cs2_video.txt");
-        var stored = storedConvars is null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : Safe(() => Cs2ConfigParser.ParseVcfg(storedConvars), notes, "cs2_convars.vcfg");
+        var stored = saved.Values;
         var autoexecValues = autoexec is null ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) : Safe(() => Cs2ConfigParser.ParseAutoexec(autoexec), notes, "autoexec.cfg");
 
         // --- Opciones de lanzamiento (solo lectura) ---
@@ -133,6 +133,7 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
         {
             VideoSettings = videoSettings,
             StoredConvars = stored,
+            StoredConvarsKnown = saved.Known,
             AutoexecConvars = autoexecValues,
             Conflicts = autoexec is null ? [] : Cs2ConfigParser.FindConvarConflicts(stored, autoexecValues),
             LaunchOptions = launch.Value,

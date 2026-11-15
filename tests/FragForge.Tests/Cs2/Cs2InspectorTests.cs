@@ -10,7 +10,7 @@ namespace FragForge.Tests.Cs2;
 /// Capa 8.6 — inspector de SOLO LECTURA.
 ///
 /// Los fixtures imitan los archivos reales de la PC (anonimizados): <c>cs2_video.txt</c> al mínimo,
-/// <c>cs2_convars.vcfg</c> y un <c>autoexec.cfg</c> con <c>fps_max</c> distinto al guardado, que es el
+/// <c>cs2_machine_convars.vcfg</c> y un <c>autoexec.cfg</c> con <c>fps_max</c> distinto al guardado, que es el
 /// conflicto que se quiere detectar.
 ///
 /// Se comprueba además la propiedad que más importa: **nada se escribe**. Al terminar, los archivos tienen
@@ -172,8 +172,8 @@ public sealed class Cs2InspectorTests : IDisposable
                 }
             }
             """);
-        File.WriteAllText(Path.Combine(cfg, "cs2_convars.vcfg"), """
-            "convars" { "fps_max" "0" }
+        File.WriteAllText(Path.Combine(cfg, "cs2_machine_convars.vcfg"), """
+            "config" { "convars" { "fps_max" "0" } }
             """);
         File.WriteAllText(Path.Combine(cfg, "autoexec.cfg"), "fps_max 64");
 
