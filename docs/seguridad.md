@@ -248,7 +248,17 @@ sigue siendo estricto: si algo del binario no valida, la carga falla. Un bug de 
 
 ---
 
+## Lectura de la ventana de cs2 y hotkeys
+
+La observación usa `EnumWindows`, `GetWindowThreadProcessId`, `IsWindowVisible`, `IsIconic`, `GetWindowRect`, `GetClientRect`, `MonitorFromWindow`, `GetMonitorInfo` y un contexto DPI temporal. No lee memoria ni inyecta en cs2. No usa `OpenProcess`, `ReadProcessMemory`, `WriteProcessMemory`, `SetWindowsHookEx`, sondeo con `GetAsyncKeyState` o `GetKeyState`, ni `SendInput`. Las hotkeys usan `RegisterHotKey`; una tecla registrada no llega al juego mientras dure el registro, que debe limitarse a la medición.
+
+La resolución «observada» es el área cliente de la ventana: no prueba el modo de pantalla ni la resolución interna de render. No está verificado en vivo que estas APIs sean aceptables para el anticheat; no hay fuente citada para afirmarlo.
+
+El detector identifica candidatos de PresentMon propio, pero FragForge no los cierra automáticamente. Queda como deuda un cierre automático con confirmación sujeto al invariante de higiene. No está verificado que el cierre manual termine la sesión ETW.
+
 ## 10. Limitaciones conocidas
+
+**ACL observada en la PC de pruebas:** según la lectura de `icacls` aportada por el usuario, `C:\ProgramData\FragForge\tools` hereda de ProgramData; Usuarios tiene RX sobre `PresentMon.exe` y (WD, AD, WEA, WA) para crear archivos en la carpeta, sin borrar ni modificar los existentes. Es una lectura de ACL, no una prueba de escritura; en otra PC puede diferir.
 
 - El hash de PresentMon se verifica antes de lanzarlo, pero la verificación y el arranque no son atómicos. FragForge no establece ni verifica las ACL de `%ProgramData%\FragForge\tools`; no se ha verificado si un usuario sin privilegios podría reemplazar el archivo entre ambos pasos.
 
