@@ -106,24 +106,29 @@ public sealed class LivePresentMonProcess : ILivePresentMonProcess
 
     private async Task<string> PumpStderrAsync()
     {
-        var lines = new Queue<string>();
-        var totalChars = 0;
+        // Capacidad acotada incluso si stderr contiene una línea sin terminador.
+        var tail = new StringBuilder();
+        var buffer = new char[1024];
         try
         {
-            string? line;
-            while ((line = await _process.StandardError.ReadLineAsync().ConfigureAwait(false)) is not null)
+            int count;
+            while ((count = await _process.StandardError.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
             {
-                lines.Enqueue(line);
-                totalChars += line.Length + 1;
-                while (lines.Count > MaxStderrLines || totalChars > MaxStderrChars)
+                tail.Append(buffer, 0, count);
+                if (tail.Length > MaxStderrChars) tail.Remove(0, tail.Length - MaxStderrChars);
+                var newlines = 0;
+                for (var i = tail.Length - 1; i >= 0; i--)
                 {
-                    var removed = lines.Dequeue();
-                    totalChars -= removed.Length + 1;
+                    if (tail[i] == '\n' && ++newlines > MaxStderrLines)
+                    {
+                        tail.Remove(0, i + 1);
+                        break;
+                    }
                 }
             }
         }
         catch (IOException) { }
         catch (ObjectDisposedException) { }
-        return string.Join("\n", lines);
+        return tail.ToString();
     }
 }

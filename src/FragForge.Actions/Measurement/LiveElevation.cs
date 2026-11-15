@@ -11,6 +11,7 @@ public static class LiveElevation
 {
     public static bool IsElevated()
     {
+        if (!OperatingSystem.IsWindows()) return false;
         try
         {
             using var identity = WindowsIdentity.GetCurrent();

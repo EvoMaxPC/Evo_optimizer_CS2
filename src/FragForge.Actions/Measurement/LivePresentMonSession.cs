@@ -74,22 +74,18 @@ public sealed class LivePresentMonSession : IAsyncDisposable
 
     private ILivePresentMonProcess? _process;
     private Task? _pumpTask;
+    private Task? _stopTask;
     private LiveSessionState _state = LiveSessionState.NotStarted;
     private string? _failureMessage;
     private string _stderrTail = "";
     private int? _exitCode;
     private bool _started;
-    private bool _stopRequested;
     private bool _killCalled;
     private long _lastFramesParsed;
     private long _lastFrameMs;
 
-    public LivePresentMonSession(
-        ILivePresentMonLauncher launcher,
-        Func<bool> isElevated,
-        LiveToolResolver toolResolver,
-        LiveSessionOptions options,
-        Func<long>? nowMs = null)
+    public LivePresentMonSession(ILivePresentMonLauncher launcher, Func<bool> isElevated,
+        LiveToolResolver toolResolver, LiveSessionOptions options, Func<long>? nowMs = null)
     {
         _launcher = launcher;
         _isElevated = isElevated;
@@ -99,150 +95,107 @@ public sealed class LivePresentMonSession : IAsyncDisposable
         Ingest = new LiveFrameIngest(options.DurationSeconds);
     }
 
-    /// <summary>Ingesta en vivo (acumulador + contadores). Thread-safe.</summary>
     public LiveFrameIngest Ingest { get; }
+    public LiveSessionState State { get { lock (_gate) return _state; } }
+    public string? FailureMessage { get { lock (_gate) return _failureMessage; } }
+    public string StderrTail { get { lock (_gate) return _stderrTail; } }
+    public int? ExitCode { get { lock (_gate) return _exitCode; } }
 
-    /// <summary>Estado actual del ciclo de vida.</summary>
-    public LiveSessionState State
+    private static bool IsTerminal(LiveSessionState state) => state is LiveSessionState.Completed
+        or LiveSessionState.Stopped or LiveSessionState.Stalled or LiveSessionState.ProcessEnded or LiveSessionState.Failed;
+
+    // Único punto de escritura de estados terminales; el primero que llega gana bajo _gate.
+    private bool SetTerminalLocked(LiveSessionState state, string? message = null)
     {
-        get { lock (_gate) return _state; }
+        if (IsTerminal(_state)) return false;
+        _state = state;
+        _failureMessage = message;
+        return true;
     }
 
-    /// <summary>Motivo del fallo, o <c>null</c> si no falló.</summary>
-    public string? FailureMessage
-    {
-        get { lock (_gate) return _failureMessage; }
-    }
-
-    /// <summary>Cola de stderr de PresentMon (vacía hasta que el proceso termina).</summary>
-    public string StderrTail
-    {
-        get { lock (_gate) return _stderrTail; }
-    }
-
-    /// <summary>Código de salida de PresentMon, o <c>null</c> si aún no terminó.</summary>
-    public int? ExitCode
-    {
-        get { lock (_gate) return _exitCode; }
-    }
-
-    /// <summary>
-    /// Arranca la sesión: chequea elevación y herramienta (sin lanzar nada si fallan), lanza PresentMon
-    /// y arranca el bombeo de lectura y la espera de salida. Retorna enseguida; el resto es asíncrono.
-    /// Esperar a cs2 NO es fallo: sin frames el estado es <see cref="LiveSessionState.WaitingForFrames"/>
-    /// indefinidamente (no hay timeout de arranque).
-    /// </summary>
     public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        // La cancelación del ciclo de vida la hace StopAsync; el token queda reservado.
         lock (_gate)
         {
-            if (_started) return Task.CompletedTask;
+            if (_started || IsTerminal(_state)) return Task.CompletedTask;
             _started = true;
         }
-
-        if (!_isElevated())
-        {
-            SetFailed("PresentMon necesita permisos de administrador; abrí FragForge como administrador.");
-            return Task.CompletedTask;
-        }
-
-        LiveToolResolution resolution;
         try
         {
-            resolution = _toolResolver();
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_isElevated())
+            {
+                lock (_gate) SetTerminalLocked(LiveSessionState.Failed,
+                    "PresentMon necesita permisos de administrador; abrí FragForge como administrador.");
+                return Task.CompletedTask;
+            }
+            var resolution = _toolResolver();
+            if (resolution.ApprovedPath is null)
+            {
+                lock (_gate) SetTerminalLocked(LiveSessionState.Failed, resolution.RejectionReason ?? "Herramienta no aprobada.");
+                return Task.CompletedTask;
+            }
+            var arguments = LivePresentMonArguments.Build(_options.ProcessName, _options.SessionName);
+            // Serializa el lanzamiento con Stop: no se puede crear un hijo después de detener.
+            lock (_gate)
+            {
+                if (IsTerminal(_state)) return Task.CompletedTask;
+                _process = _launcher.Start(resolution.ApprovedPath, arguments);
+                _state = LiveSessionState.WaitingForFrames;
+                // Task.Run evita continuaciones síncronas bajo el lock, incluso con fakes.
+                var process = _process;
+                var pump = Task.Run(() => PumpAsync(process));
+                _pumpTask = pump;
+                _ = Task.Run(() => ObserveExitAsync(process, pump));
+            }
         }
         catch (Exception ex)
         {
-            SetFailed($"No se pudo resolver la herramienta: {ex.Message}");
-            return Task.CompletedTask;
+            lock (_gate) SetTerminalLocked(LiveSessionState.Failed, $"No se pudo iniciar PresentMon: {ex.Message}");
         }
-        if (resolution.ApprovedPath is null)
-        {
-            SetFailed(resolution.RejectionReason ?? "Herramienta no aprobada.");
-            return Task.CompletedTask;
-        }
-
-        var arguments = LivePresentMonArguments.Build(_options.ProcessName, _options.SessionName);
-        ILivePresentMonProcess process;
-        try
-        {
-            process = _launcher.Start(resolution.ApprovedPath, arguments);
-        }
-        catch (Exception ex)
-        {
-            SetFailed($"No se pudo iniciar PresentMon: {ex.Message}");
-            return Task.CompletedTask;
-        }
-
-        lock (_gate)
-        {
-            _process = process;
-            _state = LiveSessionState.WaitingForFrames;
-        }
-        _pumpTask = PumpAsync(process);
-        _ = WaitForExitAsync(process);
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Lo llamará el bucle de la UI en cada tick. Si hay frames y pasó más de <c>StallGrace</c> desde el
-    /// último frame recibido (según el reloj inyectado), mata el proceso y pasa a
-    /// <see cref="LiveSessionState.Stalled"/>. Puro respecto del reloj inyectado.
-    /// </summary>
     public void CheckStall()
     {
-        bool stalled;
+        bool kill;
         lock (_gate)
         {
-            stalled = _state == LiveSessionState.Running
-                      && _nowMs() - _lastFrameMs > (long)_options.StallGrace.TotalMilliseconds;
-            if (stalled) _state = LiveSessionState.Stalled;
+            kill = _state == LiveSessionState.Running
+                && _nowMs() - _lastFrameMs > _options.StallGrace.TotalMilliseconds
+                && SetTerminalLocked(LiveSessionState.Stalled);
         }
-        if (stalled) KillOnce();
+        if (kill) KillOnce();
     }
 
-    /// <summary>
-    /// Detiene la sesión. Idempotente; nunca lanza por "ya terminó". Mata el proceso, espera al bombeo
-    /// con tope de 5 s, completa la ingesta y pasa a <see cref="LiveSessionState.Stopped"/> salvo que ya
-    /// sea terminal (Completed, Failed, Stalled, ProcessEnded se conservan).
-    /// </summary>
-    public async Task StopAsync()
+    public Task StopAsync()
     {
-        Task? pump;
         lock (_gate)
         {
-            if (_stopRequested) return;
-            _stopRequested = true;
-            pump = _pumpTask;
+            if (_stopTask is not null) return _stopTask;
+            var shouldKill = SetTerminalLocked(LiveSessionState.Stopped);
+            var pump = _pumpTask;
+            _stopTask = Task.Run(() => StopCoreAsync(shouldKill, pump));
+            return _stopTask;
         }
+    }
 
-        KillOnce();
+    private async Task StopCoreAsync(bool shouldKill, Task? pump)
+    {
+        if (shouldKill) KillOnce();
         if (pump is not null)
         {
             try { await pump.WaitAsync(StopWaitTimeout).ConfigureAwait(false); }
-            catch (Exception) { /* tope alcanzado o bombeo terminado con error: se sigue igual */ }
+            catch (TimeoutException) { }
         }
         Ingest.Complete();
-
-        lock (_gate)
-        {
-            if (_state is not (LiveSessionState.Completed or LiveSessionState.Failed
-                    or LiveSessionState.Stalled or LiveSessionState.ProcessEnded))
-                _state = LiveSessionState.Stopped;
-        }
     }
 
-    /// <summary>Detiene la sesión y libera el proceso.</summary>
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
         ILivePresentMonProcess? process;
-        lock (_gate)
-        {
-            process = _process;
-            _process = null;
-        }
+        lock (_gate) { process = _process; _process = null; }
         process?.Dispose();
     }
 
@@ -252,86 +205,61 @@ public sealed class LivePresentMonSession : IAsyncDisposable
         try
         {
             int read;
-            // ReadAsync por trozos, NO ReadLineAsync: este último devolvería la última línea
-            // incompleta al EOF como si estuviera completa.
             while ((read = await process.StandardOutput.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
             {
                 Ingest.Push(new string(buffer, 0, read));
-                AfterPush();
+                var frames = Ingest.Counters.FramesParsed;
+                var complete = Ingest.Accumulator.IsComplete;
+                bool kill = false;
+                lock (_gate)
+                {
+                    if (frames > _lastFramesParsed)
+                    {
+                        _lastFramesParsed = frames;
+                        _lastFrameMs = _nowMs();
+                    }
+                    if (!IsTerminal(_state))
+                    {
+                        if (complete) kill = SetTerminalLocked(LiveSessionState.Completed);
+                        else if (frames > 0) _state = LiveSessionState.Running;
+                    }
+                }
+                if (kill) KillOnce();
             }
         }
-        catch (IOException) { }
-        catch (ObjectDisposedException) { }
-        finally
+        catch (Exception ex)
         {
-            Ingest.Complete();
+            lock (_gate) SetTerminalLocked(LiveSessionState.Failed, $"Error leyendo PresentMon: {ex.Message}");
+            KillOnce();
         }
+        finally { Ingest.Complete(); }
     }
 
-    private void AfterPush()
+    private async Task ObserveExitAsync(ILivePresentMonProcess process, Task pump)
     {
-        var frames = Ingest.Counters.FramesParsed;
-        var complete = Ingest.Accumulator.IsComplete;
-        var shouldKill = false;
-        lock (_gate)
-        {
-            if (frames > _lastFramesParsed)
-            {
-                _lastFramesParsed = frames;
-                _lastFrameMs = _nowMs();
-            }
-            if (_stopRequested) return;
-            if (complete && _state is LiveSessionState.WaitingForFrames or LiveSessionState.Running)
-            {
-                _state = LiveSessionState.Completed;
-                shouldKill = true;
-            }
-            else if (frames > 0 && _state == LiveSessionState.WaitingForFrames)
-            {
-                _state = LiveSessionState.Running;
-            }
-        }
-        if (shouldKill) KillOnce();
-    }
-
-    private async Task WaitForExitAsync(ILivePresentMonProcess process)
-    {
-        int exitCode;
         try
         {
-            exitCode = await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            return;
-        }
-
-        var tail = "";
-        try
-        {
-            tail = await process.ReadStandardErrorAsync().ConfigureAwait(false);
-        }
-        catch (Exception) { }
-
-        var frames = Ingest.Counters.FramesParsed;
-        lock (_gate)
-        {
-            _exitCode = exitCode;
-            _stderrTail = tail;
-            if (_state is LiveSessionState.WaitingForFrames or LiveSessionState.Running)
+            var code = await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
+            // Leer hasta EOF antes de decidir: pueden quedar frames en el pipe tras la salida.
+            await pump.ConfigureAwait(false);
+            var tail = await process.ReadStandardErrorAsync().ConfigureAwait(false);
+            var frames = Ingest.Counters.FramesParsed;
+            lock (_gate)
             {
-                if (exitCode != 0 || frames == 0)
+                _exitCode = code;
+                _stderrTail = tail;
+                if (!IsTerminal(_state))
                 {
-                    _state = LiveSessionState.Failed;
-                    _failureMessage = exitCode != 0
-                        ? $"PresentMon terminó con código {exitCode}." + (tail.Length > 0 ? $" {tail}" : "")
-                        : "PresentMon terminó sin entregar frames." + (tail.Length > 0 ? $" {tail}" : "");
-                }
-                else
-                {
-                    _state = LiveSessionState.ProcessEnded;
+                    if (code != 0 || frames == 0)
+                        SetTerminalLocked(LiveSessionState.Failed, $"PresentMon terminó con código {code}" +
+                            (frames == 0 ? " sin frames." : ".") + (tail.Length > 0 ? " " + tail : ""));
+                    else SetTerminalLocked(LiveSessionState.ProcessEnded);
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            lock (_gate) SetTerminalLocked(LiveSessionState.Failed, $"Error esperando PresentMon: {ex.Message}");
         }
     }
 
@@ -340,20 +268,12 @@ public sealed class LivePresentMonSession : IAsyncDisposable
         ILivePresentMonProcess? process;
         lock (_gate)
         {
-            if (_killCalled) return;
+            if (_killCalled || _process is null) return;
             _killCalled = true;
             process = _process;
         }
-        process?.Kill();
-    }
-
-    private void SetFailed(string message)
-    {
-        lock (_gate)
-        {
-            _state = LiveSessionState.Failed;
-            _failureMessage = message;
-        }
+        try { process.Kill(); }
+        catch (InvalidOperationException) { }
     }
 
     private static long DefaultNowMs() => SharedClock.ElapsedMilliseconds;
