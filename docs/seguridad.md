@@ -343,3 +343,7 @@ Con cuenta activa desconocida se leen las cuentas de userdata en solo lectura y 
 La pestaña muestra informes en la aplicación y reutiliza el mismo runner de `match`, sin overlay ni lectura de memoria de CS2.
 Guardar el log es optativo y está desmarcado por defecto; terminar o cerrar solicita el resumen y la limpieza de la sesión ETW propia.
 Las confirmaciones usan «No» por defecto. La pestaña y sus interacciones no se probaron en vivo ni online.
+
+La hoja lee en solo lectura `userdata/<cuenta activa>/config/localconfig.vdf` para buscar las opciones de lanzamiento de la app 730.
+Solo se extrae `LaunchOptions` de la ruta esperada; no se guarda ni muestra el resto del archivo. La ruta concreta no se verificó en una instalación real en esta ronda.
+FragForge nunca escribe `localconfig.vdf` ni modifica archivos de Steam para esta lectura.
