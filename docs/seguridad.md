@@ -337,3 +337,9 @@ texto que diga «el valor del autoexec manda» sería una suposición.
 La resolución configurada se lee de `setting.defaultres` y `setting.defaultresheight` de `cs2_video.txt`: claves observadas en una instalación real, no documentadas por Valve. No implica que coincida con lo visible en pantalla.
 Si hay cuentas Steam con resoluciones distintas y no se sabe cuál está activa, se informa «no se sabe».
 Con cuenta activa desconocida se leen las cuentas de userdata en solo lectura y solo se informa una resolución si todas coinciden y son legibles y válidas.
+
+### Pestaña Medición
+
+La pestaña muestra informes en la aplicación y reutiliza el mismo runner de `match`, sin overlay ni lectura de memoria de CS2.
+Guardar el log es optativo y está desmarcado por defecto; terminar o cerrar solicita el resumen y la limpieza de la sesión ETW propia.
+Las confirmaciones usan «No» por defecto. La pestaña y sus interacciones no se probaron en vivo ni online.
