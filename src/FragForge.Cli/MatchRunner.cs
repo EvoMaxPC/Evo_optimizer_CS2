@@ -28,14 +28,15 @@ public sealed class MatchRunner(
                 prompt.WriteWarning("PresentMon necesita permisos de administrador; abrí FragForge como administrador.");
                 return ExitCodes.Failure;
             }
-            try
+            OrphanPresentMonSearch? orphans = null;
+            try { orphans = await findOrphans().ConfigureAwait(false); }
+            catch (Exception ex) { prompt.WriteWarning("No se pudieron detectar procesos anteriores: " + ex.Message); }
+            if (orphans is not null)
             {
-                var orphans = await findOrphans().ConfigureAwait(false);
                 foreach (var note in orphans.Notes) prompt.WriteWarning(note);
                 foreach (var orphan in orphans.Processes) prompt.WriteWarning(OrphanPresentMonAdvice.Describe(orphan));
                 if (orphans.Processes.Count > 0 && prompt.Confirm("¿Continuar igual?") != true) return ExitCodes.Cancelled;
             }
-            catch (Exception ex) { prompt.WriteWarning("No se pudieron detectar procesos anteriores: " + ex.Message); }
 
             MatchConfigSheet? sheet = null;
             try { sheet = MatchConfigSheetBuilder.From(await inspect().ConfigureAwait(false)); }
@@ -52,6 +53,7 @@ public sealed class MatchRunner(
             var mode = options.DurationSeconds is double duration
                 ? "duración fija " + duration.ToString("0.##", CultureInfo.InvariantCulture) + " s" : "partida completa";
             prompt.WriteLine("Modo: " + mode + ". Teclas registradas: " + (registrations.Count == 0 ? "ninguna" : string.Join(", ", registrations.Select(r => r.Description))) + ". Mientras dure la medición esas teclas no llegan al juego.");
+            prompt.WriteLine("F9: segmento; F10: ver ahora; F11: terminar. También podés usar estas teclas en la consola.");
             prompt.WriteLine("Con CS2 en pantalla completa este texto puede quedar tapado; el resumen se ve al terminar o con Alt+Tab. Terminá con F11 o Ctrl+C. CS2 debe estar abierto: PresentMon espera frames.");
 
             var sessionOptions = new LiveSessionOptions { DurationSeconds = options.DurationSeconds,
