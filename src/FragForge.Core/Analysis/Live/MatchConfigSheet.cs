@@ -1,3 +1,4 @@
+using System.Globalization;
 using FragForge.Core.Models;
 
 namespace FragForge.Core.Analysis.Live;
@@ -16,17 +17,62 @@ public sealed record MatchConfigSheet
     public int? ConfiguredHeight { get; init; }
 }
 
-/// <summary>Sin fuente verificada de las claves; ver L4.</summary>
+/// <summary>Lee las dimensiones configuradas, sin interpretar el modo de pantalla.</summary>
 public static class ConfiguredResolutionReader
 {
-    public static (int? Width, int? Height) TryRead(IReadOnlyDictionary<string, string> videoSettings) => (null, null);
+    // Observado en cs2_video.txt de la PC de desarrollo (4 cuentas); no es documentación de Valve.
+    private const string WidthKey = "video.cfg.setting.defaultres";
+    private const string HeightKey = "video.cfg.setting.defaultresheight";
+
+    public static (int? Width, int? Height) TryRead(IReadOnlyDictionary<string, string> videoSettings)
+    {
+        var (width, height, _) = ReadPair(videoSettings);
+        return (width, height);
+    }
+
+    public static (int? Width, int? Height, IReadOnlyList<string> Notes) Read(Cs2Inspection inspection)
+    {
+        if (inspection.ActiveSteamAccountId is not null)
+        {
+            var (width, height, error) = ReadPair(inspection.VideoSettings);
+            return (width, height, error is null ? [] : [error]);
+        }
+        if (inspection.VideoSettingsByAccount.Count == 0)
+            return (null, null, ["no se encontró cs2_video.txt"]);
+
+        foreach (var account in inspection.VideoSettingsByAccount.OrderBy(x => x.Key, StringComparer.Ordinal))
+            if (account.Value is null)
+                return (null, null, [$"no se pudo leer la cuenta {account.Key}; no se sabe qué resolución usa la partida"]);
+
+        int? commonWidth = null;
+        int? commonHeight = null;
+        var different = false;
+        foreach (var account in inspection.VideoSettingsByAccount.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            var (width, height, error) = ReadPair(account.Value!);
+            if (error is not null) return (null, null, [$"cuenta {account.Key}: {error}"]);
+            if (commonWidth is null) { commonWidth = width; commonHeight = height; }
+            else if (commonWidth != width || commonHeight != height) different = true;
+        }
+        if (different) return (null, null, ["las cuentas de Steam tienen resoluciones distintas y no se sabe cuál usa la partida"]);
+        return (commonWidth, commonHeight, [$"cuenta activa desconocida; las {inspection.VideoSettingsByAccount.Count.ToString(CultureInfo.InvariantCulture)} cuentas leídas coinciden"]);
+    }
+
+    private static (int? Width, int? Height, string? Error) ReadPair(IReadOnlyDictionary<string, string> settings)
+    {
+        if (!settings.TryGetValue(WidthKey, out var widthText) || !int.TryParse(widthText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var width) || width is <= 0 or > 16384)
+            return (null, null, $"resolución configurada desconocida: falta o es inválida la clave {WidthKey}");
+        if (!settings.TryGetValue(HeightKey, out var heightText) || !int.TryParse(heightText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var height) || height is <= 0 or > 16384)
+            return (null, null, $"resolución configurada desconocida: falta o es inválida la clave {HeightKey}");
+        return (width, height, null);
+    }
 }
 
 public static class MatchConfigSheetBuilder
 {
     public static MatchConfigSheet From(Cs2Inspection inspection)
     {
-        var (width, height) = ConfiguredResolutionReader.TryRead(inspection.VideoSettings);
+        var (width, height, resolutionNotes) = ConfiguredResolutionReader.Read(inspection);
         return new MatchConfigSheet
         {
             ActiveSteamAccountId = inspection.ActiveSteamAccountId,
@@ -36,7 +82,7 @@ public static class MatchConfigSheetBuilder
             Conflicts = inspection.Conflicts.ToArray(),
             LaunchOptions = inspection.LaunchOptions,
             ConfiguredRefreshHz = inspection.ConfiguredRefreshHz,
-            Notes = inspection.Notes.ToArray(),
+            Notes = inspection.Notes.Concat(resolutionNotes).ToArray(),
             ConfiguredWidth = width,
             ConfiguredHeight = height,
         };

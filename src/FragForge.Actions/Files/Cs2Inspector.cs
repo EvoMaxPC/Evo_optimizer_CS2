@@ -75,6 +75,32 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
             UserDataDirectories = userDataRoots
         };
 
+        if (accountId is null)
+        {
+            var accounts = new Dictionary<string, IReadOnlyDictionary<string, string>?>(StringComparer.Ordinal);
+            foreach (var directory in userDataRoots.OrderBy(path => path, StringComparer.Ordinal))
+            {
+                var path = Path.Combine(directory, "730", "local", "cfg", "cs2_video.txt");
+                if (!File.Exists(path)) continue;
+                var id = Path.GetFileName(directory);
+                var accountNotes = new List<string>();
+                var text = await ReadTextAsync(path, accountNotes, cancellationToken);
+                IReadOnlyDictionary<string, string>? settings = null;
+                if (text is not null)
+                {
+                    var parsed = Safe(() => Cs2ConfigParser.ParseVideoSettings(text), accountNotes, "cs2_video.txt");
+                    if (accountNotes.Count == 0) settings = parsed;
+                }
+                if (settings is null)
+                {
+                    if (accountNotes.Count == 0) accountNotes.Add("el archivo dejó de estar disponible");
+                    foreach (var note in accountNotes) notes.Add($"Cuenta {id}: {note}");
+                }
+                accounts[id] = settings;
+            }
+            return inspection with { VideoSettingsByAccount = accounts };
+        }
+
         if (activeUserData is null) return inspection;
 
         // --- Configuración de la cuenta activa ---

@@ -28,6 +28,10 @@ public sealed record Cs2Inspection
     /// <summary>Valores leídos de <c>cs2_video.txt</c> (clave → valor), ya normalizados.</summary>
     public IReadOnlyDictionary<string, string> VideoSettings { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Ajustes por cuenta cuando la activa se desconoce; null indica lectura o parseo fallido.</summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>?> VideoSettingsByAccount { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, string>?>(StringComparer.Ordinal);
+
     /// <summary>Convars guardadas por CS2 (<c>cs2_convars.vcfg</c>), clave → valor.</summary>
     public IReadOnlyDictionary<string, string> StoredConvars { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 

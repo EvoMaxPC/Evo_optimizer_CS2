@@ -31,7 +31,7 @@ public sealed class MatchConfigSheetTests
         Assert.Equal("conflicto", Assert.Single(sheet.Conflicts));
         Assert.Equal("-novid", sheet.LaunchOptions);
         Assert.Equal(144, sheet.ConfiguredRefreshHz);
-        Assert.Equal("nota", Assert.Single(sheet.Notes));
+        Assert.Equal(new[] { "nota", "resolución configurada desconocida: falta o es inválida la clave video.cfg.setting.defaultres" }, sheet.Notes);
         Assert.Null(sheet.ConfiguredWidth);
         Assert.Null(sheet.ConfiguredHeight);
     }
