@@ -81,8 +81,19 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
             foreach (var directory in userDataRoots.OrderBy(path => path, StringComparer.Ordinal))
             {
                 var path = Path.Combine(directory, "730", "local", "cfg", "cs2_video.txt");
-                if (!File.Exists(path)) continue;
                 var id = Path.GetFileName(directory);
+                try
+                {
+                    if ((File.GetAttributes(path) & FileAttributes.Directory) != 0) continue;
+                }
+                catch (FileNotFoundException) { continue; }
+                catch (DirectoryNotFoundException) { continue; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    accounts[id] = null;
+                    notes.Add($"Cuenta {id}: no se pudo comprobar cs2_video.txt: {ex.Message}");
+                    continue;
+                }
                 var accountNotes = new List<string>();
                 var text = await ReadTextAsync(path, accountNotes, cancellationToken);
                 IReadOnlyDictionary<string, string>? settings = null;
@@ -93,7 +104,7 @@ public sealed class Cs2Inspector(ICs2Resolver resolver, IRegistry registry)
                 }
                 if (settings is null)
                 {
-                    if (accountNotes.Count == 0) accountNotes.Add("el archivo dejó de estar disponible");
+                    if (accountNotes.Count == 0) accountNotes.Add("no se pudo leer o verificar el archivo");
                     foreach (var note in accountNotes) notes.Add($"Cuenta {id}: {note}");
                 }
                 accounts[id] = settings;
