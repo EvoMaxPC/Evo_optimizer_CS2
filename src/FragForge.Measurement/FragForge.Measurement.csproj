@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../FragForge.Core/FragForge.Core.csproj" />
+    <ProjectReference Include="../FragForge.Actions/FragForge.Actions.csproj" />
+  </ItemGroup>
+</Project>

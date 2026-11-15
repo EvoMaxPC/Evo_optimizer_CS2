@@ -14,5 +14,5 @@
     <IncludeNativeLibrariesForSelfExtract Condition="'$(IncludeNativeLibrariesForSelfExtract)' == ''">true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile Condition="'$(EnableCompressionInSingleFile)' == ''">true</EnableCompressionInSingleFile>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="../FragForge.Composition/FragForge.Composition.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../FragForge.Composition/FragForge.Composition.csproj" /><ProjectReference Include="../FragForge.Measurement/FragForge.Measurement.csproj" /></ItemGroup>
 </Project>
