@@ -123,9 +123,9 @@ public static class MatchReportFormatter
     {
         const string prefix = "hay ";
         const string suffix = " series más";
-        if (!note.StartsWith(prefix, StringComparison.Ordinal) || !note.EndsWith(suffix, StringComparison.Ordinal)) return note;
+        if (note.Length < prefix.Length + suffix.Length || !note.StartsWith(prefix, StringComparison.Ordinal) || !note.EndsWith(suffix, StringComparison.Ordinal)) return note;
         var number = note.AsSpan(prefix.Length, note.Length - prefix.Length - suffix.Length);
-        if (!int.TryParse(number, NumberStyles.None, Inv, out var count) || count < 1 || !number.SequenceEqual(count.ToString(Inv))) return note;
+        if (!int.TryParse(number, NumberStyles.None, Inv, out var count) || count < 1 || !number.SequenceEqual(count.ToString(Inv).AsSpan())) return note;
         return "hay " + count.ToString(Inv) + (count == 1 ? " serie más" : " series más") + "; esta vista muestra solo la serie con más frames acumulados";
     }
 
