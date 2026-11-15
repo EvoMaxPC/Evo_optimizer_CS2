@@ -118,6 +118,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         : $"{PlannedChanges.Count} cambios planificados en {PlannedChanges.Select(c => c.TweakId).Distinct(StringComparer.OrdinalIgnoreCase).Count()} tweaks. No se ha modificado nada todavía.";
 
     [ObservableProperty] private string hardwareSummary = "Ejecuta Escanear para detectar el equipo.";
+    [ObservableProperty] private IReadOnlyList<HardwareItem> hardwareItems = [];
     [ObservableProperty] private string statusMessage = "Listo";
     [ObservableProperty] private double progressValue;
     [ObservableProperty] private bool isBusy;
@@ -310,6 +311,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             var scan = await _engine.ScanAsync(token, progress);
             HardwareSummary = BuildHardwareSummary(scan.Hardware);
+            HardwareItems = BuildHardwareItems(scan.Hardware);
             _lastScanEvaluated = scan.Tweaks.Count;
             _statuses.Clear();
             foreach (var status in scan.Tweaks) _statuses[status.Id] = status;
@@ -560,6 +562,32 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (_uiContext is null || SynchronizationContext.Current == _uiContext) action();
         else _uiContext.Post(_ => action(), null);
     }
+    private static IReadOnlyList<HardwareItem> BuildHardwareItems(HardwareProfile h)
+    {
+        const string unknown = "no se sabe";
+        static string Known(string? value) => string.IsNullOrWhiteSpace(value) || value.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+            ? "no se sabe" : value;
+        static string Number(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "no se sabe";
+        var gpus = h.Gpus.Select(g => Known(g.Name)).ToArray();
+        var networks = h.NetworkAdapters.Where(a => a.IsPhysical).Select(a => Known(a.Name)).ToArray();
+        return
+        [
+            new("Equipo", Known(h.MachineName)),
+            new("Modelo", Known(h.FormFactor.SystemModel)),
+            new("Sistema operativo", Known(h.Os.Name)),
+            new("CPU", Known(h.Cpu.Model)),
+            new("Núcleos P", Number(h.Cpu.PCores)),
+            new("Núcleos E", Number(h.Cpu.ECores)),
+            new("Hilos", h.Cpu.LogicalProcessors > 0 ? Number(h.Cpu.LogicalProcessors) : unknown),
+            new("RAM", h.Memory.TotalBytes > 0 ? (h.Memory.TotalBytes / 1073741824.0).ToString("F2", CultureInfo.InvariantCulture) + " GiB" : unknown),
+            new("Velocidad RAM", h.Memory.ConfiguredSpeedMtPerSecond is int speed ? Number(speed) + " MT/s" : unknown),
+            new("GPU", gpus.Length > 0 ? string.Join("; ", gpus) : unknown),
+            new("Red", networks.Length > 0 ? string.Join("; ", networks) : unknown),
+            new("Plan de energía", Known(h.Power.ActiveSchemeName)),
+            new("CS2", Known(h.Games.Cs2ExecutablePath))
+        ];
+    }
+
     private static string BuildHardwareSummary(HardwareProfile h)
     {
         var builder = new StringBuilder();
@@ -583,3 +611,6 @@ public sealed record ProfileOption(TweakProfile Profile, string Label)
 {
     public override string ToString() => Label;
 }
+
+/// <summary>Un par de texto para la tarjeta de hardware.</summary>
+public sealed record HardwareItem(string Label, string Value);
