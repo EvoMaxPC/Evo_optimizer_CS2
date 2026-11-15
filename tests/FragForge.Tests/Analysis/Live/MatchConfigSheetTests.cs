@@ -45,4 +45,28 @@ public sealed class MatchConfigSheetTests
         // Orden ordinal por sección y clave: Autoexec, Launch, Stored, Video a/b/c.
         Assert.Equal(new[] { "AutoexecConvars: a cambió de 1 a 2", "LaunchOptions: cambió de antes a después", "StoredConvars: x cambió de 1 a 2", "VideoSettings: a agregada: 2", "VideoSettings: b cambió de 1 a 4", "VideoSettings: c quitada: 3" }, MatchConfigDiff.Compare(old, updated));
     }
+    [Theory]
+    [InlineData("VideoSettings")]
+    [InlineData("StoredConvars")]
+    [InlineData("AutoexecConvars")]
+    public void Diff_AddChangeRemoveInEachSection(string section)
+    {
+        var beforePairs = new KeyValuePair<string, string>[] { new("b", "viejo"), new("c", "quitado") };
+        var afterPairs = new KeyValuePair<string, string>[] { new("a", "nuevo"), new("b", "nuevo") };
+        var before = section switch
+        {
+            "VideoSettings" => new MatchConfigSheet { VideoSettings = beforePairs },
+            "StoredConvars" => new MatchConfigSheet { StoredConvars = beforePairs },
+            _ => new MatchConfigSheet { AutoexecConvars = beforePairs },
+        };
+        var after = section switch
+        {
+            "VideoSettings" => new MatchConfigSheet { VideoSettings = afterPairs },
+            "StoredConvars" => new MatchConfigSheet { StoredConvars = afterPairs },
+            _ => new MatchConfigSheet { AutoexecConvars = afterPairs },
+        };
+        // Tres claves en orden ordinal: a agregada, b cambiada, c quitada.
+        Assert.Equal(new[] { section + ": a agregada: nuevo", section + ": b cambió de viejo a nuevo", section + ": c quitada: quitado" }, MatchConfigDiff.Compare(before, after));
+    }
+
 }
