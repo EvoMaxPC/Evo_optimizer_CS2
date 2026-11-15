@@ -15,6 +15,8 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0 && args[0].Equals("memoria", StringComparison.OrdinalIgnoreCase))
+            return await MemoryCommands.RunPlatformAsync(args[1..]);
         if (args.Length > 0 && args[0].Equals("match", StringComparison.OrdinalIgnoreCase))
         {
             try { return await MatchCommands.RunAsync(args[1..]); }
@@ -214,6 +216,7 @@ Uso:
   fragforge baseline [--duration 120] [--runs 3] [--warmup 10] [--json]
   fragforge ab <ids...> [--runs 5] [--aa] [--mode interleaved|blocked] [--seed N] [--json]
   fragforge experiment list|show|resume|report [ID] [--out RUTA] [--json]
+  fragforge memoria [--top N]
   fragforge match [--duration SEGUNDOS] [--guardar-log]
   fragforge analyze <captura.csv> [--warmup-seconds N] [--exclude-pauses] [--json]
   fragforge analyze <a1.csv> <a2.csv> ... --versus <b1.csv> <b2.csv> ... [--warmup-seconds N]
