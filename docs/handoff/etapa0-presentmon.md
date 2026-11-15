@@ -54,7 +54,7 @@ La localización es **por nombre**, `OrdinalIgnoreCase` (`FindColumn`, `:78-84`)
 
 Se usa `List<string>` → `ProcessStartInfo.ArgumentList` (`:45`). No hay concatenación de cadena: cumple R-M y el test `NoProductCodeBuildsCommandLineStrings`.
 
-**Localización del exe:** `ToolVerifier.Verify` (`ToolManifest.cs:43-55`) busca `Path.Combine(toolsDirectory, tool.FileName)` donde `tool.FileName = "PresentMon.exe"` (allowlist embebida) y `toolsDirectory = FragForgePaths.Tools` = `%ProgramData%\FragForge\tools`. **Nunca usa PATH.** Cumple el "nunca PATH", pero **no** busca en `%ProgramFiles%\Intel\PresentMon\...` y exige un hash en la allowlist, que hoy está vacío ⇒ `HashPlaceholder` ⇒ la captura nunca se habilita.
+**Localización del exe:** `ToolVerifier.Verify` (`ToolManifest.cs:43-55`) busca `Path.Combine(toolsDirectory, tool.FileName)` donde `tool.FileName = "PresentMon.exe"` (allowlist embebida) y `toolsDirectory = FragForgePaths.Tools` = `%ProgramData%\FragForge\tools`. **Nunca usa PATH.** Cumple el "nunca PATH", pero **no** busca en `%ProgramFiles%\Intel\PresentMon\...` y exigía un hash en la allowlist, que estaba vacío en esta auditoría ⇒ `HashPlaceholder` ⇒ la captura no se habilitaba. Actualización L2d: la allowlist incluye el hash aportado por el usuario para PresentMon 2.6.0 x64.
 
 **Faltan del contrato:** `--stop_existing_session` y la búsqueda en `%ProgramFiles%`. Y `process_name` recibe `request.ProcessName + ".exe"` — si `ProcessName` ya trae extensión, se duplica.
 

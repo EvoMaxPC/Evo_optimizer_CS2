@@ -250,6 +250,8 @@ sigue siendo estricto: si algo del binario no valida, la carga falla. Un bug de 
 
 ## 10. Limitaciones conocidas
 
+- El hash de PresentMon se verifica antes de lanzarlo, pero la verificación y el arranque no son atómicos. FragForge no establece ni verifica las ACL de `%ProgramData%\FragForge\tools`; no se ha verificado si un usuario sin privilegios podría reemplazar el archivo entre ambos pasos.
+
 Hechos verificados leyendo el código. No son promesas de cuándo se cierran.
 
 **Los mensajes del motor y del resto del preflight están en español fijo.** No pasan por `Localizer`, así
