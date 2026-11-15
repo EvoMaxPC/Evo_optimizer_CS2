@@ -5,6 +5,7 @@ using FragForge.Core.Abstractions;
 using FragForge.Core.Logging;
 using FragForge.Core.Models;
 using FragForge.Core.Persistence;
+using FragForge.Core.Preflight;
 using Microsoft.Extensions.Logging;
 
 namespace FragForge.Core.Engine;
@@ -79,6 +80,7 @@ public sealed class TweakEngine(
         var cancelled = false;
         var critical = false;
         var failed = false;
+        var preflightBlocked = false;
         await AppendAsync(operationId, JournalEventType.OperationStarted, null, null, options.DryRun ? "Apply dry-run" : "Apply", cancellationToken);
         try
         {
@@ -158,7 +160,9 @@ public sealed class TweakEngine(
             };
             var preflightReport = await preflight.CheckAsync(effectiveOptions, hardware, cancellationToken);
             warnings.AddRange(preflightReport.Checks.Where(c => c.Severity == PreflightSeverity.Warning).Select(c => c.Message));
-            if (!preflightReport.CanApply) throw new PreflightFailedException("El preflight bloqueó la aplicación: " + string.Join(" ", preflightReport.Checks.Where(c => c.Severity == PreflightSeverity.Blocking).Select(c => c.Message)), preflightReport);
+            if (!preflightReport.CanApply) throw new PreflightFailedException("El preflight bloqueó la aplicación: " + string.Join(" ", preflightReport.Checks.Where(c => c.Severity == PreflightSeverity.Blocking).Select(c => c.Message + (c.Id == PreflightService.RestoreUnavailableId && c.Remediation is not null ? " " + c.Remediation : ""))), preflightReport);
+            var acceptedWithoutRestore = options.AcceptWithoutSystemRestore && preflightReport.Checks.Any(c => c.Id == PreflightService.RestoreUnavailableId && c.Severity == PreflightSeverity.Warning);
+            if (acceptedWithoutRestore) needsRestore = false;
             var ownership = await ReadOwnershipAsync(cancellationToken);
             var applicable = new List<ActionPlan>();
             foreach (var plan in plans)
@@ -274,6 +278,13 @@ public sealed class TweakEngine(
             errors.Add("Operación cancelada: " + ex.Message);
             await AppendSafeAsync(operationId, JournalEventType.OperationFailed, null, snapshotId, ex.Message);
         }
+        catch (PreflightFailedException ex)
+        {
+            preflightBlocked = true;
+            failed = true;
+            errors.Add(ex.Message);
+            await AppendSafeAsync(operationId, JournalEventType.OperationFailed, null, snapshotId, ex.Message);
+        }
         catch (Exception ex)
         {
             failed = true;
@@ -286,7 +297,7 @@ public sealed class TweakEngine(
         // return del dry-run (linea ~123), este reporte decia DryRun=false aunque se hubiera pedido
         // dry-run, y parecia que el dry-run se habia ignorado. Un dry-run fallido sigue siendo un
         // dry-run: Success=false es lo que dice que fallo.
-        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, DryRun = options.DryRun, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
+        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, DryRun = options.DryRun, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, PreflightBlocked = preflightBlocked, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
     }
 
     public async Task<BatchReport> RevertAsync(RevertRequest request, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null)

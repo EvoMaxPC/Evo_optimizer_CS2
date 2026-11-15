@@ -24,6 +24,8 @@ public sealed record ApplyOptions
     public bool Force { get; init; }
     public bool CreateRestorePoint { get; init; } = true;
     public bool EnableSystemProtection { get; init; }
+    /// <summary>Consentimiento solo para esta aplicación si la protección no está disponible.</summary>
+    public bool AcceptWithoutSystemRestore { get; init; }
     public TweakProfile Profile { get; init; } = TweakProfile.Safe;
     public IReadOnlySet<string> RiskAcknowledgements { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public string? AdvancedRiskPhrase { get; init; }
@@ -81,6 +83,7 @@ public sealed record BatchReport
     public bool Success { get; init; }
     public bool Cancelled { get; init; }
     public bool HasCriticalFailure { get; init; }
+    public bool PreflightBlocked { get; init; }
     public long? RestorePointSequence { get; init; }
     public IReadOnlyList<TweakApplyResult> Results { get; init; } = [];
     public IReadOnlyList<string> Errors { get; init; } = [];

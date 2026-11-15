@@ -10,6 +10,8 @@ public sealed class PreflightService(
     NetworkChangePreflight? networkChanges = null,
     Localizer? localizer = null) : IPreflightService
 {
+    public const string RestoreUnavailableId = "restore-unavailable";
+    public const string AcceptedWithoutRestoreMessage = "Sin punto de restauración del sistema (confirmado por el usuario). La única vuelta atrás es el revert de FragForge desde su journal y los respaldos que hagas vos.";
     public const ulong MinimumFreeBytes = 512UL * 1024 * 1024;
 
     /// <summary>
@@ -48,7 +50,8 @@ public sealed class PreflightService(
             var state = await restore.GetProtectionStateAsync(cancellationToken);
             if (state == FeatureState.Enabled) checks.Add(new("restore", PreflightSeverity.Info, "Protección del sistema habilitada."));
             else if (options.EnableSystemProtection && state != FeatureState.NotPresent) checks.Add(new("restore", PreflightSeverity.Warning, "La protección del sistema se habilitará para la unidad de sistema porque lo solicitaste explícitamente."));
-            else checks.Add(new("restore", PreflightSeverity.Blocking, state == FeatureState.NotPresent ? "System Restore no está disponible en esta edición." : "La protección del sistema está desactivada o no pudo confirmarse.", "Habilítala en Protección del sistema o usa --enable-system-protection; --no-restore-point solo omite el punto, no el snapshot/journal."));
+            else if (options.AcceptWithoutSystemRestore) checks.Add(new(RestoreUnavailableId, PreflightSeverity.Warning, AcceptedWithoutRestoreMessage));
+            else checks.Add(new(RestoreUnavailableId, PreflightSeverity.Blocking, state == FeatureState.NotPresent ? "System Restore no está disponible en esta edición." : "La protección del sistema está desactivada o no pudo confirmarse.", "Habilítala en Protección del sistema o usa --enable-system-protection; --no-restore-point solo omite el punto, no el snapshot/journal. Si querés aplicar igual, repetí el comando con --acepto-sin-punto-de-restauracion"));
         }
         else checks.Add(new("restore", PreflightSeverity.Warning, "Punto de restauración omitido por opción explícita. El snapshot y journal siguen siendo obligatorios."));
         // Capa 5.3 (R-J): BitLocker se consulta SOLO si la operación puede reiniciar el enlace de red. En el
