@@ -386,4 +386,20 @@ public sealed class MatchRunnerTests
         Assert.Contains(prompt.Lines, x => x.Contains("FPS promedio: 100.0 FPS"));
     }
 
+    [Fact]
+    public async Task WindowNotRunningAtEnd_UsesPreviousObservation()
+    {
+        var process = new Process(); var launcher = new Launcher(process); var prompt = new Prompt(); var hotkeys = new Hotkeys();
+        LivePresentMonSession? session = null; var tick = 0; var windows = 0;
+        var runner = Runner(prompt, hotkeys, launcher, async (_, _) =>
+        {
+            if (tick++ == 0) { process.Reader.Send(Header + Row); await WaitUntil(() => session!.State == LiveSessionState.Running); }
+            else hotkeys.Send(HotkeyAction.Finish);
+        }, window: () => ++windows == 1 ? Window : new Cs2WindowObservation(Cs2WindowStatus.NotRunning, [], null, null, null, null, null, null, null, []), capture: value => session = value);
+        var result = await runner.RunAsync(new MatchOptions(null, false));
+        // Una observación de 1024x768 seguida de NotRunning conserva la primera.
+        Assert.Equal(ExitCodes.Success, result);
+        Assert.Contains(prompt.Lines, x => x.Contains("RESUMEN FINAL") && x.Contains("Área cliente: 1024x768") && x.Contains("ventana observada durante la medición"));
+    }
+
 }

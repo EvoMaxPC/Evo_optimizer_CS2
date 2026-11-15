@@ -170,7 +170,8 @@ public sealed class MatchRunner(
                 segmentOpen ? hotkeyNotes.Concat(["segmento sin cerrar: no se muestra"]).ToArray() : hotkeyNotes);
             var text = MatchReportFormatter.Format(final);
             prompt.WriteLine(text);
-            if (logWriter is null) prompt.WriteLine("No se guardó ningún log (usá --guardar-log para guardarlo).");
+            if (!options.SaveLog) prompt.WriteLine("No se guardó ningún log (usá --guardar-log para guardarlo).");
+            else if (logWriter is null) prompt.WriteWarning("No se pudo guardar el log: guardado no disponible.");
             else
             {
                 try
@@ -196,7 +197,7 @@ public sealed class MatchRunner(
         MatchConfigSheet? sheet, MatchConfigSheet? endSheet, MatchEnvironment environment, bool segmentClosed, IReadOnlyList<string> notes)
     {
         var segment = segmentClosed ? session.Ingest.Accumulator.GetSegment() : null;
-        if (segment is not null && segment.Statistics is null) segment = null;
+        if (segment is not null && (segment.FrameCount == 0 || segment.Statistics is null)) segment = null;
         return new MatchReportInput
         {
             Kind = kind, GeneratedAtLocal = clock(), Mode = mode, SessionStateText = StateText(session.State),
