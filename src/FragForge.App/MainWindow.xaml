@@ -14,8 +14,8 @@
     </Grid.RowDefinitions>
 
     <!-- ===== Barra superior: perfil, idioma, acciones ===== -->
-    <DockPanel Grid.Row="0" Margin="0,0,0,10" KeyboardNavigation.TabNavigation="Cycle">
-      <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+    <WrapPanel Grid.Row="0" Margin="0,0,0,10" KeyboardNavigation.TabNavigation="Cycle">
+      <StackPanel Orientation="Horizontal">
         <TextBlock Text="{Binding Localizer[profile.label]}" VerticalAlignment="Center" Margin="0,0,6,0"/>
         <ComboBox Width="170" ItemsSource="{Binding Profiles}" DisplayMemberPath="Label"
                   SelectedValuePath="Profile" SelectedValue="{Binding SelectedProfile}"
@@ -27,8 +27,7 @@
         <ComboBox Width="90" ItemsSource="{Binding Cultures}" SelectedItem="{Binding Culture}"
                   AutomationProperties.Name="{Binding Localizer[a11y.culture]}"/>
       </StackPanel>
-      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-        <Button Content="Medición" Click="OpenMeasurementTab_Click"/>
+      <Button Content="Medición" Click="OpenMeasurementTab_Click"/>
         <Button Content="{Binding Localizer[nav.scan]}" Command="{Binding ScanCommand}"/>
         <Button Content="{Binding Localizer[preview.button]}" Command="{Binding PreviewCommand}"/>
         <Button Content="{Binding Localizer[nav.apply]}" Command="{Binding ApplyCommand}" Style="{StaticResource PrimaryButton}"/>
@@ -36,8 +35,7 @@
         <Button Content="{Binding Localizer[cancel]}" Command="{Binding CancelCommand}"/>
         <ToggleButton Content="{Binding SessionStateText}" Command="{Binding ToggleSessionCommand}"
                       ToolTip="{Binding Localizer[session.tooltip]}" Margin="6,0,0,0"/>
-      </StackPanel>
-    </DockPanel>
+    </WrapPanel>
 
     <!-- ===== Hardware ===== -->
     <Border Grid.Row="1" Background="{StaticResource PanelBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
