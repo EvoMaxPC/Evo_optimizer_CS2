@@ -71,7 +71,15 @@ public sealed class WindowsCloseProcessOpener(WmiCloseIdentityReader identities,
 [SupportedOSPlatform("windows")]
 public sealed class WindowsCloseProcess(Process process) : ICloseProcess
 {
-    public string? Name => process.ProcessName;
+    public string? Name
+    {
+        get
+        {
+            process.Refresh();
+            if (process.HasExited) throw new InvalidOperationException("Proceso terminado.");
+            return process.ProcessName;
+        }
+    }
     public long? Pid => process.Id;
     // Win32_Process.CreationDate has microsecond precision.
     public DateTimeOffset? StartTime
