@@ -13,14 +13,57 @@ public sealed class MatchRunner(
     Func<Cs2WindowObservation> observeWindow, Func<Task<Cs2Inspection>> inspect,
     Func<Task<OrphanPresentMonSearch>> findOrphans, Func<IReadOnlyList<string>> displayModes,
     Func<bool> isElevated, MatchLogWriter? logWriter, Func<DateTimeOffset> clock,
-    Func<TimeSpan, CancellationToken, Task> delay)
+    Func<TimeSpan, CancellationToken, Task> delay, IEtwSessionControl? etw = null,
+    Func<LiveSessionOptions, Func<ILivePresentMonLauncher, ILivePresentMonLauncher>, LivePresentMonSession>? trackedSessionFactory = null)
 {
     private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(200);
+
+    private sealed class TrackedLauncher(ILivePresentMonLauncher inner, Action onStarted) : ILivePresentMonLauncher
+    {
+        public ILivePresentMonProcess Start(string exePath, IReadOnlyList<string> arguments)
+        {
+            var process = inner.Start(exePath, arguments);
+            onStarted();
+            return process;
+        }
+    }
 
     public async Task<int> RunAsync(MatchOptions options, CancellationToken finishRequested = default)
     {
         var queue = new ConcurrentQueue<HotkeyAction>();
         void Enqueue(HotkeyAction action) => queue.Enqueue(action);
+        LivePresentMonSession? session = null;
+        var launched = false;
+        var cleanupAttempted = false;
+        async Task CloseOwnedSessionAsync()
+        {
+            if (cleanupAttempted || etw is null || session?.EffectiveSessionName is not { } name) return;
+            cleanupAttempted = true;
+            if (!EtwSessionNames.IsOwn(name)) { prompt.WriteWarning("Nombre de sesión ETW no válido; no se cerró."); return; }
+            if (!launched)
+            {
+                try
+                {
+                    var listed = await etw.ListOwnSessionsAsync(CancellationToken.None).ConfigureAwait(false);
+                    if (!listed.Contains(name, StringComparer.Ordinal)) return;
+                }
+                catch (Exception ex)
+                {
+                    prompt.WriteWarning("No se pudo comprobar si quedó una sesión ETW abierta: " + ex.Message + ". Ejecutá logman query -ets en PowerShell como administrador.");
+                    return;
+                }
+            }
+            await CloseAsync(name).ConfigureAwait(false);
+        }
+        async Task CloseAsync(string name)
+        {
+            try
+            {
+                var result = await etw!.CloseAsync(name, CancellationToken.None).ConfigureAwait(false);
+                if (!result.Closed) prompt.WriteWarning(result.Message + $" En PowerShell como administrador: logman stop {name} -ets");
+            }
+            catch (Exception ex) { prompt.WriteWarning($"No se pudo cerrar la sesión ETW: {ex.Message}. En PowerShell como administrador: logman stop {name} -ets"); }
+        }
         try
         {
             if (!isElevated())
@@ -36,6 +79,20 @@ public sealed class MatchRunner(
                 foreach (var note in orphans.Notes) prompt.WriteWarning(note);
                 foreach (var orphan in orphans.Processes) prompt.WriteWarning(OrphanPresentMonAdvice.Describe(orphan));
                 if (orphans.Processes.Count > 0 && prompt.Confirm("¿Continuar igual?") != true) return ExitCodes.Cancelled;
+            }
+
+            if (etw is not null)
+            {
+                IReadOnlyList<string>? oldSessions = null;
+                try { oldSessions = await etw.ListOwnSessionsAsync(CancellationToken.None).ConfigureAwait(false); }
+                catch (Exception ex) { prompt.WriteWarning("No se pudieron listar sesiones ETW anteriores: " + ex.Message); }
+                var own = oldSessions?.Where(EtwSessionNames.IsOwn).Distinct(StringComparer.Ordinal).ToArray() ?? [];
+                if (own.Length > 0)
+                {
+                    foreach (var name in own) prompt.WriteWarning("Sesión ETW anterior: " + name);
+                    if (prompt.Confirm("¿Cerrarlas ahora?") == true)
+                        foreach (var name in own) await CloseAsync(name).ConfigureAwait(false);
+                }
             }
 
             MatchConfigSheet? sheet = null;
@@ -58,7 +115,8 @@ public sealed class MatchRunner(
 
             var sessionOptions = new LiveSessionOptions { DurationSeconds = options.DurationSeconds,
                 StallGrace = options.DurationSeconds is null ? null : LiveSessionOptions.DefaultStallGrace };
-            await using var session = sessionFactory(sessionOptions);
+            session = trackedSessionFactory is null ? sessionFactory(sessionOptions)
+                : trackedSessionFactory(sessionOptions, launcher => new TrackedLauncher(launcher, () => launched = true));
             await session.StartAsync(CancellationToken.None).ConfigureAwait(false);
             if (session.State == LiveSessionState.Failed)
             {
@@ -161,6 +219,7 @@ public sealed class MatchRunner(
                 catch (OperationCanceledException) when (finishRequested.IsCancellationRequested) { break; }
             }
             await session.StopAsync().ConfigureAwait(false);
+            await CloseOwnedSessionAsync().ConfigureAwait(false);
             session.Ingest.Complete();
             var finalWindow = Observe();
             if (finalWindow.Status != Cs2WindowStatus.Observed && lastObserved is not null)
@@ -190,8 +249,23 @@ public sealed class MatchRunner(
         }
         finally
         {
-            hotkeys.Pressed -= Enqueue;
-            hotkeys.Dispose();
+            try
+            {
+                if (session is not null)
+                {
+                    try { await session.StopAsync().ConfigureAwait(false); }
+                    finally
+                    {
+                        try { await CloseOwnedSessionAsync().ConfigureAwait(false); }
+                        finally { await session.DisposeAsync().ConfigureAwait(false); }
+                    }
+                }
+            }
+            finally
+            {
+                hotkeys.Pressed -= Enqueue;
+                hotkeys.Dispose();
+            }
         }
     }
 

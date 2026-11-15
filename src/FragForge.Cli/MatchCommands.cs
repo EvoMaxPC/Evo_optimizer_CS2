@@ -48,7 +48,9 @@ public static class MatchCommands
                 },
                 () => display.ReadActiveModes().Select(mode => mode.Key).ToArray(), LiveElevation.IsElevated,
                 options.SaveLog ? new MatchLogWriter(MatchLogLocation.DefaultDirectory(), () => DateTimeOffset.Now) : null,
-                () => DateTimeOffset.Now, (duration, token) => Task.Delay(duration, token));
+                () => DateTimeOffset.Now, (duration, token) => Task.Delay(duration, token),
+                new LogmanEtwSessionControl(),
+                (sessionOptions, wrap) => new LivePresentMonSession(wrap(launcher), LiveElevation.IsElevated, resolver, sessionOptions));
             return await runner.RunAsync(options, finish.Token).ConfigureAwait(false);
         }
         finally { Console.CancelKeyPress -= handler; }
