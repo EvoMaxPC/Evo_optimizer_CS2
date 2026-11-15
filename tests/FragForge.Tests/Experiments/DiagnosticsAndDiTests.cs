@@ -192,12 +192,12 @@ public sealed class ToolVerifierTests
     }
 
     [Fact]
-    public void EmbeddedAllowlist_HasNoInventedHash()
+    public void EmbeddedAllowlist_HasUserProvidedHash()
     {
         var allowlist = ToolVerifier.LoadEmbedded();
         var presentmon = allowlist.Find(ToolVerifier.PresentMonKey);
         Assert.NotNull(presentmon);
-        Assert.True(string.IsNullOrWhiteSpace(presentmon!.Sha256), "El hash embebido debe quedar vacío: no se inventan hashes.");
+        Assert.Equal("b2a706bc6ad475749e3b7e3409263aa1e6906d45bdcf993f6dbc0f660188f1af", presentmon!.Sha256);
     }
 
     [Fact]
