@@ -131,14 +131,14 @@ public sealed class GlobalHotkeyListener : IHotkeySource
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool UnregisterHotKey(nint hwnd, int id);
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError = true, ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern int GetMessageW(out Message message, nint hwnd, uint min, uint max);
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PeekMessageW(out Message message, nint hwnd, uint min, uint max, uint remove);
-    [DllImport("user32.dll", SetLastError = true)]
+    [DllImport("user32.dll", SetLastError = true, ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool PostThreadMessageW(uint threadId, uint message, nuint wparam, nint lparam);

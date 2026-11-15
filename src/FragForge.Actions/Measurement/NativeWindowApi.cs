@@ -91,7 +91,7 @@ public sealed class NativeWindowApi : INativeWindowApi
     [DllImport("user32.dll")]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern nint MonitorFromWindow(nint hwnd, uint flags);
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfoW(nint monitor, ref MonitorInfo info);
