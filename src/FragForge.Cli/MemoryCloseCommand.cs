@@ -16,7 +16,8 @@ public sealed class MemoryCloseCommand(
         int exit = 1;
         try
         {
-            result = await run(args, log.ReserveAsync, cancellationToken);
+            await log.ReserveAsync("", cancellationToken);
+            result = await run(args, (line, token) => log.AppendAsync(line + Environment.NewLine, token), cancellationToken);
             exit = result.ExitCode;
         }
         catch (Exception) { await error.WriteLineAsync("No se pudo completar el cierre; el estado puede ser desconocido."); }
@@ -24,10 +25,10 @@ public sealed class MemoryCloseCommand(
         {
             try
             {
-                var text = result?.Log ?? "Error inesperado; el estado puede ser desconocido.\n";
+                var text = result is null ? "Error inesperado; el estado puede ser desconocido." : "Resultado final: exit " + exit.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 // Final recording is deliberately not cancelled after an interrupted operation.
-                if (log.Reserved) await log.AppendAsync("\nResultado final:\n" + text, CancellationToken.None);
-                else await log.ReserveAsync(text, CancellationToken.None);
+                if (log.Reserved) await log.AppendAsync(text + Environment.NewLine, CancellationToken.None);
+                else await log.ReserveAsync(text + Environment.NewLine, CancellationToken.None);
             }
             catch (Exception) { await error.WriteLineAsync("Aviso: no se pudo guardar el registro de cierre."); exit = 1; }
         }
@@ -53,11 +54,11 @@ public sealed class MemoryCloseCommand(
         var identities = new WmiCloseIdentityReader(wmi);
         var console = new ConsoleCloseAdapter();
         var log = new MemoryCloseLog(System.IO.Path.Combine(new FragForgePaths().Root, "memoria"), () => DateTimeOffset.Now);
-        async Task<MemoryCloseResult> Run(string[] arguments, Func<string, CancellationToken, Task> reserve, CancellationToken ct)
+        async Task<MemoryCloseResult> Run(string[] arguments, Func<string, CancellationToken, Task> record, CancellationToken ct)
         {
             async Task<double?> Available(CancellationToken token) => (await memory.ReadAsync(token)).System?.AvailableMb;
             var logic = new MemoryCloseLogic(memory.ReadAsync, identities, new WindowsCloseProcessOpener(identities, Environment.ProcessId), Available,
-                (duration, token) => Task.Delay(duration, token), BuildServerShutdown.RunAsync, console, () => DateTimeOffset.Now, Environment.ProcessId, reserve);
+                (duration, token) => Task.Delay(duration, token), (_, _, _) => Task.FromResult(false), console, () => DateTimeOffset.Now, Environment.ProcessId, record);
             return await logic.RunAsync(arguments, ct);
         }
         return new MemoryCloseCommand(Run, log, Console.Error).RunAsync(args);

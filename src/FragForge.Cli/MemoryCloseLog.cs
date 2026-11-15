@@ -26,9 +26,11 @@ public sealed class MemoryCloseLog(string directory, Func<DateTimeOffset> clock)
             await using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.Asynchronous))
             {
                 ownsTemporary = true;
+                await file.WriteAsync(new byte[] { 0xEF, 0xBB, 0xBF }, cancellationToken);
                 await using var writer = new StreamWriter(file, new UTF8Encoding(false));
                 await writer.WriteAsync(text.AsMemory(), cancellationToken);
                 await writer.FlushAsync(cancellationToken);
+                file.Flush(flushToDisk: true);
             }
             var stem = "cierre-" + clock().ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
             for (int i = 1; i <= 99; i++)
@@ -52,5 +54,6 @@ public sealed class MemoryCloseLog(string directory, Func<DateTimeOffset> clock)
         await using var writer = new StreamWriter(stream, new UTF8Encoding(false));
         await writer.WriteAsync(text.AsMemory(), cancellationToken);
         await writer.FlushAsync(cancellationToken);
+        stream.Flush(flushToDisk: true);
     }
 }
