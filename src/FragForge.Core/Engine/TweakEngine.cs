@@ -81,6 +81,7 @@ public sealed class TweakEngine(
         var critical = false;
         var failed = false;
         var preflightBlocked = false;
+        IReadOnlyList<string> blockingPreflightCheckIds = [];
         await AppendAsync(operationId, JournalEventType.OperationStarted, null, null, options.DryRun ? "Apply dry-run" : "Apply", cancellationToken);
         try
         {
@@ -281,6 +282,7 @@ public sealed class TweakEngine(
         catch (PreflightFailedException ex)
         {
             preflightBlocked = true;
+            blockingPreflightCheckIds = ex.Report.Checks.Where(c => c.Severity == PreflightSeverity.Blocking).Select(c => c.Id).ToArray();
             failed = true;
             errors.Add(ex.Message);
             await AppendSafeAsync(operationId, JournalEventType.OperationFailed, null, snapshotId, ex.Message);
@@ -297,7 +299,7 @@ public sealed class TweakEngine(
         // return del dry-run (linea ~123), este reporte decia DryRun=false aunque se hubiera pedido
         // dry-run, y parecia que el dry-run se habia ignorado. Un dry-run fallido sigue siendo un
         // dry-run: Success=false es lo que dice que fallo.
-        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, DryRun = options.DryRun, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, PreflightBlocked = preflightBlocked, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
+        return await FinishAsync(new BatchReport { OperationId = operationId, SnapshotId = snapshotId, DryRun = options.DryRun, Success = success, Cancelled = cancelled, HasCriticalFailure = critical, PreflightBlocked = preflightBlocked, BlockingPreflightCheckIds = blockingPreflightCheckIds, RestorePointSequence = restoreSequence, Results = results, Errors = errors, Warnings = warnings }, success, CancellationToken.None);
     }
 
     public async Task<BatchReport> RevertAsync(RevertRequest request, CancellationToken cancellationToken = default, IProgress<EngineProgress>? progress = null)

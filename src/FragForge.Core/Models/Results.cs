@@ -84,6 +84,7 @@ public sealed record BatchReport
     public bool Cancelled { get; init; }
     public bool HasCriticalFailure { get; init; }
     public bool PreflightBlocked { get; init; }
+    public IReadOnlyList<string> BlockingPreflightCheckIds { get; init; } = [];
     public long? RestorePointSequence { get; init; }
     public IReadOnlyList<TweakApplyResult> Results { get; init; } = [];
     public IReadOnlyList<string> Errors { get; init; } = [];
