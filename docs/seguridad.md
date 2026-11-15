@@ -254,6 +254,8 @@ La observación usa `EnumWindows`, `GetWindowThreadProcessId`, `IsWindowVisible`
 
 La resolución «observada» es el área cliente de la ventana: no prueba el modo de pantalla ni la resolución interna de render. No está verificado en vivo que estas APIs sean aceptables para el anticheat; no hay fuente citada para afirmarlo.
 
+Por defecto el log se escribe bajo `%ProgramData%\FragForge\matches`; `MatchLogWriter` acepta un directorio inyectado (usado por tests). Las guardas de segmentos `steamapps` y `userdata` se aplican a cualquier directorio. Por defecto no se guarda nada. La resolución observada es el área cliente y no prueba el modo de pantalla.
+
 El detector identifica candidatos de PresentMon propio, pero FragForge no los cierra automáticamente. Queda como deuda un cierre automático con confirmación sujeto al invariante de higiene. No está verificado que el cierre manual termine la sesión ETW.
 
 ## 10. Limitaciones conocidas
