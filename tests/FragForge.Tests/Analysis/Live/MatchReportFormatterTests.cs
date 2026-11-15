@@ -91,4 +91,20 @@ public sealed class MatchReportFormatterTests
         Assert.Contains("\nPantallas activas: DISPLAY2 640x480@60Hz\n", report);
     }
 
+    [Theory]
+    [InlineData(MatchReportKind.Partial)]
+    [InlineData(MatchReportKind.Final)]
+    public void TotalNote_AppearsExactlyOnceAndOnlyUnderTotal(MatchReportKind kind)
+    {
+        var view = new LiveViewSnapshot("total", null, 1, 0, new FrameStatistics(), null, []);
+        var report = MatchReportFormatter.Format(new MatchReportInput { Kind = kind, Total = view, Last30 = view, Segment = view, GeneratedAtLocal = Time });
+        const string note = "El total incluye los frames acumulados de la serie mostrada desde el inicio de la medición (puede incluir menús y carga de mapa); para jugar mirá el segmento o los últimos 30 s.";
+        var lines = report.Split('\n');
+        // Hay tres vistas y la nota aparece una vez, justo después de la cabecera Total.
+        Assert.Equal(1, lines.Count(line => line == note));
+        Assert.Equal("Total:", lines[Array.IndexOf(lines, note) - 1]);
+        Assert.DoesNotContain(note, lines.Skip(Array.IndexOf(lines, "Últimos 30 s:")));
+        Assert.DoesNotContain(note, lines.Skip(Array.IndexOf(lines, "Segmento:")));
+    }
+
 }

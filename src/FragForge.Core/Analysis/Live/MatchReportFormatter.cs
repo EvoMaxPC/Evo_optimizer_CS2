@@ -99,6 +99,7 @@ public static class MatchReportFormatter
     {
         if (view is null) return;
         lines.Add(label + ":");
+        if (label == "Total") lines.Add("El total incluye los frames acumulados de la serie mostrada desde el inicio de la medición (puede incluir menús y carga de mapa); para jugar mirá el segmento o los últimos 30 s.");
         lines.Add("Frames: " + view.FrameCount.ToString(Inv) + " · duración: " + Number(view.SpanSeconds, "0.00") + " s");
         var stats = view.Statistics;
         lines.Add("FPS promedio: " + Fps(stats?.MeanMs));
