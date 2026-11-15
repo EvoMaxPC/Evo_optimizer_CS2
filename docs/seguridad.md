@@ -372,3 +372,11 @@ No se puede garantizar que nunca se abra un handle a un proceso protegido: el PI
 El registro de R-M para esta acción es `%ProgramData%\FragForge\memoria\cierre-yyyyMMdd-HHmmss.txt`, no el journal de tweaks. Se reserva sin sobrescribir antes de actuar y se completa al finalizar; si no se puede reservar, no se actúa. Si falla la escritura, se avisa y se devuelve error. Si hay colisiones se usan sufijos `-02` a `-99`; si están todos ocupados, se aborta. Una interrupción abrupta puede dejar solo el registro inicial.
 
 La memoria libre puede volver a bajar. Esto no es una promesa de FPS. El working set suma páginas compartidas y puede sobreestimar lo que ocupa un grupo. La función no ha sido verificada en vivo en esta ronda.
+
+### L7b: convars guardados por el juego
+
+Para la cuenta activa ya resuelta, la inspección lee únicamente `userdata/<cuenta>/730/local/cfg/cs2_machine_convars.vcfg` y `cs2_user_convars_0_slot0.vcfg`, en modo lectura compartida. No lee `remote` ni archivos de teclas; no escribe archivos de Steam ni userdata. Cada archivo tiene un límite de 2 MiB, comprobado antes y durante la lectura. Si falta, no se puede leer o está malformado, se anota y la medición continúa.
+
+Se aceptan únicamente estas claves exactas: `fps_max`, `fps_max_ui`, `cl_showfps`, `m_rawinput`, `m_customaccel`, `m_mouse_accel1`, `m_mouse_accel2`, `sensitivity`, `zoom_sensitivity_ratio`, `cl_interp`, `cl_interp_ratio`, `cl_updaterate`, `cl_cmdrate`, `rate`, `engine_low_latency_sleep_after_client_tick`, `mat_vsync`, `r_fullscreen_gamma`, `cl_autohelp`, `viewmodel_fov`. Los valores se muestran literalmente; valores con caracteres de control o de más de 64 caracteres se omiten. Valores distintos en ambos archivos omiten la clave y generan una nota; valores iguales se muestran una vez. Cuando la lectura no es completamente conocida, no se interpretan cambios de esa sección en el diff.
+
+Son valores guardados, **no el valor actual ni efectivo**: `autoexec.cfg` y las opciones de lanzamiento pueden modificarlos.
