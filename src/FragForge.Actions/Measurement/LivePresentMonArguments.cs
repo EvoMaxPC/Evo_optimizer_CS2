@@ -8,11 +8,13 @@ namespace FragForge.Actions.Measurement;
 public static class LivePresentMonArguments
 {
     /// <summary>
-    /// Nombre de sesión ETW FIJO. Con <c>--stop_existing_session</c>, un FragForge nuevo limpia una
-    /// sesión ETW que haya quedado de un corte (PresentMon puede dejarla abierta si se lo mata de golpe).
-    /// Implica una sola instancia de medición en vivo a la vez.
+    /// Nombre único por corrida; FragForge no cierra sesiones ETW ajenas. Si matar PresentMon
+    /// dejara viva su sesión ETW, quedaría huérfana (NO verificado).
     /// </summary>
-    public const string DefaultSessionName = "FragForgeLive";
+    public const string SessionNamePrefix = "FragForgeLive-";
+
+    /// <summary>Genera un nombre de sesión con ocho dígitos hexadecimales de un Guid.</summary>
+    public static string NewSessionName() => SessionNamePrefix + Guid.NewGuid().ToString("N").Substring(0, 8);
 
     /// <summary>
     /// Argumentos para <c>--output_stdout</c> midiendo solo <paramref name="processName"/>.
@@ -35,7 +37,6 @@ public static class LivePresentMonArguments
             "--output_stdout",
             "--process_name", exeName,
             "--session_name", sessionName,
-            "--stop_existing_session",
             "--no_console_stats",
         ];
     }

@@ -40,8 +40,8 @@ public sealed record LiveSessionOptions
     /// <summary>Duración fija en segundos, o <c>null</c> para medir sin tope.</summary>
     public double? DurationSeconds { get; init; }
 
-    /// <summary>Nombre de la sesión ETW. Por defecto el fijo <see cref="LivePresentMonArguments.DefaultSessionName"/>.</summary>
-    public string SessionName { get; init; } = LivePresentMonArguments.DefaultSessionName;
+    /// <summary>Nombre de sesión ETW; null genera un nombre nuevo al iniciar.</summary>
+    public string? SessionName { get; init; }
 
     /// <summary>Gracia ante falta de frames nuevos antes de declarar <see cref="LiveSessionState.Stalled"/>.</summary>
     public TimeSpan StallGrace { get; init; } = DefaultStallGrace;
@@ -77,6 +77,7 @@ public sealed class LivePresentMonSession : IAsyncDisposable
     private Task? _stopTask;
     private LiveSessionState _state = LiveSessionState.NotStarted;
     private string? _failureMessage;
+    private string? _effectiveSessionName;
     private string _stderrTail = "";
     private int? _exitCode;
     private bool _started;
@@ -99,6 +100,8 @@ public sealed class LivePresentMonSession : IAsyncDisposable
     public LiveFrameIngest Ingest { get; }
     public LiveSessionState State { get { lock (_gate) return _state; } }
     public string? FailureMessage { get { lock (_gate) return _failureMessage; } }
+    /// <summary>Nombre usado al iniciar, o null si aún no se intentó lanzar PresentMon.</summary>
+    public string? EffectiveSessionName { get { lock (_gate) return _effectiveSessionName; } }
     public string StderrTail { get { lock (_gate) return _stderrTail; } }
     public int? ExitCode { get { lock (_gate) return _exitCode; } }
 
@@ -136,11 +139,12 @@ public sealed class LivePresentMonSession : IAsyncDisposable
                 lock (_gate) SetTerminalLocked(LiveSessionState.Failed, resolution.RejectionReason ?? "Herramienta no aprobada.");
                 return Task.CompletedTask;
             }
-            var arguments = LivePresentMonArguments.Build(_options.ProcessName, _options.SessionName);
             // Serializa el lanzamiento con Stop: no se puede crear un hijo después de detener.
             lock (_gate)
             {
                 if (IsTerminal(_state)) return Task.CompletedTask;
+                _effectiveSessionName = _options.SessionName ?? LivePresentMonArguments.NewSessionName();
+                var arguments = LivePresentMonArguments.Build(_options.ProcessName, _effectiveSessionName);
                 _process = _launcher.Start(resolution.ApprovedPath, arguments);
                 _state = LiveSessionState.WaitingForFrames;
                 // Task.Run evita continuaciones síncronas bajo el lock, incluso con fakes.
