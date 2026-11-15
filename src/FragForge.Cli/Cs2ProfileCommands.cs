@@ -95,7 +95,8 @@ public static class Cs2ProfileCommands
         }
 
         // 5) Aviso si el juego corre: los cambios se leen al reiniciar.
-        if (Cs2Process.IsRunningOnThisMachine() is true)
+        var processProbe = services.GetService<Func<bool?>>() ?? Cs2Process.IsRunningOnThisMachine;
+        if (processProbe() is true)
             prompt.WriteWarning("CS2 está en ejecución: los cambios se leen al iniciar el juego. Ciérralo y vuelve a abrirlo para que se apliquen.");
 
         // 6) Confirmación en la carpeta del juego (--yes la omite).

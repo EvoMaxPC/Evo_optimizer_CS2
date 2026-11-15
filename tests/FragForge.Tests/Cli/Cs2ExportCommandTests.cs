@@ -112,6 +112,28 @@ public sealed class Cs2ExportCommandTests : IDisposable
 
     private string GameCfgPath => Path.Combine(_cfg, "fragforge-cs2.cfg");
 
+    [Fact]
+    public async Task FolderInsideUserData_IsRejectedWithoutWriting()
+    {
+        var userdata = Path.Combine(_steam, "userdata");
+        Directory.CreateDirectory(userdata);
+        var destination = Path.Combine(userdata, "123", "730");
+        var prompt = new FakePrompt();
+        var services = new FakeServices()
+            .Add(new Cs2Inspector(new FixedResolver(_exe), new FakeRegistry()))
+            .Add<IConsolePrompt>(prompt)
+            .Add<Func<bool?>>(() => false);
+
+        var code = await Cs2ProfileCommands.RunAsync(services,
+            ExportArgs(("dest", "carpeta:" + destination)), CancellationToken.None);
+
+        // Una solicitud rechazada: código 1, ningún archivo ni subdirectorio nuevo.
+        Assert.Equal(1, code);
+        Assert.Contains("No se exporta dentro de la carpeta userdata de Steam. Elegí otra carpeta.", prompt.Warnings);
+        Assert.False(Directory.Exists(destination));
+        Assert.Empty(Directory.GetFileSystemEntries(userdata));
+    }
+
     // ------------------------------------------------------------------ vista previa
 
     [Fact]
