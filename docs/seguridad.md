@@ -256,7 +256,11 @@ La resolución «observada» es el área cliente de la ventana: no prueba el mod
 
 Por defecto el log se escribe bajo `%ProgramData%\FragForge\matches`; `MatchLogWriter` acepta un directorio inyectado (usado por tests). Las guardas de segmentos `steamapps` y `userdata` se aplican a cualquier directorio. Por defecto no se guarda nada. La resolución observada es el área cliente y no prueba el modo de pantalla.
 
-El detector identifica candidatos de PresentMon propio, pero FragForge no los cierra automáticamente. Queda como deuda un cierre automático con confirmación sujeto al invariante de higiene. No está verificado que el cierre manual termine la sesión ETW.
+El detector identifica candidatos de PresentMon propio, pero FragForge no cierra automáticamente procesos anteriores. En una observación en una sola PC, terminar PresentMon dejó activa su sesión ETW; no se midió el costo de dejarla abierta.
+
+`match` intenta cerrar su sesión ETW con `logman` al terminar y verificar que ya no figure; al iniciar ofrece cerrar sesiones anteriores con confirmación. Solo se admiten nombres `FragForgeLive-` seguidos de exactamente ocho dígitos hexadecimales minúsculos. Si falla, se informa cómo intentar el cierre manual; el comportamiento nuevo no está verificado en vivo.
+
+FragForge puede terminar únicamente el `logman.exe` que él mismo lanzó para esa invocación si vence el timeout de 10 s o se cancela; no termina ningún otro proceso en esa operación. Esto no es una afirmación de seguridad frente al anticheat.
 
 ## 10. Limitaciones conocidas
 
