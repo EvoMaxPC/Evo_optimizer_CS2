@@ -75,6 +75,7 @@ public sealed class LogmanEtwSessionControlTests
         // Tiempo agotado antes de confirmar: Closed=false.
         Assert.False(result.Closed);
         Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
+        Assert.Contains("estado de la sesión ETW es desconocido", result.Message);
     }
 
     [Fact]
@@ -97,4 +98,51 @@ public sealed class LogmanEtwSessionControlTests
         Assert.False(result.Closed);
         Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
     }
+    [Fact]
+    public async Task TimeoutAndFailedKill_ReportUnknownAndManualCommand()
+    {
+        var control = new LogmanEtwSessionControl((_, _, _) => Task.FromResult(new EtwProcessResult(-1, "", true, KillFailed: true)));
+        var result = await control.CloseAsync(Name, CancellationToken.None);
+        // Timeout y fallo de la terminación: cierre no confirmado, 0 = false.
+        Assert.False(result.Closed);
+        Assert.Contains("estado de la sesión ETW es desconocido", result.Message);
+        Assert.Contains("No se pudo terminar logman", result.Message);
+        Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
+    }
+
+    [Fact]
+    public async Task Cancellation_ReturnsUnknownAndManualCommand()
+    {
+        using var cts = new CancellationTokenSource();
+        var control = new LogmanEtwSessionControl((_, _, token) =>
+        {
+            cts.Cancel();
+            return Task.FromResult(new EtwProcessResult(-1, "", false, Canceled: token.IsCancellationRequested, KillFailed: true));
+        });
+        var result = await control.CloseAsync(Name, cts.Token);
+        // Cancelación con fallo del kill simulado: cierre no confirmado y aviso manual.
+        Assert.False(result.Closed);
+        Assert.Contains("estado de la sesión ETW es desconocido", result.Message);
+        Assert.Contains("No se pudo terminar logman", result.Message);
+        Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
+    }
+
+    [Fact]
+    public async Task QueryCancellation_PreservesFailedKillInCloseMessage()
+    {
+        using var cts = new CancellationTokenSource();
+        var control = new LogmanEtwSessionControl((args, _, _) =>
+        {
+            if (args[0] == "stop") return Task.FromResult(new EtwProcessResult(0, "", false));
+            cts.Cancel();
+            return Task.FromResult(new EtwProcessResult(-1, "", false, Canceled: true, KillFailed: true));
+        });
+        var result = await control.CloseAsync(Name, cts.Token);
+        // Stop 0 pero consulta cancelada: no se conoce el estado y se informa el fallo del kill.
+        Assert.False(result.Closed);
+        Assert.Contains("estado de la sesión ETW es desconocido", result.Message);
+        Assert.Contains("No se pudo terminar logman", result.Message);
+        Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
+    }
+
 }

@@ -11,7 +11,8 @@ public static class EtwSessionNames
 }
 
 public sealed record EtwCloseResult(bool Closed, string Message);
-public sealed record EtwProcessResult(int ExitCode, string StdOut, bool TimedOut, bool OutputTruncated = false);
+public sealed record EtwProcessResult(int ExitCode, string StdOut, bool TimedOut, bool OutputTruncated = false,
+    bool Canceled = false, bool KillFailed = false);
 
 public interface IEtwSessionControl
 {
@@ -30,9 +31,13 @@ public sealed class LogmanEtwSessionControl : IEtwSessionControl
 
     public async Task<IReadOnlyList<string>> ListOwnSessionsAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         var result = await _run(["query", "-ets"], Timeout, ct).ConfigureAwait(false);
+        if (result.Canceled)
+            throw new OperationCanceledException("Consulta cancelada." + (result.KillFailed ? " No se pudo terminar logman." : ""), ct);
+        ct.ThrowIfCancellationRequested();
         if (result.TimedOut || result.ExitCode != 0 || result.OutputTruncated)
-            throw new InvalidOperationException("No se pudo obtener una lista completa de sesiones ETW.");
+            throw new InvalidOperationException("No se pudo obtener una lista completa de sesiones ETW." + (result.KillFailed ? " No se pudo terminar logman." : ""));
         return result.StdOut.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault())
             .Where(EtwSessionNames.IsOwn).Select(name => name!).Distinct(StringComparer.Ordinal).ToArray();
@@ -44,15 +49,19 @@ public sealed class LogmanEtwSessionControl : IEtwSessionControl
         var manual = $"En PowerShell como administrador: logman stop {sessionName} -ets";
         try
         {
+            ct.ThrowIfCancellationRequested();
             var result = await _run(["stop", sessionName, "-ets"], Timeout, ct).ConfigureAwait(false);
-            if (result.TimedOut || result.ExitCode != 0) return new(false, "No se pudo cerrar la sesión ETW. " + manual);
+            if (result.TimedOut || result.Canceled || ct.IsCancellationRequested)
+                return new(false, "Tiempo agotado o cancelación; el estado de la sesión ETW es desconocido." +
+                    (result.KillFailed ? " No se pudo terminar logman." : "") + " " + manual);
+            if (result.ExitCode != 0) return new(false, "No se pudo cerrar la sesión ETW. " + manual);
             var remaining = await ListOwnSessionsAsync(ct).ConfigureAwait(false);
             return remaining.Contains(sessionName, StringComparer.Ordinal)
                 ? new(false, "La sesión ETW sigue listada. " + manual)
                 : new(true, "Sesión ETW cerrada y ya no listada.");
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-        catch (Exception ex) { return new(false, "No se pudo confirmar el cierre de la sesión ETW: " + ex.Message + ". " + manual); }
+        catch (OperationCanceledException ex) { return new(false, "Operación cancelada; el estado de la sesión ETW es desconocido. " + ex.Message + " " + manual); }
+        catch (Exception ex) { return new(false, "No se pudo confirmar el cierre; el estado de la sesión ETW es desconocido: " + ex.Message + ". " + manual); }
     }
 
     private static async Task<EtwProcessResult> RunLogmanAsync(IReadOnlyList<string> args, TimeSpan timeout, CancellationToken ct)
@@ -84,9 +93,10 @@ public sealed class LogmanEtwSessionControl : IEtwSessionControl
         }
         catch (OperationCanceledException)
         {
-            try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-            if (ct.IsCancellationRequested) throw;
-            return new(-1, "", true);
+            var killFailed = false;
+            try { process.Kill(); }
+            catch (Exception) { killFailed = true; }
+            return new(-1, "", !ct.IsCancellationRequested, Canceled: ct.IsCancellationRequested, KillFailed: killFailed);
         }
     }
 
