@@ -150,6 +150,20 @@ public sealed class MemoryCloseCommandTests
     }
 
     [Fact]
+    public async Task UnexpectedExceptionAfterReservationAppendsFinalRecord()
+    {
+        var log = new LogFake(); var error = new StringWriter();
+        var command = new MemoryCloseCommand(async (_, reserve, token) =>
+        {
+            await reserve("selección previa\n", token);
+            throw new InvalidOperationException();
+        }, log, error);
+        Assert.Equal(1, await command.RunAsync([]));
+        Assert.Collection(log.Text, first => Assert.Equal("selección previa\n", first),
+            second => Assert.Equal("\nResultado final:\nError inesperado; el estado puede ser desconocido.\n", second));
+    }
+
+    [Fact]
     public void BuildServerStartInfoUsesExactArguments()
     {
         var info = BuildServerShutdown.CreateStartInfo(["build-server", "shutdown"]);
