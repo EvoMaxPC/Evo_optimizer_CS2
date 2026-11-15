@@ -28,6 +28,7 @@
                   AutomationProperties.Name="{Binding Localizer[a11y.culture]}"/>
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Content="Medición" Click="OpenMeasurementTab_Click"/>
         <Button Content="{Binding Localizer[nav.scan]}" Command="{Binding ScanCommand}"/>
         <Button Content="{Binding Localizer[preview.button]}" Command="{Binding PreviewCommand}"/>
         <Button Content="{Binding Localizer[nav.apply]}" Command="{Binding ApplyCommand}" Background="#1F5F8B"/>
@@ -159,7 +160,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="Medición">
+      <TabItem x:Name="MeasurementTab" Header="Medición">
         <Grid Margin="8" DataContext="{Binding Measurement, RelativeSource={RelativeSource AncestorType=Window}}">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
           <TextBlock Text="{Binding NoticeText}" TextWrapping="Wrap" Margin="0,0,0,10"/>

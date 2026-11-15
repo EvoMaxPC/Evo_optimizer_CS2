@@ -20,6 +20,13 @@ public partial class MainWindow : Window
     {
         await Measurement.FinishAsync();
         MainTabs.SelectedIndex = 0;
+        MeasurementTab.Visibility = Visibility.Collapsed;
+    }
+
+    private void OpenMeasurementTab_Click(object sender, RoutedEventArgs e)
+    {
+        MeasurementTab.Visibility = Visibility.Visible;
+        MainTabs.SelectedItem = MeasurementTab;
     }
 
     protected override async void OnClosing(CancelEventArgs e)
