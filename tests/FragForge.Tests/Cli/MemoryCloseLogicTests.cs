@@ -7,7 +7,7 @@ namespace FragForge.Tests.Cli;
 public sealed class MemoryCloseLogicTests
 {
     private static readonly DateTimeOffset Started = new(2025, 1, 2, 3, 4, 5, TimeSpan.Zero);
-    private static readonly CloseIdentity Self = new("fragforge", 999, Started);
+    private static readonly CloseIdentity Self = new("fragforge", 999, Started, 0);
     private static readonly CloseIdentity Alpha = new("alpha", 42, Started);
     private static ProcessMemoryGroup Group(string name, double mb, string classification = "no protegido") => new(name, 1, mb, mb, classification, "test");
 
@@ -23,7 +23,11 @@ public sealed class MemoryCloseLogicTests
     {
         public int Calls { get; private set; }
         public Func<int, IReadOnlyList<CloseIdentity>?> Get { get; set; } = _ => [Self, Alpha];
-        public Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken) => Task.FromResult(Get(++Calls));
+        public Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken)
+        {
+            var rows = Get(++Calls);
+            return Task.FromResult<IReadOnlyList<CloseIdentity>?>(rows?.Select(x => x.Pid == 999 && x.ParentPid is null ? x with { ParentPid = 0 } : x).ToArray());
+        }
     }
     private sealed class Handle : ICloseProcess
     {
@@ -33,6 +37,7 @@ public sealed class MemoryCloseLogicTests
         public bool ThrowOnName { get; set; }
         public string? Name => ThrowOnName ? throw new InvalidOperationException() : ProcessName;
         public DateTimeOffset? StartTime => Created;
+        public bool HasExited => false;
         public bool HasWindow { get; set; } = true;
         public bool Exits { get; set; }
         public Action? OnWait { get; set; }
@@ -61,11 +66,18 @@ public sealed class MemoryCloseLogicTests
         public List<TimeSpan> Delays { get; } = [];
         public List<(string[] Arguments, TimeSpan Timeout)> ServerCalls { get; } = [];
         public Task<MemoryCloseResult> Run(params string[] args) => new MemoryCloseLogic(
-            _ => Task.FromResult(new MemorySnapshot(null, Groups)), Reader, Opener,
+            _ =>
+            {
+                var identities = Reader.Get(0) ?? [];
+                var rows = Groups.Select((group, index) => new ProcessMemoryRow(group.Name,
+                    identities.FirstOrDefault(x => string.Equals(x.Name, group.Name, StringComparison.OrdinalIgnoreCase))?.Pid ?? 10000 + index,
+                    group.WorkingSetMb, group.PrivateMb, group.Classification, group.Reason)).ToArray();
+                return Task.FromResult(new MemorySnapshot(null, Groups) { ProcessRows = rows });
+            }, Reader, Opener,
             _ => Task.FromResult(Memory.Dequeue()),
             (duration, _) => { Delays.Add(duration); return Task.CompletedTask; },
             (arguments, timeout, _) => { ServerCalls.Add((arguments.ToArray(), timeout)); return Task.FromResult(true); },
-            Console, () => Started, 999).RunAsync(args);
+            Console, () => Started, 999, (_, _) => Task.CompletedTask).RunAsync(args);
         public void Answers(params string[] values) { foreach (var value in values) Console.Lines.Enqueue(value); }
     }
 
@@ -188,13 +200,17 @@ public sealed class MemoryCloseLogicTests
     }
 
     [Fact]
-    public async Task ServerOptionUsesExactArgumentsAndTimeout()
+    public async Task ServerOptionIsNotOfferedOrExecuted()
     {
         var s = new Setup(); s.Groups.Add(Group("VBCSCompiler", 50)); s.Answers("3", "s");
         var result = await s.Run();
-        Assert.Equal(0, result.ExitCode); Assert.Empty(s.Opener.Opened);
-        var call = Assert.Single(s.ServerCalls);
-        Assert.Equal(new[] { "build-server", "shutdown" }, call.Arguments); Assert.Equal(TimeSpan.FromSeconds(30), call.Timeout);
+        Assert.Equal(2, result.ExitCode); Assert.Empty(s.Opener.Opened);
+        Assert.Empty(s.ServerCalls);
+        Assert.DoesNotContain(s.Console.Output, line => line.Contains("apagar servidores de compilación de .NET", StringComparison.Ordinal));
+        var valid = new Setup(); valid.Groups.Add(Group("VBCSCompiler", 50)); valid.Answers("1", "s", "s");
+        Assert.Equal(0, (await valid.Run()).ExitCode);
+        Assert.Empty(valid.ServerCalls);
+        Assert.DoesNotContain(valid.Console.Output, line => line.Contains("apagar servidores de compilación de .NET", StringComparison.Ordinal));
     }
     [Theory]
     [InlineData("cs2")]
@@ -235,7 +251,7 @@ public sealed class MemoryCloseLogicTests
         var s = new Setup(); s.Reader.Get = _ => [Alpha]; s.Answers("1", "s");
         var result = await s.Run();
         Assert.Equal(1, result.ExitCode); Assert.Empty(s.Opener.Opened);
-        Assert.Contains("Nombre del proceso propio desconocido; no se puede seleccionar procesos.", result.Log);
+        Assert.Contains("No se pudo resolver la cadena de ancestros; no se ofrecerán más cierres.", result.Log);
     }
 
     [Fact]
@@ -252,8 +268,8 @@ public sealed class MemoryCloseLogicTests
     {
         var s = new Setup(); s.Reader.Get = n => n == 3 ? throw new InvalidOperationException() : [Self, Alpha]; s.Answers("1", "s");
         var result = await s.Run();
-        Assert.Equal(0, result.ExitCode); Assert.Empty(s.Opener.Opened);
-        Assert.Contains("alpha PID 42: no se pudo verificar o cerrar; omitido.", result.Log);
+        Assert.Equal(1, result.ExitCode); Assert.Empty(s.Opener.Opened);
+        Assert.Contains("No se pudo resolver la cadena de ancestros; no se ofrecerán más cierres.", result.Log);
     }
 
     [Fact]
@@ -261,8 +277,8 @@ public sealed class MemoryCloseLogicTests
     {
         var s = new Setup(); s.Reader.Get = n => n == 2 ? throw new InvalidOperationException() : [Self, Alpha]; s.Answers("1", "s");
         var result = await s.Run();
-        Assert.Equal(0, result.ExitCode); Assert.Empty(s.Opener.Opened);
-        Assert.Contains("alpha: identidad desconocida; omitido.", result.Log);
+        Assert.Equal(1, result.ExitCode); Assert.Empty(s.Opener.Opened);
+        Assert.Contains("No se pudo resolver la cadena de ancestros; no se ofrecerán más cierres.", result.Log);
     }
 
 }

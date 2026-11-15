@@ -43,4 +43,22 @@ public sealed class MemoryCloseLogTests
         var actual = Directory.GetFiles(temp.DirectoryPath).Select(Path.GetFileName).OrderBy(x => x, StringComparer.Ordinal);
         Assert.Equal(expected, actual);
     }
+    [Fact]
+    public async Task Utf8BomAndFlushedLinesSurviveExceptionBeforeSummary()
+    {
+        using var temp = new Temp();
+        var log = new MemoryCloseLog(temp.DirectoryPath, () => Now);
+        await log.ReserveAsync("", CancellationToken.None);
+        async Task Interrupted()
+        {
+            await log.AppendAsync("Intención: á\n", CancellationToken.None);
+            await log.AppendAsync("Resultado: ok\n", CancellationToken.None);
+            throw new InvalidOperationException();
+        }
+        await Assert.ThrowsAsync<InvalidOperationException>(Interrupted);
+        var bytes = await File.ReadAllBytesAsync(log.Path!);
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF }, bytes.Take(3));
+        Assert.Equal("Intención: á\nResultado: ok\n", await File.ReadAllTextAsync(log.Path!));
+    }
+
 }

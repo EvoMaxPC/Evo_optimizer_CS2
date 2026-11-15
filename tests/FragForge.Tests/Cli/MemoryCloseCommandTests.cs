@@ -35,7 +35,7 @@ public sealed class MemoryCloseCommandTests
         public Task<IReadOnlyList<CloseIdentity>?> ReadAsync(CancellationToken cancellationToken)
         {
             Calls++;
-            IReadOnlyList<CloseIdentity> values = [new("fragforge", 999, Start), new("alpha", 42, ChangeAfterConfirmation && Calls >= 3 ? Start.AddSeconds(1) : Start)];
+            IReadOnlyList<CloseIdentity> values = [new("fragforge", 999, Start, 0), new("alpha", 42, ChangeAfterConfirmation && Calls >= 3 ? Start.AddSeconds(1) : Start)];
             return Task.FromResult<IReadOnlyList<CloseIdentity>?>(values);
         }
     }
@@ -44,6 +44,7 @@ public sealed class MemoryCloseCommandTests
         public string? Name => "alpha";
         public long? Pid => 42;
         public DateTimeOffset? StartTime => Start;
+        public bool HasExited => false;
         public int Closes { get; private set; }
         public int Kills { get; private set; }
         public int Disposes { get; private set; }
@@ -73,7 +74,7 @@ public sealed class MemoryCloseCommandTests
             Task<MemoryCloseResult> RunLogic(string[] arguments, Func<string, CancellationToken, Task> reserve, CancellationToken ct)
             {
                 var group = new ProcessMemoryGroup("alpha", 1, 100, 90, "no protegido", "test");
-                var logic = new MemoryCloseLogic(_ => Task.FromResult(new MemorySnapshot(null, [group])), Identity, Opener,
+                var logic = new MemoryCloseLogic(_ => Task.FromResult(new MemorySnapshot(null, [group]) { ProcessRows = [new("alpha", 42, 100, 90, "no protegido", "test")] }), Identity, Opener,
                     _ => Task.FromResult<double?>(1000), (_, _) => Task.CompletedTask,
                     (_, _, _) => Task.FromResult(true), Console, () => Start, 999, reserve);
                 return logic.RunAsync(arguments, ct);
@@ -90,23 +91,24 @@ public sealed class MemoryCloseCommandTests
         Assert.Equal(0, await f.Run());
         Assert.Equal(1, f.Opener.Opens); Assert.Equal(1, f.Opener.Process.Closes); Assert.Equal(1, f.Opener.Process.Kills); Assert.Equal(1, f.Opener.Process.Disposes);
         Assert.True(f.Opener.ReservedWhenOpened);
-        Assert.Collection(f.Log.Text,
-            before => Assert.Contains("Identidad seleccionada: alpha PID 42", before),
-            after => Assert.Contains("alpha PID 42: cierre forzado solicitado.", after));
+        var text = string.Concat(f.Log.Text);
+        Assert.Contains("Identidad seleccionada: alpha PID 42", text);
+        Assert.Contains("alpha PID 42: cierre forzado solicitado.", text);
+        Assert.True(text.IndexOf("Intención cierre forzado:", StringComparison.Ordinal) < text.IndexOf("cierre forzado solicitado.", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task EmptyEntryReturnsSuccessWithoutOpening()
     {
         var f = new Fixture(); f.Answers(""); Assert.Equal(0, await f.Run());
-        Assert.Equal(0, f.Opener.Opens); Assert.Single(f.Log.Text);
+        Assert.Equal(0, f.Opener.Opens); Assert.Contains("Selección ingresada:", string.Concat(f.Log.Text));
     }
 
     [Fact]
     public async Task InvalidSelectionReturnsUsageWithoutOpening()
     {
         var f = new Fixture(); f.Answers("2"); Assert.Equal(2, await f.Run());
-        Assert.Equal(0, f.Opener.Opens); Assert.Contains("Selección inválida; no se cerró nada.", f.Log.Text[0]);
+        Assert.Equal(0, f.Opener.Opens); Assert.Contains("Selección inválida; no se cerró nada.", string.Concat(f.Log.Text));
     }
 
     [Fact]
@@ -129,7 +131,7 @@ public sealed class MemoryCloseCommandTests
     {
         var f = new Fixture(); f.Identity.ChangeAfterConfirmation = true; f.Answers("1", "s");
         Assert.Equal(0, await f.Run()); Assert.Equal(0, f.Opener.Opens);
-        Assert.Contains("alpha PID 42: identidad cambiada o desconocida; omitido.", f.Log.Text[1]);
+        Assert.Contains("alpha PID 42: identidad cambiada o desconocida; omitido.", string.Concat(f.Log.Text));
     }
 
     [Fact]
@@ -146,7 +148,7 @@ public sealed class MemoryCloseCommandTests
         var log = new LogFake(); var error = new StringWriter();
         var command = new MemoryCloseCommand((_, _, _) => throw new InvalidOperationException(), log, error);
         Assert.Equal(1, await command.RunAsync([]));
-        Assert.Single(log.Text); Assert.Equal("Error inesperado; el estado puede ser desconocido.\n", log.Text[0]);
+        Assert.Collection(log.Text, initial => Assert.Equal("", initial), final => Assert.Equal("Error inesperado; el estado puede ser desconocido." + Environment.NewLine, final));
     }
 
     [Fact]
@@ -155,12 +157,12 @@ public sealed class MemoryCloseCommandTests
         var log = new LogFake(); var error = new StringWriter();
         var command = new MemoryCloseCommand(async (_, reserve, token) =>
         {
-            await reserve("selección previa\n", token);
+            await reserve("selección previa", token);
             throw new InvalidOperationException();
         }, log, error);
         Assert.Equal(1, await command.RunAsync([]));
-        Assert.Collection(log.Text, first => Assert.Equal("selección previa\n", first),
-            second => Assert.Equal("\nResultado final:\nError inesperado; el estado puede ser desconocido.\n", second));
+        Assert.Collection(log.Text, initial => Assert.Equal("", initial), first => Assert.Equal("selección previa" + Environment.NewLine, first),
+            second => Assert.Equal("Error inesperado; el estado puede ser desconocido." + Environment.NewLine, second));
     }
 
     [Fact]
@@ -185,8 +187,8 @@ public sealed class MemoryCloseCommandTests
         public Task<IReadOnlyList<IReadOnlyDictionary<string, object?>>> QueryAsync(string scope, string className, IReadOnlyList<string> properties, string? where = null, CancellationToken cancellationToken = default)
         {
             Assert.Equal(@"root\cimv2", scope); Assert.Equal("Win32_Process", className);
-            Assert.Equal(new[] { "Name", "ProcessId", "CreationDate" }, properties); Assert.Null(where);
-            IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = [new Dictionary<string, object?> { ["Name"] = "alpha.exe", ["ProcessId"] = 42U, ["CreationDate"] = "20250102030405.000000+000" }];
+            Assert.Equal(new[] { "Name", "ProcessId", "CreationDate", "ParentProcessId" }, properties); Assert.Null(where);
+            IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = [new Dictionary<string, object?> { ["Name"] = "alpha.exe", ["ProcessId"] = 42U, ["CreationDate"] = "20250102030405.000000+000", ["ParentProcessId"] = 7U }];
             return Task.FromResult(rows);
         }
     }
@@ -197,6 +199,6 @@ public sealed class MemoryCloseCommandTests
         var reader = new WmiCloseIdentityReader(new WmiFake());
         var rows = await reader.ReadAsync(CancellationToken.None);
         var row = Assert.Single(rows!);
-        Assert.Equal("alpha.exe", row.Name); Assert.Equal(42L, row.Pid); Assert.Equal(Start, row.StartTime);
+        Assert.Equal("alpha.exe", row.Name); Assert.Equal(42L, row.Pid); Assert.Equal(Start, row.StartTime); Assert.Equal(7L, row.ParentPid);
     }
 }
