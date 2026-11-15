@@ -117,13 +117,14 @@ public sealed class MatchRunnerTests
     {
         var process = new Process(); var launcher = new Launcher(process); var prompt = new Prompt(); var hotkeys = new Hotkeys();
         var ticks = 0;
-        var runner = Runner(prompt, hotkeys, launcher, async (_, _) => { if (ticks++ == 0) { hotkeys.Send(HotkeyAction.ShowNow); await Task.Run(() => hotkeys.Send(HotkeyAction.Finish)); } });
+        var runner = Runner(prompt, hotkeys, launcher, async (_, _) => { if (ticks++ == 0) hotkeys.Send(HotkeyAction.ShowNow); else if (ticks == 4) await Task.Run(() => hotkeys.Send(HotkeyAction.Finish)); });
         var result = await runner.RunAsync(new MatchOptions(null, false));
         // Ninguna fila recibida => fallo, un Kill y resumen final.
         Assert.Equal(ExitCodes.Failure, result);
         Assert.Contains(prompt.Lines, x => x.Contains("Todavía no llegaron frames"));
         Assert.Contains(prompt.Lines, x => x.Contains("RESUMEN FINAL"));
         Assert.Contains(prompt.Warnings, x => x.Contains("no llegaron frames"));
+        Assert.Equal(4, ticks);
         Assert.Equal(1, process.Kills);
         Assert.True(process.Disposed);
     }
