@@ -11,7 +11,7 @@ public sealed class ParsedArgs
 }
 public static class CommandLineParser
 {
-    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply", "exclude-pauses", "include-unverified", "yes", "overwrite" };
+    private static readonly HashSet<string> Flags = new(StringComparer.OrdinalIgnoreCase) { "json", "dry-run", "force", "no-restore-point", "enable-system-protection", "acepto-sin-punto-de-restauracion", "last", "allow-powershell", "help", "json", "aa", "blocked", "partial-ok", "reapply", "exclude-pauses", "include-unverified", "yes", "overwrite" };
     private static readonly HashSet<string> ValueOptions = new(StringComparer.OrdinalIgnoreCase) { "profile", "category", "risk", "out", "format", "snapshot", "label", "culture", "data-root", "cs2-path", "user-sid", "accept-risk", "risk-phrase", "duration", "runs", "warmup", "seed", "session", "probe-key", "mode", "confirm", "host", "count", "warmup-seconds", "dest", "objective", "fps-cap" };
     /// <summary>
     /// Opciones que toman VARIOS valores seguidos (<c>--versus b1.csv b2.csv</c>). El parser las ACEPTA y las
@@ -51,6 +51,11 @@ public static class CommandLineParser
             var token = args[i];
             if (!token.StartsWith("--", StringComparison.Ordinal)) { positionals.Add(token); continue; }
             var name = token[2..];
+            if (name.Equals("acepto-sin-punto-de-restauracion", StringComparison.OrdinalIgnoreCase))
+            {
+                if (command != "apply" || options.ContainsKey(name) || (i + 1 < args.Length && !args[i + 1].StartsWith("--", StringComparison.Ordinal)))
+                    throw new ArgumentException("--acepto-sin-punto-de-restauracion no acepta valor; colócalo después de los IDs de apply.");
+            }
             if (Flags.Contains(name)) { options[name] = ["true"]; continue; }
             if (MultiValueOptions.Contains(name)) { options[name] = ["true"]; continue; }
             if (!ValueOptions.Contains(name)) throw new ArgumentException($"Opción desconocida: --{name}");

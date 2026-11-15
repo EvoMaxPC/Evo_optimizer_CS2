@@ -68,7 +68,7 @@ public static class Program
                     if (ids.Length == 0) throw new ArgumentException("apply requiere IDs o --profile con tweaks disponibles.");
                     var applyOptions = new ApplyOptions
                     {
-                        DryRun = parsed.Has("dry-run"), Force = parsed.Has("force"), CreateRestorePoint = !parsed.Has("no-restore-point"), EnableSystemProtection = parsed.Has("enable-system-protection"), Profile = profile,
+                        DryRun = parsed.Has("dry-run"), Force = parsed.Has("force"), CreateRestorePoint = !parsed.Has("no-restore-point"), EnableSystemProtection = parsed.Has("enable-system-protection"), AcceptWithoutSystemRestore = parsed.Has("acepto-sin-punto-de-restauracion"), Profile = profile,
                         RiskAcknowledgements = parsed.Values("accept-risk").ToHashSet(StringComparer.OrdinalIgnoreCase), AdvancedRiskPhrase = parsed.Value("risk-phrase"), Cs2ExecutableOverride = parsed.Value("cs2-path"), TargetUserSid = parsed.Value("user-sid"), AllowPowerShellActions = parsed.Has("allow-powershell")
                     };
                     var report = await engine.ApplyAsync(ids, applyOptions, cancellation.Token, progress);
@@ -189,7 +189,7 @@ public static class Program
         finally { Console.CancelKeyPress -= handler; }
     }
     private static TweakProfile ParseProfile(string value) => Enum.TryParse<TweakProfile>(value, true, out var profile) ? profile : throw new ArgumentException("Perfil debe ser Safe, Balanced, Competitive o Advanced.");
-    private static int ReportExit(BatchReport report) => report.HasCriticalFailure ? ExitCodes.RollbackCritical : report.Cancelled ? ExitCodes.Cancelled : report.Success ? ExitCodes.Success : ExitCodes.Failure;
+    public static int ReportExit(BatchReport report) => report.HasCriticalFailure ? ExitCodes.RollbackCritical : report.Cancelled ? ExitCodes.Cancelled : report.PreflightBlocked ? ExitCodes.Preflight : report.Success ? ExitCodes.Success : ExitCodes.Failure;
     private static void Help()
     {
         Console.WriteLine("""
@@ -200,6 +200,7 @@ Uso:
   fragforge list [--category X] [--risk Safe|Moderate|Advanced|Experimental] [--json]
   fragforge apply <ids...|--profile Safe|Balanced|Competitive|Advanced> [--dry-run] [--force]
                   [--no-restore-point] [--enable-system-protection] [--cs2-path RUTA]
+                  [--acepto-sin-punto-de-restauracion] (después de los IDs; sin valor)
                   [--user-sid SID] [--accept-risk ID] [--risk-phrase "ACEPTO EL RIESGO"]
                   [--allow-powershell] [--json]
   fragforge revert <ids...|--snapshot ID|--last> [--force] [--json]
