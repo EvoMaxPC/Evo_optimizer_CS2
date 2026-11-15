@@ -21,6 +21,7 @@ public sealed class NativeWindowApi : INativeWindowApi
             var dpiApplied = previous != 0;
             var windows = new List<NativeWindow>();
             Exception? error = null;
+            var skipped = 0;
             EnumWindowCallback callback = (hwnd, _) =>
             {
                 try
@@ -35,12 +36,12 @@ public sealed class NativeWindowApi : INativeWindowApi
                         client.Right - client.Left, client.Bottom - client.Top, monitor, info.Monitor.ToRectangle(), dpiApplied));
                     return true;
                 }
-                catch (Exception ex) { error = ex; return false; }
+                catch (Exception ex) { error = ex; skipped++; return true; }
             };
             var success = EnumWindows(callback, 0);
             GC.KeepAlive(callback);
-            if (error is not null) throw new InvalidOperationException("No se pudieron leer las ventanas.", error);
             if (!success) throw new Win32Exception(Marshal.GetLastWin32Error());
+            if (windows.Count == 0 && skipped > 0) throw new InvalidOperationException("No se pudieron leer las ventanas.", error);
             return windows;
         }
         finally
