@@ -81,6 +81,7 @@ public sealed class LivePresentMonSession : IAsyncDisposable
     private int? _exitCode;
     private bool _started;
     private bool _killCalled;
+    private int _ingestCompleted;
     private long _lastFramesParsed;
     private long _lastFrameMs;
 
@@ -188,7 +189,12 @@ public sealed class LivePresentMonSession : IAsyncDisposable
             try { await pump.WaitAsync(StopWaitTimeout).ConfigureAwait(false); }
             catch (TimeoutException) { }
         }
-        Ingest.Complete();
+        CompleteIngestOnce();
+    }
+
+    private void CompleteIngestOnce()
+    {
+        if (Interlocked.Exchange(ref _ingestCompleted, 1) == 0) Ingest.Complete();
     }
 
     public async ValueTask DisposeAsync()
@@ -232,7 +238,7 @@ public sealed class LivePresentMonSession : IAsyncDisposable
             lock (_gate) SetTerminalLocked(LiveSessionState.Failed, $"Error leyendo PresentMon: {ex.Message}");
             KillOnce();
         }
-        finally { Ingest.Complete(); }
+        finally { CompleteIngestOnce(); }
     }
 
     private async Task ObserveExitAsync(ILivePresentMonProcess process, Task pump)
