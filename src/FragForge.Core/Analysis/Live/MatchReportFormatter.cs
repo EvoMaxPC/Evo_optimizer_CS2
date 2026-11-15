@@ -80,7 +80,7 @@ public static class MatchReportFormatter
             lines.Add("Resolución configurada: " + Dimensions(sheet.ConfiguredWidth, sheet.ConfiguredHeight));
             lines.Add("Frecuencia configurada: " + (sheet.ConfiguredRefreshHz is int hz ? hz.ToString(Inv) + " Hz" : "no se sabe"));
             Pairs(lines, "VideoSettings", sheet.VideoSettings);
-            Pairs(lines, "StoredConvars", sheet.StoredConvars);
+            Pairs(lines, "Convars guardados por el juego (pueden ser pisados por autoexec.cfg y las opciones de lanzamiento)", sheet.StoredConvars);
             Pairs(lines, "AutoexecConvars", sheet.AutoexecConvars);
             foreach (var conflict in sheet.Conflicts) lines.Add("Conflicto: " + conflict);
             lines.Add("Opciones de lanzamiento: " + (sheet.LaunchOptions is not null ? sheet.LaunchOptions : sheet.LaunchOptionsKnownAbsent ? "sin opciones configuradas" : "no se sabe"));

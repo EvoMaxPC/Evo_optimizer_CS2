@@ -78,7 +78,7 @@ public static class Cs2ProfileCommands
             prompt.WriteLine("");
             prompt.WriteLine("Comparación con lo que ya hay en este equipo:");
             foreach (var row in comparison.Options)
-                prompt.WriteLine($"  {row.Text,-45} actual: {row.CurrentValue ?? "(sin dato)",-10} perfil: {row.ProfileValue ?? "(sin valor)",-10} -> {row.Relation}");
+                prompt.WriteLine($"  {row.Text,-45} en archivos: {row.CurrentValue ?? "(sin dato)",-10} perfil: {row.ProfileValue ?? "(sin valor)",-10} -> {row.Relation}");
             foreach (var warning in comparison.Warnings) prompt.WriteWarning("Aviso: " + warning);
         }
 

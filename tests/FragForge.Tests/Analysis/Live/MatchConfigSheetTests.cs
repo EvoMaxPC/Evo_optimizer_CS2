@@ -39,8 +39,8 @@ public sealed class MatchConfigSheetTests
     [Fact]
     public void Diff_EmptyAndChangesOrderedBySectionAndKey()
     {
-        var old = new MatchConfigSheet { VideoSettings = [new("b", "1"), new("c", "3")], StoredConvars = [new("x", "1")], AutoexecConvars = [new("a", "1")], LaunchOptions = "antes" };
-        var updated = new MatchConfigSheet { VideoSettings = [new("a", "2"), new("b", "4")], StoredConvars = [new("x", "2")], AutoexecConvars = [new("a", "2")], LaunchOptions = "después" };
+        var old = new MatchConfigSheet { VideoSettings = [new("b", "1"), new("c", "3")], StoredConvarsKnown = true, StoredConvars = [new("x", "1")], AutoexecConvars = [new("a", "1")], LaunchOptions = "antes" };
+        var updated = new MatchConfigSheet { VideoSettings = [new("a", "2"), new("b", "4")], StoredConvarsKnown = true, StoredConvars = [new("x", "2")], AutoexecConvars = [new("a", "2")], LaunchOptions = "después" };
         Assert.Empty(MatchConfigDiff.Compare(old, old));
         // Orden ordinal por sección y clave: Autoexec, Launch, Stored, Video a/b/c.
         Assert.Equal(new[] { "AutoexecConvars: a cambió de 1 a 2", "LaunchOptions: cambió de antes a después", "StoredConvars: x cambió de 1 a 2", "VideoSettings: a agregada: 2", "VideoSettings: b cambió de 1 a 4", "VideoSettings: c quitada: 3" }, MatchConfigDiff.Compare(old, updated));
@@ -56,13 +56,13 @@ public sealed class MatchConfigSheetTests
         var before = section switch
         {
             "VideoSettings" => new MatchConfigSheet { VideoSettings = beforePairs },
-            "StoredConvars" => new MatchConfigSheet { StoredConvars = beforePairs },
+            "StoredConvars" => new MatchConfigSheet { StoredConvarsKnown = true, StoredConvars = beforePairs },
             _ => new MatchConfigSheet { AutoexecConvars = beforePairs },
         };
         var after = section switch
         {
             "VideoSettings" => new MatchConfigSheet { VideoSettings = afterPairs },
-            "StoredConvars" => new MatchConfigSheet { StoredConvars = afterPairs },
+            "StoredConvars" => new MatchConfigSheet { StoredConvarsKnown = true, StoredConvars = afterPairs },
             _ => new MatchConfigSheet { AutoexecConvars = afterPairs },
         };
         // Tres claves en orden ordinal: a agregada, b cambiada, c quitada.

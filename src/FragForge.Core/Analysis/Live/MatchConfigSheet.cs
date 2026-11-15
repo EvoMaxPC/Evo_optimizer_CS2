@@ -8,6 +8,7 @@ public sealed record MatchConfigSheet
     public string? ActiveSteamAccountId { get; init; }
     public IReadOnlyList<KeyValuePair<string, string>> VideoSettings { get; init; } = [];
     public IReadOnlyList<KeyValuePair<string, string>> StoredConvars { get; init; } = [];
+    public bool StoredConvarsKnown { get; init; }
     public IReadOnlyList<KeyValuePair<string, string>> AutoexecConvars { get; init; } = [];
     public IReadOnlyList<string> Conflicts { get; init; } = [];
     public string? LaunchOptions { get; init; }
@@ -78,7 +79,8 @@ public static class MatchConfigSheetBuilder
         {
             ActiveSteamAccountId = inspection.ActiveSteamAccountId,
             VideoSettings = Sort(inspection.VideoSettings),
-            StoredConvars = Sort(inspection.StoredConvars),
+            StoredConvars = SortStored(inspection.StoredConvars),
+            StoredConvarsKnown = inspection.StoredConvarsKnown,
             AutoexecConvars = Sort(inspection.AutoexecConvars),
             Conflicts = inspection.Conflicts.ToArray(),
             LaunchOptions = inspection.LaunchOptions,
@@ -89,6 +91,10 @@ public static class MatchConfigSheetBuilder
             ConfiguredHeight = height,
         };
     }
+
+    private static KeyValuePair<string, string>[] SortStored(IReadOnlyDictionary<string, string> source) =>
+        source.OrderBy(pair => { var index = Array.IndexOf(StoredConvarNames.Ordered.ToArray(), pair.Key); return index < 0 ? int.MaxValue : index; })
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal).ToArray();
 
     private static KeyValuePair<string, string>[] Sort(IReadOnlyDictionary<string, string> source) =>
         source.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToArray();
@@ -102,7 +108,8 @@ public static class MatchConfigDiff
         CompareSection("AutoexecConvars", atStart.AutoexecConvars, atEnd.AutoexecConvars, result);
         if (!string.Equals(atStart.LaunchOptions, atEnd.LaunchOptions, StringComparison.Ordinal))
             result.Add($"LaunchOptions: cambió de {atStart.LaunchOptions ?? "no se sabe"} a {atEnd.LaunchOptions ?? "no se sabe"}");
-        CompareSection("StoredConvars", atStart.StoredConvars, atEnd.StoredConvars, result);
+        if (atStart.StoredConvarsKnown && atEnd.StoredConvarsKnown)
+            CompareSection("StoredConvars", atStart.StoredConvars, atEnd.StoredConvars, result);
         CompareSection("VideoSettings", atStart.VideoSettings, atEnd.VideoSettings, result);
         return result;
     }
