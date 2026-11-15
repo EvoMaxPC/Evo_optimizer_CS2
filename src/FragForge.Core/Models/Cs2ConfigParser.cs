@@ -120,9 +120,9 @@ public static class Cs2ConfigParser
     /// <summary>
     /// Conflictos entre lo guardado por CS2 y el <c>autoexec.cfg</c>: la misma convar con distinto valor.
     ///
-    /// Ejemplo del caso medido: <c>fps_max</c> guardado en <c>0</c> y en el autoexec en <c>64</c>. El
-    /// autoexec gana al arrancar, pero lo guardado se vuelve a escribir al cerrar: es exactamente el tipo de
-    /// inconsistencia que el jugador no ve. Se comparan valores como TEXTO normalizado (R-E), no como
+    /// Ejemplo: <c>fps_max</c> guardado en <c>0</c> y en el autoexec en <c>64</c>.
+    /// La precedencia entre autoexec y los archivos de usuario no está verificada.
+    /// Se comparan valores como TEXTO normalizado (R-E), no como
     /// números: un valor puede ser un enum (<c>1</c>, <c>0</c>, <c>true</c>).
     /// </summary>
     public static IReadOnlyList<string> FindConvarConflicts(
