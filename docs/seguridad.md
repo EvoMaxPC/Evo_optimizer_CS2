@@ -329,3 +329,7 @@ texto que diga «el valor del autoexec manda» sería una suposición.
 - Solo cierra el PresentMon que lanzó, mediante la sesión.
 - Ctrl+C termina con resumen; cerrar la consola con la X puede dejar PresentMon huérfano: el próximo `match` lo detecta y avisa, si puede identificarlo.
 - Las hotkeys F9–F11 se registran solo durante la medición.
+
+La resolución configurada se lee de `setting.defaultres` y `setting.defaultresheight` de `cs2_video.txt`: claves observadas en una instalación real, no documentadas por Valve. No implica que coincida con lo visible en pantalla.
+Si hay cuentas Steam con resoluciones distintas y no se sabe cuál está activa, se informa «no se sabe».
+Con cuenta activa desconocida se leen las cuentas de userdata en solo lectura y solo se informa una resolución si todas coinciden y son legibles y válidas.
