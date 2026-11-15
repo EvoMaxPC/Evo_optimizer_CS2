@@ -145,4 +145,23 @@ public sealed class LogmanEtwSessionControlTests
         Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
     }
 
+    [Fact]
+    public async Task DelegateCancellation_ReturnsUnknownWithoutQuery()
+    {
+        using var cts = new CancellationTokenSource();
+        var calls = 0;
+        var control = new LogmanEtwSessionControl((_, _, token) =>
+        {
+            calls++;
+            cts.Cancel();
+            return Task.FromCanceled<EtwProcessResult>(token);
+        });
+        var result = await control.CloseAsync(Name, cts.Token);
+        // 1 stop cancelado, 0 consultas; resultado desconocido en vez de éxito.
+        Assert.False(result.Closed);
+        Assert.Equal(1, calls);
+        Assert.Contains("estado de la sesión ETW es desconocido", result.Message);
+        Assert.Contains("logman stop FragForgeLive-035877d0 -ets", result.Message);
+    }
+
 }
