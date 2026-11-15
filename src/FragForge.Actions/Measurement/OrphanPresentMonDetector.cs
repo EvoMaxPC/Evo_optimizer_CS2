@@ -79,5 +79,5 @@ public sealed class OrphanPresentMonDetector(IWmiQuery wmi, string approvedExecu
 public static class OrphanPresentMonAdvice
 {
     public static string Describe(OrphanPresentMon orphan) => string.Create(CultureInfo.InvariantCulture,
-        $"PresentMon PID {orphan.ProcessId}; ruta: {orphan.ExecutablePath ?? "no se sabe"}; sesión: {orphan.SessionName ?? "no se sabe"}. Cerralo a mano desde el Administrador de tareas. No se verificó si eso cierra la sesión ETW.");
+        $"PresentMon PID {orphan.ProcessId}; ruta: {orphan.ExecutablePath ?? "no se sabe"}; sesión: {orphan.SessionName ?? "no se sabe"}. Cerralo a mano desde el Administrador de tareas. Se observó una vez en una PC que cerrar PresentMon no cerró la sesión ETW; match ofrece cerrar sesiones FragForgeLive- al iniciar.");
 }

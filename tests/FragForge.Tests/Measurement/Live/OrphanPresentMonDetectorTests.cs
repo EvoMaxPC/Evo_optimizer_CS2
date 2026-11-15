@@ -58,6 +58,6 @@ public sealed class OrphanPresentMonDetectorTests
     public void Advice_ContainsKnownValuesWithoutClaimingEtwCleanup()
     {
         var text = OrphanPresentMonAdvice.Describe(new OrphanPresentMon(42, "ruta.exe", "comando", "FragForgeLive-12345678"));
-        Assert.Equal("PresentMon PID 42; ruta: ruta.exe; sesión: FragForgeLive-12345678. Cerralo a mano desde el Administrador de tareas. No se verificó si eso cierra la sesión ETW.", text);
+        Assert.Equal("PresentMon PID 42; ruta: ruta.exe; sesión: FragForgeLive-12345678. Cerralo a mano desde el Administrador de tareas. Se observó una vez en una PC que cerrar PresentMon no cerró la sesión ETW; match ofrece cerrar sesiones FragForgeLive- al iniciar.", text);
     }
 }
