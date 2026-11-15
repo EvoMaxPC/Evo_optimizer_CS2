@@ -72,7 +72,7 @@ public sealed class RestorePointAckTests
             Warnings = ["Aviso independiente."]
         };
         await vm.ApplyCommand.ExecuteAsync(null);
-        Assert.Equal("El preflight bloqueó la aplicación: La protección del sistema está desactivada o no pudo confirmarse. Habilitá la protección del sistema en Windows o desde Mantenimiento. Si corresponde, usá la confirmación de la tarjeta para aplicar sin punto de restauración. Se requieren privilegios de administrador. Avisos: Aviso independiente.", vm.StatusMessage);
+        Assert.Equal("El preflight bloqueó la aplicación: La protección del sistema está desactivada o no pudo confirmarse. Habilitá la protección del sistema en Windows o desde Mantenimiento. Si corresponde, usá la confirmación de la tarjeta para aplicar sin punto de restauración. El snapshot y el journal siguen siendo obligatorios. Se requieren privilegios de administrador. Avisos: Aviso independiente.", vm.StatusMessage);
         Assert.False(vm.NeedsRestorePointAck);
         Assert.Single(engine.Calls);
     }
@@ -85,7 +85,7 @@ public sealed class RestorePointAckTests
         engine.Next = new BatchReport { OperationId = "bloqueada", Success = false, PreflightBlocked = true,
             Errors = ["La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal."] };
         await vm.ApplyCommand.ExecuteAsync(null);
-        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
+        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento. El snapshot y el journal siguen siendo obligatorios.", vm.StatusMessage);
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public sealed class RestorePointAckTests
         engine.Next = new BatchReport { OperationId = "bloqueada", Success = false, PreflightBlocked = true,
             Errors = ["La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal."] };
         await vm.PreviewCommand.ExecuteAsync(null);
-        Assert.Equal("La vista previa no se pudo completar: La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
+        Assert.Equal("La vista previa no se pudo completar: La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento. El snapshot y el journal siguen siendo obligatorios.", vm.StatusMessage);
     }
 
     [Fact]
@@ -117,8 +117,8 @@ public sealed class RestorePointAckTests
         using var cleanup = vm;
         engine.Failure = new PreflightFailedException("La protección del sistema no pudo confirmarse; usa --no-restore-point si aceptas solo snapshot y journal.", new PreflightReport(false, []));
         await vm.ApplyCommand.ExecuteAsync(null);
-        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.StatusMessage);
-        Assert.Contains("[Error] La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento.", vm.Logs);
+        Assert.Equal("La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento. El snapshot y el journal siguen siendo obligatorios.", vm.StatusMessage);
+        Assert.Contains("[Error] La protección del sistema no pudo confirmarse. Revisá las opciones de protección y punto de restauración en Mantenimiento. El snapshot y el journal siguen siendo obligatorios.", vm.Logs);
     }
 
     [Fact]
