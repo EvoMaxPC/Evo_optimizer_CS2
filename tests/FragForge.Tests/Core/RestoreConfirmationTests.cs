@@ -30,6 +30,7 @@ public sealed class RestoreConfirmationTests
         Assert.False(report.Success);
         Assert.True(report.PreflightBlocked);
         Assert.Equal(3, Program.ReportExit(report));
+        Assert.Equal(new[] { "restore-unavailable" }, report.BlockingPreflightCheckIds);
         Assert.Contains("La protección del sistema está desactivada o no pudo confirmarse.", Assert.Single(report.Errors));
         Assert.Contains(Suggestion, Assert.Single(report.Errors));
         Assert.Equal(0, harness.Restore.CreateCalls);
@@ -71,11 +72,17 @@ public sealed class RestoreConfirmationTests
     {
         using var harness = Harness();
         harness.Restore.Protection = FeatureState.Disabled;
-        var report = await harness.CreateEngine().ApplyAsync(["tweak.recovery"], harness.Options() with { AcceptWithoutSystemRestore = true });
+        var report = await harness.CreateEngine().ApplyAsync(["tweak.recovery"], harness.Options() with
+        {
+            AcceptWithoutSystemRestore = true,
+            RiskAcknowledgements = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "tweak.recovery" },
+            AdvancedRiskPhrase = "ACEPTO EL RIESGO"
+        });
         // 1 tweak Bcdedit seleccionado: R-J bloquea antes de crear snapshot o aplicar.
         Assert.False(report.Success);
         Assert.True(report.PreflightBlocked);
         Assert.Equal(3, Program.ReportExit(report));
+        Assert.Equal(new[] { "recovery" }, report.BlockingPreflightCheckIds);
         Assert.Contains("tweak.recovery", Assert.Single(report.Errors));
         Assert.Contains("R-J", Assert.Single(report.Errors));
         Assert.Equal(0, harness.Restore.CreateCalls);
