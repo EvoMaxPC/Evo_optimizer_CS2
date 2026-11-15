@@ -37,7 +37,8 @@ public sealed class MemoryCloseLogic(
     Func<IReadOnlyList<string>, TimeSpan, CancellationToken, Task<bool>> shutdownServers,
     ICloseConsole console,
     Func<DateTimeOffset> clock,
-    long ownPid)
+    long ownPid,
+    Func<string, CancellationToken, Task>? beforeActions = null)
 {
     private static readonly string[] BrowserNames = ["firefox", "chrome", "msedge", "brave", "opera"];
     private static readonly string[] ServerNames = ["VBCSCompiler", "MSBuild", "dotnet"];
@@ -95,6 +96,7 @@ public sealed class MemoryCloseLogic(
                 {
                     if (!Allowed(item) || item.Pid == ownPid || !capturedPids.Add(item.Pid!.Value)) { await Say($"{group.Name}: identidad desconocida, duplicada o protegida; omitido."); continue; }
                     captured.Add(item);
+                    Record($"Identidad seleccionada: {item.Name} PID {item.Pid} inicio {item.StartTime:O}");
                 }
             }
             await Say("Selección: " + string.Join(", ", chosen.Select(g => g.Name).Concat(shutdown ? [ShutdownOption] : Array.Empty<string>())));
@@ -102,6 +104,8 @@ public sealed class MemoryCloseLogic(
                 await Say("Se pueden perder pestañas o formularios sin guardar.");
             await Say("¿Confirmar? [s/N]");
             if (!IsYes(await console.ReadLineAsync())) return Result(0);
+            // The real command must persist its initial record before any process action.
+            if (beforeActions is not null) await beforeActions(log.ToString(), cancellationToken);
             var memoryBefore = await availableMemory(cancellationToken);
             await Say("Disponible antes (MB): " + Format(memoryBefore));
             bool actionFailed = false;
