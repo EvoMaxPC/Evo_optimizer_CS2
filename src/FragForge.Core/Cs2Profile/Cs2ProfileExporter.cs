@@ -144,6 +144,12 @@ public static class Cs2ProfileExporter
         var normalized = Cs2PathGuard.Normalize(request.FolderPath, Directory.GetCurrentDirectory());
         if (normalized is null) return Fail("La carpeta de destino no es una ruta válida.");
 
+        // La raíz real de Steam puede ser desconocida o distinta de la biblioteca del juego.
+        // Tratar cada ancestro como posible raíz evita depender de esa resolución.
+        for (var ancestor = Path.GetDirectoryName(normalized); ancestor is not null; ancestor = Path.GetDirectoryName(ancestor))
+            if (Cs2PathGuard.IsInsideUserData(normalized, ancestor))
+                return Fail("No se exporta dentro de la carpeta userdata de Steam. Elegí otra carpeta.");
+
         var target = Path.Combine(normalized, Cs2ProfileGenerator.GameCfgFileName);
         if (File.Exists(target) && !request.Overwrite)
             return Fail($"Ya existe '{target}'. No se sobrescribe sin confirmación explícita.");
