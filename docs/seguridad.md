@@ -297,6 +297,8 @@ idioma en vivo, el motivo del bloqueo R-J no, hasta reiniciar.
 (`app.manifest:5`, `requireAdministrator`), así que en el uso normal no se da; el CLI sí puede ejecutarse
 sin elevación.
 
+La exportación a carpeta arbitraria rechaza rutas con un ancestro `userdata`, incluso si no se conoce la raíz de Steam; la comprobación es léxica y no resuelve symlinks ni junctions.
+
 **El export de CS2 no se registra en el journal.** `Cs2ProfileExporter` y `Cs2ProfileCommands` no escriben
 ni una línea en el journal: no hay llamada a `JournalEventType` en `src/FragForge.Core/Cs2Profile/` ni en
 `src/FragForge.Cli/Cs2ProfileCommands.cs`. El journal solo tiene eventos de aplicación de tweaks
