@@ -365,11 +365,15 @@ Sin punto de restauración, la vuelta atrás depende del revert de FragForge med
 
 ### M-2: cierre de procesos con confirmación
 
-`fragforge memoria cerrar [--top N]` muestra grupos por memoria estimada y pide confirmación. Primero solicita cierre amable; para forzar pide una segunda confirmación por grupo. Excluye CS2, Steam y steamwebhelper, vgc, vgk, vgtray, lghub*, procesos de sistema y el propio proceso. El PID padre no forma parte del snapshot M-1 y se informa esa limitación. Las identidades se leen mediante WMI; una identidad desconocida o cambiada se omite.
+`fragforge memoria cerrar [--top N]` muestra grupos por memoria estimada y pide confirmación. Primero solicita cierre amable; para forzar pide una segunda confirmación por grupo. Excluye CS2, Steam y steamwebhelper, vgc, vgk, vgtray, lghub*, procesos de sistema, el propio proceso y sus ancestros. La cadena se consulta por WMI; si no puede resolverse, no se ofrecen cierres. Los PID excluidos no se suman en los grupos. Una identidad desconocida o cambiada se omite.
+
+Se advierte que cerrar terminales o procesos .NET puede cerrar programas o compilaciones en uso. La opción de apagar servidores de compilación está deshabilitada porque no permite excluir ancestros; los procesos dotnet no excluidos siguen disponibles por grupo.
+
+En la primera corrida real se forzó el cierre de nueve procesos dotnet. Uno inició 0,7 segundos antes de la herramienta y se infiere que pudo ser su `dotnet run` padre; no está probado que ese cierre causara la terminación observada.
 
 No se puede garantizar que nunca se abra un handle a un proceso protegido: el PID puede cambiar de dueño entre la consulta y la apertura. Por eso la identidad se comprueba antes de confirmar, tras confirmar, tras obtener el proceso y antes de cada Kill, y ante cualquier duda se omite.
 
-El registro de R-M para esta acción es `%ProgramData%\FragForge\memoria\cierre-yyyyMMdd-HHmmss.txt`, no el journal de tweaks. Se reserva sin sobrescribir antes de actuar y se completa al finalizar; si no se puede reservar, no se actúa. Si falla la escritura, se avisa y se devuelve error. Si hay colisiones se usan sufijos `-02` a `-99`; si están todos ocupados, se aborta. Una interrupción abrupta puede dejar solo el registro inicial.
+El registro de R-M para esta acción es `%ProgramData%\FragForge\memoria\cierre-yyyyMMdd-HHmmss.txt`, no el journal de tweaks. Se reserva sin sobrescribir y se escribe en UTF-8 con BOM, línea por línea con flush al disco. Antes de cada cierre se registra la intención; si falla la escritura previa, esa acción no se hace. Se registra también la respuesta y el resultado, y se intenta añadir un resumen en `finally`. Una interrupción abrupta puede impedir el resumen final. Si hay colisiones se usan sufijos `-02` a `-99`; si están todos ocupados, se aborta.
 
 La memoria libre puede volver a bajar. Esto no es una promesa de FPS. El working set suma páginas compartidas y puede sobreestimar lo que ocupa un grupo. La función no ha sido verificada en vivo en esta ronda.
 
